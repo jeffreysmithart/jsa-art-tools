@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Value Study</title>
+  <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
+  <meta name="theme-color" content="#2a2a2a">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" aria-label="Value Study">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      Value Study
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Mode">
+      <button role="tab" id="tab-reference" data-mode="reference" aria-selected="true">Reference</button>
+      <button role="tab" id="tab-master" data-mode="master" aria-selected="false">Master Copy</button>
+    </nav>
+    <div class="top-actions">
+      <button id="btn-timer" class="btn" aria-pressed="false" title="Show the timer (T)">Timer</button>
+      <button id="btn-download" class="btn" title="Download the study image">Download</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Controls">
+
+      <!-- Reference mode: bring your own image -->
+      <section class="group" id="sec-reference">
+        <h2>Image</h2>
+        <label class="btn primary block file-btn">
+          Choose an image…
+          <input type="file" id="file-input" accept="image/*">
+        </label>
+        <p class="hint">Or drop an image anywhere, or paste one (⌘/Ctrl + V).</p>
+        <form id="url-form" class="inline-form">
+          <input type="url" id="url-input" placeholder="Image link (https://…)" aria-label="Image link" inputmode="url">
+          <button class="btn" type="submit">Load</button>
+        </form>
+        <p class="msg" id="url-msg" role="status"></p>
+      </section>
+
+      <!-- Master Copy mode: museum library and session queue -->
+      <section class="group" id="sec-master" hidden>
+        <h2>Museum library</h2>
+        <form id="search-form" class="inline-form">
+          <input type="search" id="search-input" placeholder="Artist or subject" aria-label="Search artist or subject">
+          <button class="btn primary" type="submit">Search</button>
+        </form>
+        <div class="chips" id="search-chips" aria-label="Suggestions"></div>
+        <label class="check"><input type="checkbox" id="paintings-only" checked> Paintings only</label>
+        <p class="msg" id="search-msg" role="status"></p>
+        <div class="results" id="results"></div>
+        <div class="row">
+          <button class="btn" id="btn-more" hidden>Load more</button>
+          <button class="btn" id="btn-add-all" hidden>Add all to session</button>
+        </div>
+
+        <h3>Session <span class="count" id="queue-count"></span></h3>
+        <ol class="queue" id="queue"></ol>
+        <p class="hint" id="queue-empty">Add paintings with <b>+ Session</b>, then start a timed session.</p>
+        <div class="row">
+          <button class="btn primary" id="btn-session">Start timed session</button>
+          <button class="btn" id="btn-shuffle">Shuffle</button>
+          <button class="btn" id="btn-clear">Clear</button>
+        </div>
+        <p class="fine">Public-domain images from the
+          <a href="https://www.artic.edu/open-access" target="_blank" rel="noopener">Art Institute of Chicago</a> open-access collection (CC0).</p>
+      </section>
+
+      <!-- Study settings (both modes) -->
+      <section class="group" id="sec-study">
+        <h2>Study</h2>
+        <div class="seg" id="style-seg" role="radiogroup" aria-label="Study style">
+          <button data-style="gray" role="radio">Grayscale</button>
+          <button data-style="values" role="radio">Values</button>
+          <button data-style="poster" role="radio">Main colors</button>
+        </div>
+
+        <div id="values-ctl">
+          <div class="field">
+            <span class="label">Number of values</span>
+            <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
+              <button data-n="2" role="radio" title="Two values (notan)">2</button>
+              <button data-n="3" role="radio">3</button>
+              <button data-n="4" role="radio">4</button>
+              <button data-n="5" role="radio">5</button>
+              <button data-n="6" role="radio">6</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="label-row">
+              <span class="label">Where values split</span>
+              <span class="row tight">
+                <button class="btn tiny" id="btn-auto" title="Find the natural breaks in this image">Fit to image</button>
+                <button class="btn tiny" id="btn-even" title="Evenly spaced breaks">Even</button>
+              </span>
+            </div>
+            <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
+            <div id="thresholds" class="thresholds"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="levels-mode">Paint each value as</label>
+            <select id="levels-mode">
+              <option value="even">Even steps, dark to light</option>
+              <option value="average">That area's average value</option>
+              <option value="custom">Custom (match my markers)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="poster-ctl" hidden>
+          <div class="field">
+            <span class="label">Number of colors</span>
+            <div class="seg small" id="k-seg" role="radiogroup" aria-label="Number of colors">
+              <button data-k="2" role="radio">2</button>
+              <button data-k="3" role="radio">3</button>
+              <button data-k="4" role="radio">4</button>
+              <button data-k="5" role="radio">5</button>
+              <button data-k="6" role="radio">6</button>
+              <button data-k="8" role="radio">8</button>
+            </div>
+          </div>
+        </div>
+
+        <label class="check" id="color-ctl"><input type="checkbox" id="keep-color"> <span id="keep-color-label">Keep color</span></label>
+
+        <div class="swatches" id="swatches" aria-label="Values in this study"></div>
+        <p class="hint" id="swatch-hint">Value scale 0 (black) to 10 (white), like Munsell value.</p>
+
+        <div class="field">
+          <div class="label-row">
+            <label class="label" for="blur">Squint (blur)</label>
+            <output id="blur-out" for="blur">0</output>
+          </div>
+          <input type="range" id="blur" min="0" max="100" step="1" value="0">
+        </div>
+      </section>
+
+      <section class="group" id="sec-overlay">
+        <h2>Grid</h2>
+        <label class="check"><input type="checkbox" id="grid-on"> Show grid <kbd>G</kbd></label>
+        <div class="grid-fields">
+          <label>Columns <input type="number" id="grid-cols" min="1" max="24" value="3"></label>
+          <label>Rows <input type="number" id="grid-rows" min="1" max="24" value="3"></label>
+        </div>
+        <div class="row tight">
+          <button class="btn tiny" data-grid="3">3 × 3</button>
+          <button class="btn tiny" data-grid="4">4 × 4</button>
+          <button class="btn tiny" data-grid="6">6 × 6</button>
+          <button class="btn tiny" data-grid="square" title="Square cells along the short side">Square cells</button>
+        </div>
+        <label class="check"><input type="checkbox" id="grid-diag"> Diagonals</label>
+        <div class="grid-fields">
+          <label>Color
+            <select id="grid-color">
+              <option value="black">Black</option>
+              <option value="white">White</option>
+              <option value="red">Red</option>
+            </select>
+          </label>
+          <label>Strength <input type="range" id="grid-opacity" min="15" max="100" value="70"></label>
+        </div>
+      </section>
+
+      <section class="group" id="sec-export">
+        <h2>Download</h2>
+        <div class="grid-fields">
+          <label>Format
+            <select id="export-format">
+              <option value="png">PNG</option>
+              <option value="jpeg">JPG</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="export-grid" checked> Include grid</label>
+        </div>
+        <div class="stack">
+          <button class="btn" id="btn-dl-study">Download study</button>
+          <button class="btn" id="btn-dl-original">Download cropped original</button>
+          <button class="btn" id="btn-dl-sheet">Download side-by-side sheet</button>
+        </div>
+      </section>
+
+      <p class="fine credits">Inspired by
+        <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
+        <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>Space</kbd> timer.</p>
+    </aside>
+
+    <main class="stage" id="stage">
+      <div class="toolbar">
+        <div class="seg" id="view-seg" role="radiogroup" aria-label="View">
+          <button data-view="both" role="radio" title="Original and study side by side">Both</button>
+          <button data-view="study" role="radio">Study</button>
+          <button data-view="original" role="radio">Original</button>
+        </div>
+        <div class="row tight">
+          <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
+          <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
+          <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
+        </div>
+      </div>
+
+      <div class="panels" id="panels" data-view="both">
+        <figure class="panel" id="panel-original">
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-original"></canvas><canvas class="overlay"></canvas></div><figcaption>Original</figcaption></div>
+        </figure>
+        <figure class="panel" id="panel-study">
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-study"></canvas><canvas class="overlay"></canvas></div><figcaption id="study-caption">Study</figcaption></div>
+        </figure>
+        <div class="empty" id="empty">
+          <div class="empty-box" id="empty-reference">
+            <p class="empty-title">Bring in a reference</p>
+            <p>Drop an image here, paste one, or</p>
+            <label class="btn primary file-btn">Choose an image…<input type="file" id="file-input-2" accept="image/*"></label>
+          </div>
+          <div class="empty-box" id="empty-master" hidden>
+            <p class="empty-title">Find a master painting</p>
+            <p>Search the museum library for an artist or subject, then choose <b>Study</b> or build a timed session.</p>
+          </div>
+        </div>
+        <div class="busy" id="busy" hidden>Loading…</div>
+      </div>
+
+      <p class="credit" id="credit"></p>
+
+      <div class="timerbar" id="timerbar" hidden>
+        <div class="timer-main">
+          <div class="timer-status" id="timer-status">Ready</div>
+          <div class="timer-clock" id="timer-clock" aria-live="off">10:00</div>
+        </div>
+        <div class="timer-buttons">
+          <button class="btn primary" id="t-play" title="Start / pause (Space)">Start</button>
+          <button class="btn" id="t-restart" title="Restart this countdown">Restart</button>
+          <button class="btn" id="t-skip" title="Skip to the next step">Skip</button>
+          <button class="btn" id="t-stop" title="Stop and reset">Stop</button>
+        </div>
+        <div class="timer-settings">
+          <label>Time
+            <select id="t-minutes">
+              <option value="0.5">30 sec</option>
+              <option value="1">1 min</option>
+              <option value="2">2 min</option>
+              <option value="3">3 min</option>
+              <option value="5">5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+              <option value="20">20 min</option>
+              <option value="30">30 min</option>
+              <option value="45">45 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </label>
+          <label title="Draw the same image more than once">Rounds
+            <select id="t-rounds">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </label>
+          <label title="A pause to turn the page">Break
+            <select id="t-break">
+              <option value="0">None</option>
+              <option value="5">5 sec</option>
+              <option value="10">10 sec</option>
+              <option value="20">20 sec</option>
+              <option value="30">30 sec</option>
+              <option value="60">1 min</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="t-chime" checked> Chime</label>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="crop-modal" hidden role="dialog" aria-modal="true" aria-label="Crop image">
+    <div class="modal-bar">
+      <label>Canvas size <select id="crop-preset"></select></label>
+      <button class="btn" id="crop-orient" title="Switch between portrait and landscape">Portrait</button>
+      <span class="crop-info" id="crop-info"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="crop-reset">Full image</button>
+      <button class="btn" id="crop-cancel">Cancel</button>
+      <button class="btn primary" id="crop-apply">Apply crop</button>
+    </div>
+    <div class="crop-area"><canvas id="crop-canvas"></canvas></div>
+    <p class="modal-hint">Drag a corner to resize, drag inside to move, or drag outside to draw a new crop.</p>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="js/color.js"></script>
+  <script src="js/process.js"></script>
+  <script src="js/museum.js"></script>
+  <script src="js/timer.js"></script>
+  <script src="js/crop.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
