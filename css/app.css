@@ -310,6 +310,8 @@ figcaption { text-align: center; color: var(--on-stage); font-size: 12.5px; heig
 .crop-info { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .crop-custom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .crop-custom input { width: 72px; }
+.crop-guides { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.compose-kinds .check { margin-top: 6px; }
 input.invalid { border-color: var(--danger); }
 .spacer { flex: 1; }
 .crop-area { flex: 1; min-height: 0; position: relative; }

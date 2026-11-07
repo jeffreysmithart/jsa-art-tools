@@ -25,7 +25,7 @@ v1 is complete, and most of v2 is too (12 merged pull requests, plus memory mode
 
 - **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; and a **history** of everything studied.
 - **Study:** **presets** (built-in and your own); Grayscale / Color / Main colors; 2–6 values with adjustable splits (fit to image, even, or dragged); how values are painted (area average by default, even steps, or custom marker values); squint; and **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
-- **Canvas:** grid (any columns × rows, square cells, diagonals) and downloads (study, cropped original, side-by-side or comparison sheet).
+- **Canvas:** composition guides (rule of thirds, golden section, diagonals with their reciprocals, and lines through the crossings), also shown in Crop for framing reference photos; grid (any columns × rows, square cells, diagonals); and downloads (study, cropped original, side-by-side or comparison sheet).
 - **Log:** practice time this week, streaks, a month calendar shaded by time, and per-day detail of what was studied. Downloads as CSV.
 
 Also: crop with canvas presets and custom sizes, flip, a timer with rounds, breaks and timed sessions through a list or a set, **memory mode** (look, then draw with the image hidden; logged separately), **Present** mode, **Try presets** across a whole set, keyboard shortcuts, and touch sizing for iPad.
@@ -41,6 +41,10 @@ v3, a larger project to scope on its own:
 
 - **Color gamut view:** plot an image's colors on a color wheel.
 - **Limited-palette recolor:** for example Prussian blue, yellow ocher, vermillion, black and white, using pigment-mixing simulation (check the license of any mixing library), and flag colors the palette can't reach.
+
+Composition, next step:
+
+- **Diagonal construction grid** (inspired by the "Magic Grid" idea painters such as Kevin Macpherson teach): draw diagonals across the canvas and its rectangles, then verticals and horizontals through where lines cross, so the picture gets a web of connected, unequal shapes to fit the subject to. Every grid comes out different, so it would have a **New grid** button, and the download would mark where each line meets the edge (as a fraction, or in inches for a custom canvas size) so the same grid can be drawn on the panel. Build only after trying the composition guides on real photos. Keep its name generic ("Diagonal grid"), not "Magic Grid".
 
 Smaller ideas raised along the way:
 
@@ -77,6 +81,7 @@ Smaller ideas raised along the way:
 - **Values are CIE L\*,** shown on a 0–10 scale.
 - **"Fit to image" splits refit** to each new image; even and hand-dragged splits stay put.
 - **Plain HTML, CSS and JS** with no build step.
+- **Bump the `?v=` version** on the stylesheet and script tags in `index.html` (all of them, to the same date-based value) whenever CSS or JS changes. Otherwise browsers can pair the new page with old cached scripts, and new buttons do nothing.
 
 **Emil Kowalski UI skills.** These were used for the UI reviews (`emil-ui-review`, `emil-design-foundations`, `emil-color`, `emil-ui-polish`, `emil-touch-and-accessibility`, …). They're paid, per-user content, so they're deliberately **not** in this public repo.
 - **Cloud sessions:** reinstall with the owner's aiforui.dev install command using `--global`, or upload the skill folders to claude.ai account skills, which sync to all sessions.

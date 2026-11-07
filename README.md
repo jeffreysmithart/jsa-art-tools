@@ -9,7 +9,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 **Layout:** the sidebar has four tabs:
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
-- **Canvas** holds the grid and downloads.
+- **Canvas** holds the composition guides, the grid and downloads.
 - **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied, for how long, and how many timed rounds (and memory rounds) you drew (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
 
 The study image and its toolbar stay in view whichever tab is open. Choosing your own image switches to Study automatically. On touch devices, controls are at least 44 px and text fields 16 px, so iPad Safari doesn't zoom.
@@ -26,6 +26,7 @@ The study image and its toolbar stay in view whichever tab is open. Choosing you
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** the **average** of each area (the default, true to the image's light key), **even steps** from dark to light (most contrast), or **custom**, which starts from the averages so you can adjust each value to match your markers (0 = black, 10 = white).
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).
+- **Composition guides** (`L`), separate from the grid: **Rule of thirds**, **Golden section** (lines at 0.382 and 0.618), **Diagonals** (corner to corner, plus the reciprocals: the lines at right angles to them from the other corners), and **Lines through the crossings** (verticals and horizontals through where the reciprocals meet the diagonals). Dots mark where lines meet. The guides you choose also show in **Crop**, with toggles there, so you can frame a reference photo with the horizon and big shapes on them. Downloads include them with **Include grid and guides**.
 - **Crop** with canvas-size presets (5×7 to 36×48, panoramic 12×24 and 18×36, square, original), portrait or landscape, or **Custom size**: type your canvas's width × height (any unit, decimals allowed) and the crop locks to those proportions. Your last custom size is remembered.
 - **Study sets:** named collections that mix museum paintings and your own photos. Add the image you're studying with **+ Set** in the toolbar (or `S`). Open any image with a tap, or run a **Timed session** through a set. Rename, delete, and **Export / Import** a set as a file, with photos included, to back it up or move it to another device.
 - **Presets:** one-tap study settings, like Lightroom presets. The built-in ones are Notan, 3 values, 4 values with even steps, 5 values, Squint with 3 values, Color poster with 4 values, 5 main colors, and Grayscale. **Save…** stores your current settings as your own preset. A preset remembers how its splits were set: **Fit to image** splits refit to each new image, while **Even** or hand-dragged splits stay put. The menu shows the matching preset, or "Custom settings".
@@ -40,7 +41,7 @@ The study image and its toolbar stay in view whichever tab is open. Choosing you
 - In a Master Copy session it moves through the queue automatically. A chime plays at the end of each round, and the screen stays awake while the timer runs.
 - **Memory mode** (`M`, or **Memory** in the timer): each round starts with a look of 15 seconds to 90 seconds, then the image is hidden while you draw from memory. It comes back when the round ends (and during the break) so you can compare. **Peek at the reference** shows it again if you're stuck; that round then counts as a regular timed round. It works with rounds, breaks and timed sessions, and the Log counts memory rounds separately.
 
-Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `M` memory mode, `0` all values, `2`–`6` number of values, `Space` start/pause.
+Keyboard: `G` grid, `L` composition guides, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `M` memory mode, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
 Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They don't sync between devices; use Export / Import to move a set. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), so export sets you care about, or add the site to your Home Screen.
 
@@ -79,6 +80,7 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/color.js`: color and value math (sRGB ↔ CIE Lab)
 - `js/process.js`: blur, value bands, main colors
 - `js/crop.js`: crop tool and canvas presets
+- `js/compose.js`: composition guides (thirds, golden section, diagonals and their crossings)
 - `js/warp.js`, `js/squareup.js`: perspective correction and the square-up screen for study photos
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset

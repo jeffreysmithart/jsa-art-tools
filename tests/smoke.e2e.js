@@ -52,7 +52,7 @@ function check(cond, msg) {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   // the main page runs without the image relay (Art Institute only), like a fresh setup
-  await page.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await page.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
 
   // a painted "landscape" test image, made in the browser
   await page.goto(BASE);
@@ -111,7 +111,21 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
-  // threshold slider changes the study
+  // composition guides: rule of thirds, golden section, diagonals, crossings
+  const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  const gridInk = await inkOn(page);
+  await page.keyboard.press('l');
+  const thirdsInk = await inkOn(page);
+  const cs = await page.evaluate(() => window.VST.app.settings.compose);
+  check(cs.on && cs.thirds && thirdsInk > gridInk, `L shows the rule of thirds over the study (${gridInk} -> ${thirdsInk} px)`);
+  await page.check('[data-compose="diag"]');
+  await page.check('[data-compose="cross"]');
+  const diagInk = await inkOn(page);
+  check(diagInk > thirdsInk, `diagonals and crossing lines add more guides (${diagInk} px)`);
+  await page.screenshot({ path: path.join(OUT, '2b-composition.png') });
+  await page.keyboard.press('l');
+  check((await inkOn(page)) === gridInk && (await page.evaluate(() => window.VST.app.settings.compose.diag)), 'L hides the guides and keeps the choices');
+
   const before = await page.$eval('#swatches .swatch .pct', (d) => d.textContent);
   await page.$eval('#thresholds input', (i) => { i.value = 80; i.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(100);
@@ -214,6 +228,16 @@ function check(cond, msg) {
   await page.screenshot({ path: path.join(OUT, '4b-crop-custom.png') });
 
   await page.selectOption('#crop-preset', '8x10');
+  // the chosen guides show in Crop, and can be changed there
+  check(await page.$eval('[data-guide="diag"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'Crop shows the guides chosen in the Canvas tab');
+  const cropInk = () => page.$eval('#crop-canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) n++; return n; });
+  const withDiag = await cropInk();
+  await page.click('[data-guide="diag"]');
+  await page.click('[data-guide="cross"]');
+  const cset = await page.evaluate(() => window.VST.app.settings.compose);
+  check(!cset.diag && !cset.cross && !cset.on && (await cropInk()) < withDiag, 'turning guides off in Crop redraws it, without showing guides over the study');
+  await page.click('[data-guide="golden"]');
+  check(await page.evaluate(() => window.VST.app.settings.compose.golden) && await page.isChecked('[data-compose="golden"]'), 'a guide chosen in Crop is checked in the Canvas tab too');
   await page.screenshot({ path: path.join(OUT, '4-crop.png') });
   await page.click('#crop-apply');
   await page.keyboard.press('c');
@@ -361,7 +385,7 @@ function check(cond, msg) {
   aware(mp);
   mp.on('pageerror', (e) => errors.push(e.message));
   const relayed = [];
-  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
+  await mp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
   await mp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await mp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await mp.route('https://collectionapi.metmuseum.org/**', (r) => {
@@ -486,7 +510,7 @@ function check(cond, msg) {
   const cp = await cctx.newPage();
   aware(cp);
   cp.on('pageerror', (e) => errors.push(e.message));
-  await cp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await cp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await cp.goto(BASE);
   await cp.click('#tab-reference');
   check(await cp.$eval('#view-compare', (b) => b.disabled), 'Compare is unavailable until a study photo is added');
@@ -590,7 +614,7 @@ function check(cond, msg) {
   sp.on('pageerror', (e) => errors.push(e.message));
   const answers = [];
   sp.on('dialog', (d) => d.accept(answers.length ? answers.shift() : undefined));
-  await sp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await sp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await sp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await sp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await sp.goto(BASE);
@@ -682,7 +706,7 @@ function check(cond, msg) {
   pp.on('pageerror', (e) => errors.push(e.message));
   const pAnswers = [];
   pp.on('dialog', (d) => d.accept(pAnswers.length ? pAnswers.shift() : undefined));
-  await pp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await pp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await pp.goto(BASE);
   await pp.click('#tab-reference');
   await pp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
@@ -755,7 +779,7 @@ function check(cond, msg) {
   const tctx = await browser.newContext({ viewport: { width: 1180, height: 820 } });
   const tp = await tctx.newPage();
   tp.on('pageerror', (e) => errors.push(e.message));
-  await tp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await tp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await tp.goto(BASE);
   const panelOn = (name) => tp.$eval(`#ptab-${name}`, (t) => t.getAttribute('aria-selected') === 'true');
   check(await panelOn('images') && await tp.$eval('#panel-study', (x) => x.hidden), 'the sidebar opens on Images, with Study and Canvas in their own tabs');
@@ -809,7 +833,7 @@ function check(cond, msg) {
   lp.on('pageerror', (e) => errors.push(e.message));
   const lAnswers = [];
   lp.on('dialog', (d) => d.accept(lAnswers.length ? lAnswers.shift() : undefined));
-  await lp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await lp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await lp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await lp.goto(BASE);
   await lp.click('#ptab-log');
@@ -849,7 +873,7 @@ function check(cond, msg) {
   const ip = await ipad.newPage();
   aware(ip);
   ip.on('pageerror', (e) => errors.push(e.message));
-  await ip.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await ip.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await ip.goto(BASE);
   await ip.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
   await ip.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
