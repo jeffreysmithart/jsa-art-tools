@@ -238,7 +238,7 @@
           <span class="spacer"></span>
           <button class="btn tiny danger" id="log-clear" type="button">Clear log</button>
         </div>
-        <p class="fine">Study time counts while an image is on screen (it pauses after 30 idle minutes unless a timer is running). Saved in this browser.</p>
+        <p class="fine">Study time counts while an image is on screen (it pauses after 30 idle minutes unless a timer is running). Rounds drawn from memory are counted separately. Saved in this browser.</p>
       </section>
       </div>
 
@@ -291,7 +291,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>Space</kbd> timer.</p>
       </div>
     </aside>
 
@@ -335,6 +335,13 @@
           </div>
         </div>
         <div class="busy" id="busy" hidden>Loading…</div>
+        <div class="memory-cover" id="memory-cover" hidden>
+          <div class="memory-box">
+            <p class="empty-title">Draw from memory</p>
+            <p>The reference is hidden. It comes back when the round ends, so you can compare.</p>
+            <button class="btn" id="memory-peek" type="button" title="Show the reference again (this round then counts as a regular timed round)">Peek at the reference</button>
+          </div>
+        </div>
       </div>
 
       <p class="credit" id="credit"></p>
@@ -383,6 +390,16 @@
               <option value="20">20 sec</option>
               <option value="30">30 sec</option>
               <option value="60">1 min</option>
+            </select>
+          </label>
+          <label title="Look at the image first, then draw it with the image hidden (M)">Memory
+            <select id="t-memory">
+              <option value="0">Off</option>
+              <option value="15">Look 15 sec</option>
+              <option value="30">Look 30 sec</option>
+              <option value="45">Look 45 sec</option>
+              <option value="60">Look 1 min</option>
+              <option value="90">Look 90 sec</option>
             </select>
           </label>
           <label class="check"><input type="checkbox" id="t-chime" checked> Chime</label>

@@ -53,6 +53,8 @@
     minutes: 10,
     rounds: 1,
     breakSec: 10,
+    memorySec: 0, // memory mode: look this long, then draw with the image hidden (0 = off)
+    memoryLast: 30, // the look time M turns back on
     chime: true,
     paintingsOnly: true,
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
@@ -1192,7 +1194,10 @@
       return;
     }
     const t = LG.totals(day);
-    sum.textContent = `${fmtDur(t.secs)} · ${plural(t.images, 'image')}` + (t.rounds ? ` · ${plural(t.rounds, 'timed round')} (${fmtDur(t.drawSecs)})` : '');
+    sum.textContent =
+      `${fmtDur(t.secs)} · ${plural(t.images, 'image')}` +
+      (t.rounds ? ` · ${plural(t.rounds, 'timed round')} (${fmtDur(t.drawSecs)})` : '') +
+      (t.memRounds ? `, ${t.memRounds} from memory` : '');
     box.appendChild(sum);
     const ul = document.createElement('ul');
     ul.className = 'log-list';
@@ -1208,7 +1213,7 @@
       if (thumb) row.querySelector('img').src = thumb;
       row.querySelector('b').textContent = e.title || 'Untitled';
       row.querySelector('.lr-text span').textContent = [e.artist, e.museum || (e.source === 'upload' ? 'My photo' : '')].filter(Boolean).join(' · ');
-      row.querySelector('.lr-time').textContent = fmtDur(e.secs) + (e.rounds ? ` · ${e.rounds}×` : '');
+      row.querySelector('.lr-time').textContent = fmtDur(e.secs) + (e.rounds ? ` · ${e.rounds}×` : '') + (e.memRounds ? ` · ${e.memRounds} from memory` : '');
       row.title = `Study ${e.title || 'this image'} again`;
       row.addEventListener('click', () => openItem(item));
       li.appendChild(row);
@@ -2318,16 +2323,20 @@
 
   /*
    * One flow covers both modes:
-   *   draw (minutes) -> [break] -> next round of the same image, or
+   *   [look] -> draw (minutes) -> [break] -> next round of the same image, or
    *   in a Master Copy session, the next painting in the queue.
+   * In memory mode each round starts with a look phase (the image shows for
+   * S.memorySec), then the image is hidden while you draw, and comes back
+   * when the round ends so you can compare.
    */
-  const flow = { session: false, index: 0, round: 1, phase: 'draw', pending: null };
+  const flow = { session: false, index: 0, round: 1, phase: 'draw', pending: null, memory: false, peeked: false };
 
   const countdown = new T.Countdown({
     onTick(ms, running) {
       VST.log.setTimerRunning(running && flow.phase === 'draw');
       $('#timer-clock').textContent = T.format(ms);
       $('#timer-clock').classList.toggle('break', flow.phase === 'break');
+      $('#timer-clock').classList.toggle('look', flow.phase === 'look');
       $('#timerbar').classList.toggle('ending', flow.phase === 'draw' && running && ms <= 10000);
       $('#t-play').textContent = running ? 'Pause' : ms < countdown.duration * 1000 && ms > 0 ? 'Resume' : 'Start';
     },
@@ -2338,22 +2347,50 @@
     return Math.round(S.minutes * 60);
   }
 
+  /** Hidden while drawing from memory, unless you chose to peek. */
+  function memoryHiding() {
+    return flow.phase === 'draw' && flow.memory && !flow.peeked;
+  }
+
   function updateTimerUi() {
     const visible = S.timerVisible || flow.session;
     $('#timerbar').hidden = !visible;
     $('#btn-timer').setAttribute('aria-pressed', String(visible));
+    const fresh = countdown.remainingMs >= countdown.duration * 1000;
     const parts = [];
     if (flow.phase === 'break') {
       parts.push(flow.pending === 'image' ? 'Break · next painting' : flow.pending === 'round' ? `Break · round ${flow.round + 1} next` : 'Break');
+      if (flow.memory) parts.push('compare with the reference');
     } else {
       if (S.rounds > 1) parts.push(`Round ${flow.round} of ${S.rounds}`);
-      parts.push(countdown.running ? 'Drawing' : 'Ready');
+      if (flow.phase === 'look') parts.push(countdown.running ? 'Look and remember' : fresh ? 'Ready · look first, then draw from memory' : 'Paused · looking');
+      else if (memoryHiding()) parts.push(countdown.running ? 'Drawing from memory' : 'Paused');
+      else parts.push(countdown.running ? 'Drawing' : fresh ? 'Ready' : 'Paused');
     }
     if (flow.session) parts.unshift(`Painting ${flow.index + 1} of ${queue.length}`);
     $('#timer-status').textContent = parts.join(' · ');
-    $('#t-skip').hidden = !(flow.session || S.rounds > 1 || flow.phase === 'break');
+    $('#t-skip').hidden = !(flow.session || S.rounds > 1 || flow.phase === 'break' || flow.phase === 'look' || flow.memory);
     $('#btn-session').textContent = flow.session ? 'Stop session' : 'Start timed session';
+    const hide = memoryHiding();
+    $('#memory-cover').hidden = !hide;
+    $('#panels').classList.toggle('memory-hidden', hide);
     requestAnimationFrame(layout);
+  }
+
+  /** Get the first phase of a round ready (look in memory mode, else draw) without starting it. */
+  function armRound() {
+    flow.memory = S.memorySec > 0;
+    flow.peeked = false;
+    flow.pending = null;
+    flow.phase = flow.memory ? 'look' : 'draw';
+    countdown.set(flow.memory ? S.memorySec : drawSeconds());
+  }
+
+  function startRound() {
+    armRound();
+    countdown.start();
+    T.keepAwake(true);
+    updateTimerUi();
   }
 
   function startDraw() {
@@ -2366,10 +2403,16 @@
   }
 
   function onPhaseEnd(natural) {
-    if (natural && flow.phase === 'draw') VST.log.round(countdown.duration);
+    if (flow.phase === 'look') {
+      // time's up for looking: hide the image and draw
+      if (S.chime) T.chime('soft');
+      startDraw();
+      return;
+    }
+    if (natural && flow.phase === 'draw') VST.log.round(countdown.duration, { memory: flow.memory && !flow.peeked });
     if (flow.phase === 'break') {
       if (flow.pending === 'round') flow.round++;
-      startDraw();
+      startRound();
       return;
     }
     let next = null;
@@ -2395,35 +2438,36 @@
       updateTimerUi();
     } else {
       if (next === 'round') flow.round++;
-      startDraw();
+      startRound();
     }
   }
 
   function finishFlow() {
     const wasSession = flow.session;
+    const wasMemory = flow.memory;
     Object.assign(flow, { session: false, index: 0, round: 1, phase: 'draw', pending: null });
-    countdown.set(drawSeconds());
+    armRound();
     T.keepAwake(presenting);
     updateTimerUi();
     renderQueue();
-    $('#timer-status').textContent = wasSession ? 'Session complete. Nice work.' : 'Done';
+    $('#timer-status').textContent = (wasSession ? 'Session complete. Nice work.' : 'Done') + (wasMemory ? ' Compare with the reference.' : '');
   }
 
   function stopFlow() {
     finishFlow();
-    $('#timer-status').textContent = 'Ready';
+    updateTimerUi();
   }
 
   async function startSession() {
     if (!queue.length) return toast('Add some paintings to the session first.');
     T.unlockAudio();
-    Object.assign(flow, { session: true, index: 0, round: 1, phase: 'draw', pending: null });
+    Object.assign(flow, { session: true, index: 0, round: 1, phase: 'draw', pending: null, memory: false, peeked: false });
     S.timerVisible = true;
     renderQueue();
     updateTimerUi();
     const ok = await openItem(queue[0]);
     if (!ok || !flow.session) return;
-    startDraw();
+    startRound();
   }
 
   $('#btn-session').addEventListener('click', () => (flow.session ? stopFlow() : startSession()));
@@ -2436,7 +2480,7 @@
   });
   function playPause() {
     T.unlockAudio();
-    if (!countdown.running && countdown.remainingMs <= 0) countdown.set(drawSeconds());
+    if (!countdown.running && countdown.remainingMs <= 0) armRound();
     countdown.toggle();
     T.keepAwake(presenting || countdown.running);
     updateTimerUi();
@@ -2446,18 +2490,48 @@
     countdown.restart();
     updateTimerUi();
   });
-  $('#t-skip').addEventListener('click', () => countdown.finish());
+  $('#t-skip').addEventListener('click', () => {
+    T.unlockAudio();
+    countdown.finish();
+  });
   $('#t-stop').addEventListener('click', stopFlow);
+  $('#memory-peek').addEventListener('click', () => {
+    // seeing the image again means this round no longer counts as from memory
+    flow.peeked = true;
+    updateTimerUi();
+  });
+
+  /** Memory mode: look for `sec` seconds before each round (0 = off). */
+  function setMemory(sec) {
+    S.memorySec = sec;
+    if (sec) S.memoryLast = sec;
+    $('#t-memory').value = String(sec);
+    // a round that hasn't started yet picks up the change
+    if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
+    updateTimerUi();
+    save();
+  }
+  $('#t-memory').addEventListener('change', (e) => setMemory(+e.target.value));
+  function toggleMemory() {
+    const on = !(S.memorySec > 0);
+    if (on && !S.timerVisible && !flow.session) {
+      S.timerVisible = true;
+    }
+    setMemory(on ? S.memoryLast || 30 : 0);
+    toast(on ? `Memory mode: look for ${T.format(S.memorySec * 1000)}, then draw with the image hidden.` : 'Memory mode off.');
+  }
 
   function syncTimerControls() {
     $('#t-minutes').value = String(S.minutes);
     $('#t-rounds').value = String(S.rounds);
     $('#t-break').value = String(S.breakSec);
+    $('#t-memory').value = String(S.memorySec);
     $('#t-chime').checked = S.chime;
   }
   $('#t-minutes').addEventListener('change', (e) => {
     S.minutes = +e.target.value;
     if (flow.phase === 'draw' && !countdown.running) countdown.set(drawSeconds());
+    updateTimerUi();
     save();
   });
   $('#t-rounds').addEventListener('change', (e) => {
@@ -2551,6 +2625,7 @@
     else if (k === 'f') toggleFlip();
     else if (k === 'c') openCrop();
     else if (k === 't') $('#btn-timer').click();
+    else if (k === 'm') toggleMemory();
     else if (k === 'v') {
       const order = mine.el ? ['both', 'study', 'original', 'compare'] : ['both', 'study', 'original'];
       setView(order[(order.indexOf(S.view) + 1) % order.length]);
@@ -2580,7 +2655,7 @@
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');
-  countdown.set(drawSeconds());
+  armRound();
   renderQueue();
   setMode(S.mode);
   setPanel(S.panel);

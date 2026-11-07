@@ -243,6 +243,37 @@ function check(cond, msg) {
   check(clock === '0:29' || clock === '0:28', `timer counts down (${clock})`);
   await page.click('#t-stop');
 
+  // memory mode: look, then draw with the image hidden, then it comes back
+  const covered = () => page.isVisible('#memory-cover');
+  const memRec = () => page.evaluate(() => window.VST.log.days()[window.VST.log.dayKey()].items[window.VST.app.img.item.id] || {});
+  const memBefore = (await memRec()).memRounds || 0;
+  await page.selectOption('#t-memory', '30');
+  check((await page.textContent('#timer-clock')) === '0:30' && (await page.textContent('#timer-status')).includes('look first'), 'memory mode arms a 30-second look');
+  await page.click('#t-play');
+  check(!(await covered()) && (await page.textContent('#timer-status')).includes('Look and remember'), 'the image shows while you look');
+  await page.click('#t-skip');
+  check(await covered() && (await page.textContent('#timer-status')).includes('Drawing from memory'), 'then it is hidden while you draw from memory');
+  check(await page.$eval('#panels #panel-study', (e) => getComputedStyle(e).visibility === 'hidden'), 'the study itself is hidden too');
+  await page.screenshot({ path: path.join(OUT, '4b-memory.png') });
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  check(!(await covered()) && (await page.textContent('#timer-status')).includes('Compare'), 'the reference comes back when the round ends');
+  const mr = await memRec();
+  check(mr.memRounds === memBefore + 1 && mr.rounds >= 1, `a memory round is logged separately (${mr.memRounds} from memory, ${mr.rounds} timed)`);
+  // peeking reveals the image, and the round then isn't counted as from memory
+  await page.click('#t-play');
+  await page.click('#t-skip');
+  check(await covered(), 'second memory round hides the image');
+  await page.click('#memory-peek');
+  check(!(await covered()), 'Peek shows the reference again');
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  check((await memRec()).memRounds === memBefore + 1, 'a round with a peek is not counted as from memory');
+  await page.keyboard.press('m');
+  check((await page.$eval('#t-memory', (e) => e.value)) === '0' && (await page.textContent('#timer-clock')) === '0:30', 'M turns memory mode off (back to the 30-second draw)');
+  await page.keyboard.press('m');
+  check((await page.$eval('#t-memory', (e) => e.value)) === '30', 'M turns it back on at the last look time');
+  await page.keyboard.press('m');
+  await page.click('#t-stop');
+
   // ---- Master Copy mode with stand-in museum ----
   const items = Array.from({ length: 6 }, (_, i) => ({ id: 100 + i, title: `Landscape ${i + 1}`, artist_title: 'George Inness', date_display: '1880', image_id: `img${i}`, artwork_type_title: i === 5 ? 'Print' : 'Painting', is_public_domain: true }));
   await page.route('https://api.artic.edu/**', (route) => {
@@ -803,7 +834,7 @@ function check(cond, msg) {
   const csvPath = path.join(OUT, csvDl.suggestedFilename());
   await csvDl.saveAs(csvPath);
   const csvText = fs.readFileSync(csvPath, 'utf8').trim().split('\n');
-  check(csvText[0] === 'date,title,artist,museum,source,study_minutes,timed_rounds,timed_minutes' && csvText.some((l) => /Landscape 1,George Inness,Art Institute,aic,25\.0,2,20\.0/.test(l)), `the log downloads as a spreadsheet (${csvText.length - 1} rows)`);
+  check(csvText[0] === 'date,title,artist,museum,source,study_minutes,timed_rounds,timed_minutes,memory_rounds,memory_minutes' && csvText.some((l) => /Landscape 1,George Inness,Art Institute,aic,25\.0,2,20\.0,0,0\.0/.test(l)), `the log downloads as a spreadsheet (${csvText.length - 1} rows)`);
   const atCurrentMonth = await lp.evaluate(() => !!document.querySelector('#cal .today'));
   check(atCurrentMonth === (await lp.$eval('#cal-next', (b) => b.disabled)), 'next month is disabled only at the current month');
   await lp.click('#cal-prev');
