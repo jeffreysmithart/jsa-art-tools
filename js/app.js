@@ -1041,7 +1041,7 @@
 
   /* ================= Sidebar tabs: Images / Study / Canvas ================= */
 
-  const PANELS = ['images', 'study', 'canvas'];
+  const PANELS = ['images', 'study', 'canvas', 'log'];
 
   function setPanel(name) {
     if (!PANELS.includes(name)) name = 'images';
@@ -1054,6 +1054,11 @@
       tab.tabIndex = on ? 0 : -1;
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
+    if (name === 'log') {
+      LG.tick();
+      LG.flush();
+      renderLog();
+    }
     save();
   }
 
@@ -1089,6 +1094,164 @@
     }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
   }
   ['#crop-modal', '#square-modal', '#tryon-modal'].forEach((sel) => manageFocus($(sel)));
+
+
+  /* ================= Log tab ================= */
+
+  const LG = VST.log;
+  const logView = { month: LG.dayKey().slice(0, 7), selected: LG.dayKey() };
+
+  /** 45 s · 12 min · 1 h 05 min */
+  function fmtDur(secs) {
+    secs = Math.round(secs || 0);
+    if (secs < 60) return `${secs} s`;
+    const mins = Math.round(secs / 60);
+    if (mins < 60) return `${mins} min`;
+    return `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')} min`;
+  }
+
+  function dayLevel(day) {
+    if (!LG.practiced(day)) return 0;
+    const m = LG.totals(day).secs / 60;
+    return m < 10 ? 1 : m < 30 ? 2 : m < 60 ? 3 : 4;
+  }
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  function renderLog() {
+    const days = LG.days();
+    const today = LG.dayKey();
+    const st = LG.stats(days, today);
+    // summary
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    $('#log-stats').innerHTML =
+      stat(fmtDur(st.weekSecs), `this week · ${plural(st.weekDays, 'day')}`) +
+      stat(plural(st.streak, 'day'), `streak · best ${st.longest}`) +
+      stat(plural(st.monthDays, 'day'), 'this month') +
+      stat(fmtDur(st.totalSecs), `all time · ${plural(st.totalDays, 'day')}`);
+    // month calendar (weeks start on Monday)
+    const [y, m] = logView.month.split('-').map(Number);
+    const first = new Date(y, m - 1, 1);
+    const lead = (first.getDay() + 6) % 7;
+    const count = new Date(y, m, 0).getDate();
+    $('#cal-title').textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    $('#cal-next').disabled = logView.month >= today.slice(0, 7);
+    const cal = $('#cal');
+    cal.innerHTML = '';
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((d) => {
+      const el = document.createElement('div');
+      el.className = 'dow';
+      el.textContent = d;
+      el.setAttribute('aria-hidden', 'true');
+      cal.appendChild(el);
+    });
+    for (let i = 0; i < lead; i++) cal.appendChild(document.createElement('span'));
+    for (let d = 1; d <= count; d++) {
+      const key = `${logView.month}-${String(d).padStart(2, '0')}`;
+      const day = days[key];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d;
+      b.dataset.day = key;
+      const lv = dayLevel(day);
+      if (lv) b.classList.add(`lv${lv}`);
+      if (key === today) b.classList.add('today');
+      if (key === logView.selected) b.classList.add('selected');
+      b.disabled = key > today;
+      const t = LG.totals(day);
+      const date = new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      b.setAttribute('aria-label', lv ? `${date}: ${fmtDur(t.secs)}, ${plural(t.images, 'image')}` : `${date}: no practice`);
+      b.setAttribute('aria-pressed', String(key === logView.selected));
+      b.addEventListener('click', () => {
+        logView.selected = key;
+        renderLog();
+      });
+      cal.appendChild(b);
+    }
+    renderLogDay(days);
+  }
+
+  function renderLogDay(days) {
+    const box = $('#log-day');
+    const key = logView.selected;
+    const day = days[key];
+    const [y, m, d] = key.split('-').map(Number);
+    const title = key === LG.dayKey() ? 'Today' : new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    const entries = day ? Object.values(day.items).filter((e) => e.secs >= 10 || e.rounds).sort((a, b) => b.secs - a.secs) : [];
+    box.innerHTML = '';
+    const h = document.createElement('h3');
+    h.textContent = title;
+    box.appendChild(h);
+    const sum = document.createElement('p');
+    sum.className = 'day-sum';
+    if (!entries.length) {
+      sum.textContent = Object.keys(days).length
+        ? 'No practice logged on this day.'
+        : 'Nothing logged yet. Open an image and study: your time and timed rounds show up here automatically.';
+      box.appendChild(sum);
+      return;
+    }
+    const t = LG.totals(day);
+    sum.textContent = `${fmtDur(t.secs)} · ${plural(t.images, 'image')}` + (t.rounds ? ` · ${plural(t.rounds, 'timed round')} (${fmtDur(t.drawSecs)})` : '');
+    box.appendChild(sum);
+    const ul = document.createElement('ul');
+    ul.className = 'log-list';
+    for (const e of entries) {
+      const saved = L.findItem(e.id);
+      const item = saved || e;
+      const li = document.createElement('li');
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'log-row';
+      const thumb = (saved && saved.thumb) || e.thumb;
+      row.innerHTML = `${thumb ? '<img alt="" loading="lazy">' : '<span class="ph"></span>'}<span class="lr-text"><b></b><span></span></span><span class="lr-time"></span>`;
+      if (thumb) row.querySelector('img').src = thumb;
+      row.querySelector('b').textContent = e.title || 'Untitled';
+      row.querySelector('.lr-text span').textContent = [e.artist, e.museum || (e.source === 'upload' ? 'My photo' : '')].filter(Boolean).join(' · ');
+      row.querySelector('.lr-time').textContent = fmtDur(e.secs) + (e.rounds ? ` · ${e.rounds}×` : '');
+      row.title = `Study ${e.title || 'this image'} again`;
+      row.addEventListener('click', () => openItem(item));
+      li.appendChild(row);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+
+  let logRaf = 0;
+  LG.onChange(() => {
+    if (S.panel !== 'log' || logRaf) return;
+    logRaf = requestAnimationFrame(() => {
+      logRaf = 0;
+      renderLog();
+    });
+  });
+
+  $('#cal-prev').addEventListener('click', () => {
+    const [y, m] = logView.month.split('-').map(Number);
+    logView.month = LG.dayKey(new Date(y, m - 2, 1).getTime()).slice(0, 7);
+    renderLog();
+  });
+  $('#cal-next').addEventListener('click', () => {
+    const [y, m] = logView.month.split('-').map(Number);
+    logView.month = LG.dayKey(new Date(y, m, 1).getTime()).slice(0, 7);
+    renderLog();
+  });
+  $('#log-export').addEventListener('click', () => {
+    LG.flush();
+    const blob = new Blob([LG.csv(LG.days())], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `value-study-log-${LG.dayKey()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+  $('#log-clear').addEventListener('click', () => {
+    if (!confirm('Clear your whole practice log? This can’t be undone. (Your sets and history are kept.)')) return;
+    LG.clear();
+    renderLog();
+  });
 
   /* ================= Downloads ================= */
 

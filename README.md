@@ -6,10 +6,11 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 
 ## What's in v1
 
-**Layout:** the sidebar has three tabs:
+**Layout:** the sidebar has four tabs:
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
 - **Canvas** holds the grid and downloads.
+- **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied and for how long (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
 
 The study image and its toolbar stay in view whichever tab is open. Choosing your own image switches to Study automatically. On touch devices, controls are at least 44 px and text fields 16 px, so iPad Safari doesn't zoom.
 
