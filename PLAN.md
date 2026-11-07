@@ -81,6 +81,7 @@ Smaller ideas raised along the way:
 - **Values are CIE L\*,** shown on a 0–10 scale.
 - **"Fit to image" splits refit** to each new image; even and hand-dragged splits stay put.
 - **Plain HTML, CSS and JS** with no build step.
+- **Bump the `?v=` version** on the stylesheet and script tags in `index.html` (all of them, to the same date-based value) whenever CSS or JS changes. Otherwise browsers can pair the new page with old cached scripts, and new buttons do nothing.
 
 **Emil Kowalski UI skills.** These were used for the UI reviews (`emil-ui-review`, `emil-design-foundations`, `emil-color`, `emil-ui-polish`, `emil-touch-and-accessibility`, …). They're paid, per-user content, so they're deliberately **not** in this public repo.
 - **Cloud sessions:** reinstall with the owner's aiforui.dev install command using `--global`, or upload the skill folders to claude.ai account skills, which sync to all sessions.

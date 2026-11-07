@@ -52,7 +52,7 @@ function check(cond, msg) {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   // the main page runs without the image relay (Art Institute only), like a fresh setup
-  await page.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await page.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
 
   // a painted "landscape" test image, made in the browser
   await page.goto(BASE);
@@ -385,7 +385,7 @@ function check(cond, msg) {
   aware(mp);
   mp.on('pageerror', (e) => errors.push(e.message));
   const relayed = [];
-  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
+  await mp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
   await mp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await mp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await mp.route('https://collectionapi.metmuseum.org/**', (r) => {
@@ -510,7 +510,7 @@ function check(cond, msg) {
   const cp = await cctx.newPage();
   aware(cp);
   cp.on('pageerror', (e) => errors.push(e.message));
-  await cp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await cp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await cp.goto(BASE);
   await cp.click('#tab-reference');
   check(await cp.$eval('#view-compare', (b) => b.disabled), 'Compare is unavailable until a study photo is added');
@@ -614,7 +614,7 @@ function check(cond, msg) {
   sp.on('pageerror', (e) => errors.push(e.message));
   const answers = [];
   sp.on('dialog', (d) => d.accept(answers.length ? answers.shift() : undefined));
-  await sp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await sp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await sp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await sp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await sp.goto(BASE);
@@ -706,7 +706,7 @@ function check(cond, msg) {
   pp.on('pageerror', (e) => errors.push(e.message));
   const pAnswers = [];
   pp.on('dialog', (d) => d.accept(pAnswers.length ? pAnswers.shift() : undefined));
-  await pp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await pp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await pp.goto(BASE);
   await pp.click('#tab-reference');
   await pp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
@@ -779,7 +779,7 @@ function check(cond, msg) {
   const tctx = await browser.newContext({ viewport: { width: 1180, height: 820 } });
   const tp = await tctx.newPage();
   tp.on('pageerror', (e) => errors.push(e.message));
-  await tp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await tp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await tp.goto(BASE);
   const panelOn = (name) => tp.$eval(`#ptab-${name}`, (t) => t.getAttribute('aria-selected') === 'true');
   check(await panelOn('images') && await tp.$eval('#panel-study', (x) => x.hidden), 'the sidebar opens on Images, with Study and Canvas in their own tabs');
@@ -833,7 +833,7 @@ function check(cond, msg) {
   lp.on('pageerror', (e) => errors.push(e.message));
   const lAnswers = [];
   lp.on('dialog', (d) => d.accept(lAnswers.length ? lAnswers.shift() : undefined));
-  await lp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await lp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await lp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await lp.goto(BASE);
   await lp.click('#ptab-log');
@@ -873,7 +873,7 @@ function check(cond, msg) {
   const ip = await ipad.newPage();
   aware(ip);
   ip.on('pageerror', (e) => errors.push(e.message));
-  await ip.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await ip.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await ip.goto(BASE);
   await ip.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
   await ip.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
