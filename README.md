@@ -19,13 +19,14 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Paint each value as:** even steps, the area's true average, or **custom** values to match your markers (0 = black, 10 = white).
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).
 - **Crop** with canvas-size presets (5×7 to 24×36, square, original), portrait or landscape.
+- **Present:** hides every control so only the image or images show, as large as the screen allows, for painting from the screen. It goes full screen where the browser allows and keeps the screen awake. Shortcuts still work; press `Esc` or `P`, or tap and choose **Exit presentation**, to bring the controls back.
 - **Download** the study or the cropped original as PNG or JPG, with or without the grid, or a letter-size **side-by-side sheet** with the value scale.
 
 **Timer (optional)**
 - 30 seconds to 60 minutes, 1–5 rounds of the same image, and a break between rounds or paintings to turn the page.
 - In a Master Copy session it moves through the queue automatically. A chime plays at the end of each round, and the screen stays awake while the timer runs.
 
-Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `0` all values, `2`–`6` number of values, `Space` start/pause.
+Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
 Settings and the session queue are remembered in your browser.
 

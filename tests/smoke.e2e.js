@@ -224,6 +224,30 @@ function check(cond, msg) {
   await page.click('#btn-session');
   check(!(await page.evaluate(() => window.VST.app.flow.session)), 'stop session ends it');
 
+  // Present mode: only the images (and a small timer) remain
+  const frameSize = () => page.$eval('#panel-study .frame', (f) => f.getBoundingClientRect().width);
+  const normalWidth = await frameSize();
+  await page.keyboard.press('p');
+  await page.waitForTimeout(150);
+  const hiddenUi = await page.evaluate(() => ['.topbar', '.sidebar', '.toolbar', 'figcaption'].every((s) => getComputedStyle(document.querySelector(s)).display === 'none'));
+  check(await page.evaluate(() => window.VST.app.isPresenting()) && hiddenUi, 'P hides the top bar, controls, toolbar and captions');
+  check((await frameSize()) > normalWidth + 100, `images grow to fill the screen (${Math.round(normalWidth)} -> ${Math.round(await frameSize())}px)`);
+  check(await page.isVisible('#timer-clock') && !(await page.isVisible('.timer-settings')), 'timer shrinks to a small clock');
+  await page.screenshot({ path: path.join(OUT, '7-present.png') });
+  await page.keyboard.press('g');
+  check(await page.evaluate(() => window.VST.app.settings.grid.on) === false, 'shortcuts still work while presenting');
+  await page.keyboard.press('g');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  check(!(await page.evaluate(() => window.VST.app.isPresenting())) && await page.isVisible('.sidebar'), 'Esc brings the controls back');
+  check(Math.abs((await frameSize()) - normalWidth) < 2, 'images return to normal size');
+  await page.click('#btn-present');
+  await page.mouse.move(500, 400);
+  await page.mouse.move(520, 410);
+  await page.waitForSelector('#btn-present-exit.show');
+  await page.click('#btn-present-exit');
+  check(!(await page.evaluate(() => window.VST.app.isPresenting())), 'the Present button enters and the Exit button leaves');
+
   // settings persist across reload
   await page.reload();
   await page.waitForTimeout(300);

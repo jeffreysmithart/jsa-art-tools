@@ -187,7 +187,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>Space</kbd> timer.</p>
     </aside>
 
     <main class="stage" id="stage">
@@ -201,8 +201,10 @@
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
           <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
           <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
+          <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
         </div>
       </div>
+      <button class="btn present-exit" id="btn-present-exit" hidden title="Show the controls again (Esc or P)">Exit presentation</button>
 
       <div class="panels" id="panels" data-view="both">
         <figure class="panel" id="panel-original">

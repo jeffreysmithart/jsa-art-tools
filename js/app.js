@@ -101,6 +101,7 @@
 
   /* ================= State ================= */
 
+  let presenting = false; // Present mode: controls hidden
   const img = { el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
@@ -377,7 +378,7 @@
       const wrap = panel.querySelector('.frame-wrap');
       const frame = panel.querySelector('.frame');
       const box = wrap.getBoundingClientRect();
-      const availH = box.height - 28; // room for the caption
+      const availH = box.height - (presenting ? 0 : 28); // room for the caption
       if (!box.width || availH <= 0) return;
       let w = box.width;
       let h = w / ar;
@@ -1305,7 +1306,7 @@
     const wasSession = flow.session;
     Object.assign(flow, { session: false, index: 0, round: 1, phase: 'draw', pending: null });
     countdown.set(drawSeconds());
-    T.keepAwake(false);
+    T.keepAwake(presenting);
     updateTimerUi();
     renderQueue();
     $('#timer-status').textContent = wasSession ? 'Session complete. Nice work.' : 'Done';
@@ -1340,7 +1341,7 @@
     T.unlockAudio();
     if (!countdown.running && countdown.remainingMs <= 0) countdown.set(drawSeconds());
     countdown.toggle();
-    T.keepAwake(countdown.running);
+    T.keepAwake(presenting || countdown.running);
     updateTimerUi();
   }
   $('#t-play').addEventListener('click', playPause);
@@ -1380,12 +1381,76 @@
     save();
   });
 
+  /* ================= Present mode ================= */
+
+  /*
+   * Hides every control so only the image(s) show, like Photoshop's
+   * presentation mode. Goes full screen where the browser allows it and
+   * keeps the screen awake. Shortcuts (G, F, V, K, 2-6, Space) still work.
+   */
+  let exitHideTimer = 0;
+  function showExitButton() {
+    if (!presenting) return;
+    const b = $('#btn-present-exit');
+    b.classList.add('show');
+    clearTimeout(exitHideTimer);
+    exitHideTimer = setTimeout(() => b.classList.remove('show'), 2500);
+  }
+
+  function fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function setPresenting(on) {
+    if (on && !img.el) return toast('Load an image first.');
+    if (on === presenting) return;
+    presenting = on;
+    document.body.classList.toggle('presenting', on);
+    $('#btn-present-exit').hidden = !on;
+    const root = document.documentElement;
+    try {
+      if (on && !fullscreenElement()) {
+        const req = root.requestFullscreen || root.webkitRequestFullscreen;
+        const p = req && req.call(root);
+        if (p && p.catch) p.catch(() => {});
+      } else if (!on && fullscreenElement()) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        const p = exit && exit.call(document);
+        if (p && p.catch) p.catch(() => {});
+      }
+    } catch (e) {
+      /* full screen isn't available here; the controls are still hidden */
+    }
+    T.keepAwake(presenting || countdown.running);
+    if (on) showExitButton();
+    else $('#btn-present-exit').classList.remove('show');
+    requestAnimationFrame(layout);
+  }
+
+  $('#btn-present').addEventListener('click', () => setPresenting(true));
+  $('#btn-present-exit').addEventListener('click', () => setPresenting(false));
+  // leaving full screen (e.g. the browser's own Esc) also leaves Present mode
+  let enteredFullscreen = false;
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
+    document.addEventListener(ev, () => {
+      if (presenting && !fullscreenElement() && enteredFullscreen) setPresenting(false);
+      enteredFullscreen = !!fullscreenElement();
+    })
+  );
+  ['pointermove', 'pointerdown'].forEach((ev) => document.addEventListener(ev, showExitButton, { passive: true }));
+  // the browser drops the wake lock when the tab is hidden; take it back on return
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && (presenting || countdown.running)) T.keepAwake(true);
+  });
+
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
     if (cropper.isOpen() || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === 'g') toggleGrid();
+    if (k === 'escape' && presenting) setPresenting(false);
+    else if (k === 'p') setPresenting(!presenting);
+    else if (k === 'g') toggleGrid();
     else if (k === 'f') toggleFlip();
     else if (k === 'c') openCrop();
     else if (k === 't') $('#btn-timer').click();
@@ -1417,5 +1482,5 @@
   window.addEventListener('resize', () => drawHistogram());
 
   // exposed for automated tests
-  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown };
+  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting };
 })();

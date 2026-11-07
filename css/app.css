@@ -300,3 +300,31 @@ figcaption { text-align: center; color: #dcdcdc; font-size: 12.5px; height: 28px
   .timer-main { min-width: 0; }
   .toolbar .seg button { padding: 6px 4px; font-size: 13px; }
 }
+
+/* ---------- Present mode: just the image(s), for painting from the screen ---------- */
+body.presenting { overflow: hidden; height: 100%; }
+body.presenting .topbar,
+body.presenting .sidebar,
+body.presenting .toolbar,
+body.presenting .credit,
+body.presenting figcaption { display: none !important; }
+body.presenting .layout { flex-direction: row; }
+body.presenting .stage { flex: 1; height: auto; min-height: 0; }
+body.presenting .panels { padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); gap: 16px; }
+body.presenting .frame { box-shadow: none; }
+body.presenting .timerbar {
+  position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 15;
+  padding: 8px 12px; gap: 12px; border: 0; border-radius: 12px; background: rgba(28,28,28,0.78);
+}
+body.presenting .timer-settings,
+body.presenting #t-restart,
+body.presenting #t-skip,
+body.presenting #t-stop { display: none !important; }
+body.presenting .timer-main { min-width: 0; gap: 10px; }
+body.presenting .timer-clock { font-size: 26px; }
+body.presenting .timer-status { font-size: 12px; }
+.present-exit {
+  position: fixed; top: max(16px, env(safe-area-inset-top)); right: 16px; z-index: 16;
+  background: rgba(28,28,28,0.82); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.present-exit.show { opacity: 1; pointer-events: auto; }
