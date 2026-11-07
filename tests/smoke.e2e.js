@@ -294,6 +294,63 @@ function check(cond, msg) {
   check(remembered.mode === 'master' && remembered.grid, 'settings remembered after reload ' + JSON.stringify(remembered));
   check((await page.$$('#queue li')).length === 5, 'session queue remembered after reload');
 
+  // without the image relay, The Met and Cleveland are listed but need setup
+  const noRelay = await page.$$eval('#museum-filter option', (o) => o.map((x) => [x.value, x.disabled]));
+  check(JSON.stringify(noRelay) === JSON.stringify([['all', false], ['aic', false], ['met', true], ['cma', true]]), 'without the relay, The Met and Cleveland show as needing setup');
+  check(await page.isVisible('#museum-setup'), 'setup note shows without the relay');
+
+  // with the relay: three museums searched together (all responses simulated)
+  const mctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const mp = await mctx.newPage();
+  mp.on('pageerror', (e) => errors.push(e.message));
+  const relayed = [];
+  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/'};" }));
+  await mp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
+  await mp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+  await mp.route('https://collectionapi.metmuseum.org/**', (r) => {
+    const u = new URL(r.request().url());
+    const json = u.pathname.includes('/v1.1/search')
+      ? (check(u.searchParams.get('medium') === 'Paintings', 'The Met is asked for paintings only'), { total: 3, objectIDs: [1, 2, 3] })
+      : u.pathname.endsWith('/3')
+        ? { message: 'Not a valid object' }
+        : { objectID: +u.pathname.split('/').pop(), title: `Met painting ${u.pathname.split('/').pop()}`, artistDisplayName: 'George Inness', objectDate: '1875', objectName: 'Painting', isPublicDomain: true, primaryImage: `https://images.metmuseum.org/x/${u.pathname.split('/').pop()}.jpg`, primaryImageSmall: 'https://images.metmuseum.org/small.jpg', objectURL: 'https://www.metmuseum.org/art/collection/search/1' };
+    r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(json) });
+  });
+  await mp.route('https://images.metmuseum.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png })); // thumbnails: no permission header, display only
+  await mp.route('https://openaccess-api.clevelandart.org/**', (r) => {
+    const u = new URL(r.request().url());
+    check(u.searchParams.get('type') === 'Painting' && u.searchParams.get('cc0') === '1', 'Cleveland is asked for CC0 paintings');
+    r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ info: { total: 1 }, data: [{ id: 9, title: 'Cleveland painting', type: 'Painting', creation_date: '1892', url: 'https://clevelandart.org/art/1', creators: [{ description: 'George Inness (American, 1825–1894)' }], images: { web: { url: 'https://openaccess-cdn.clevelandart.org/1/1_web.jpg' } } }] }) });
+  });
+  await mp.route('https://openaccess-cdn.clevelandart.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png }));
+  await mp.route('https://relay.test/**', (r) => {
+    relayed.push(new URL(r.request().url()).searchParams.get('url'));
+    r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png });
+  });
+  await mp.goto(BASE);
+  await mp.click('#tab-master');
+  check(await mp.isHidden('#museum-setup'), 'setup note hides once the relay is set');
+  await mp.fill('#search-input', 'Inness');
+  await mp.click('#search-form button');
+  await mp.waitForFunction(() => /for “Inness”/.test(document.querySelector('#search-msg').textContent));
+  const labels = await mp.$$eval('#results .card .meta i', (els) => els.map((e) => e.textContent));
+  check(JSON.stringify(labels) === JSON.stringify(['Art Institute', 'The Met', 'Cleveland', 'Art Institute', 'The Met']), `results interleave the museums and skip stale Met records (${labels})`);
+  check((await mp.textContent('#search-msg')).includes('5 public-domain paintings from 3 museums'), 'message counts results and museums');
+  check((await mp.textContent('.card:nth-child(3) .meta span')) === 'George Inness, 1892', 'Cleveland artist name is tidied up');
+  await mp.click('.card:nth-child(2) [data-act="study"]');
+  await mp.waitForFunction(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'met' && window.VST.app.work.w > 0);
+  check(relayed.includes('https://images.metmuseum.org/x/1.jpg'), 'Met study image goes through the relay');
+  check((await mp.textContent('#credit')).includes('The Metropolitan Museum of Art, CC0'), 'Met credit line shows');
+  await mp.click('.card:nth-child(1) [data-act="study"]');
+  await mp.waitForFunction(() => window.VST.app.img.meta.source === 'aic');
+  check(!relayed.some((u) => /artic/.test(u)), 'Art Institute images load directly, not through the relay');
+  await mp.selectOption('#museum-filter', 'cma');
+  await mp.waitForFunction(() => /from Cleveland/.test(document.querySelector('#search-msg').textContent));
+  check((await mp.$$eval('#results .card', (c) => c.length)) === 1, 'filtering to Cleveland shows only Cleveland');
+  await mp.reload();
+  check(await mp.$eval('#museum-filter', (s) => s.value) === 'cma', 'museum filter is remembered');
+  await mctx.close();
+
   // settings saved by the first version (single "style" choice) carry over
   await page.evaluate(() => {
     const st = JSON.parse(localStorage.getItem('value-study:settings'));

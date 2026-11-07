@@ -197,6 +197,8 @@ output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.
 .card .meta { padding: 6px 7px 2px; font-size: 11.5px; line-height: 1.3; flex: 1; }
 .card .meta b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; }
 .card .meta span { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta i { display: block; font-style: normal; font-size: 10.5px; letter-spacing: 0.02em; color: var(--accent); margin-top: 2px; }
+code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card .acts { display: flex; gap: 4px; padding: 6px 7px 7px; }
 .card .acts .btn { flex: 1; padding: 3px 4px; min-height: 26px; font-size: 12px; }
 .card.in-queue { border-color: var(--accent); }

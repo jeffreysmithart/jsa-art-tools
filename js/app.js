@@ -55,6 +55,7 @@
     breakSec: 10,
     chime: true,
     paintingsOnly: true,
+    museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
     cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
     settingsVersion: 3,
   };
@@ -226,7 +227,9 @@
       return true;
     } catch (e) {
       const msg = meta
-        ? 'Couldn’t load that painting from the museum. Check your connection and try again.'
+        ? meta.needsRelay
+          ? 'Couldn’t load that painting through the image relay. Check that the relay is set up (relay/README.md) and try again.'
+          : 'Couldn’t load that painting from the museum. Check your connection and try again.'
         : `${CORS_HELP} (Also check that the link points straight to an image file.)`;
       if (!meta) showUrlMsg(msg, true);
       toast(msg, true);
@@ -1086,9 +1089,43 @@
 
   /* ================= Master Copy: library ================= */
 
-  const museum = VST.museum.sources.aic;
+  const M = VST.museum;
   let queue = (store.get('queue', []) || []).filter((q) => q && q.image);
-  const search = { q: '', page: 0, totalPages: 0, items: [], controller: null };
+  const search = { q: '', items: [], perSource: {}, controller: null };
+
+  /** The museums to search, from the filter (falls back to all available). */
+  function activeSources() {
+    const av = M.available();
+    if (S.museum !== 'all') {
+      const one = av.find((s) => s.id === S.museum);
+      if (one) return [one];
+    }
+    return av;
+  }
+
+  function buildMuseumFilter() {
+    const sel = $('#museum-filter');
+    sel.innerHTML = '';
+    const av = M.available();
+    const add = (value, text, disabled) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      o.disabled = !!disabled;
+      sel.appendChild(o);
+    };
+    add('all', av.length > 1 ? 'All museums' : 'All available');
+    M.all.forEach((s) => {
+      const ok = av.includes(s);
+      add(s.id, ok ? s.name : `${s.name} (needs setup)`, !ok);
+    });
+    if (S.museum !== 'all' && !av.some((s) => s.id === S.museum)) S.museum = 'all';
+    sel.value = S.museum;
+    $('#museum-setup').hidden = !!M.relayBase();
+    const names = av.map((s) => s.name);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    $('#museum-credit').textContent = `Public-domain images (CC0) from the ${list} open-access collections.`;
+  }
 
   function setSearchMsg(text, isError) {
     const el = $('#search-msg');
@@ -1102,36 +1139,66 @@
     if (search.controller) search.controller.abort();
     const controller = new AbortController();
     search.controller = controller;
+    const sources = activeSources();
     if (!more) {
-      Object.assign(search, { q, page: 0, totalPages: 1, items: [] });
+      search.q = q;
+      search.items = [];
+      search.perSource = {};
+      sources.forEach((s) => (search.perSource[s.id] = { page: 0, totalPages: 1, failed: false }));
       $('#results').innerHTML = '';
     }
     setSearchMsg('Searching…');
     $('#btn-more').hidden = true;
+    const hasMore = (s) => {
+      const st = search.perSource[s.id];
+      return st && !st.failed && st.page < st.totalPages;
+    };
     let added = 0;
-    try {
-      // keep fetching pages until there is something to show
-      for (let tries = 0; tries < 4 && search.page < search.totalPages && added < 8; tries++) {
-        const res = await museum.search(q, search.page + 1, controller.signal);
-        search.page = res.page;
-        search.totalPages = res.totalPages;
-        const fresh = res.items.filter((it) => !S.paintingsOnly || /painting/i.test(it.type));
-        search.items.push(...fresh);
-        fresh.forEach(addResultCard);
-        added += fresh.length;
-      }
-      if (controller !== search.controller) return;
-      setSearchMsg(
-        search.items.length
-          ? `${search.items.length} public-domain ${S.paintingsOnly ? 'paintings' : 'works'} for “${q}”.`
-          : `No public-domain ${S.paintingsOnly ? 'paintings' : 'works'} found for “${q}”${S.paintingsOnly ? '. Try turning off “Paintings only”.' : '.'}`
+    // keep fetching pages until there is something to show
+    for (let tries = 0; tries < 3 && added < 8; tries++) {
+      const pending = sources.filter(hasMore);
+      if (!pending.length) break;
+      const results = await Promise.allSettled(
+        pending.map((s) => s.search(q, search.perSource[s.id].page + 1, controller.signal, { paintingsOnly: S.paintingsOnly }))
       );
-      $('#btn-more').hidden = search.page >= search.totalPages;
-      $('#btn-add-all').hidden = !search.items.length;
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      setSearchMsg('Couldn’t reach the museum. Check your connection and try again.', true);
+      if (controller !== search.controller) return;
+      const lists = [];
+      for (let i = 0; i < results.length; i++) {
+        const st = search.perSource[pending[i].id];
+        const r = results[i];
+        if (r.status === 'fulfilled') {
+          st.page = r.value.page;
+          st.totalPages = r.value.totalPages;
+          lists.push(r.value.items);
+        } else {
+          if (r.reason && r.reason.name === 'AbortError') return;
+          st.failed = true;
+        }
+      }
+      // interleave the museums' results so one doesn't crowd out the others
+      const seen = new Set(search.items.map((it) => it.id));
+      for (let i = 0; lists.some((l) => i < l.length); i++) {
+        lists.forEach((l) => {
+          const it = l[i];
+          if (!it || seen.has(it.id)) return;
+          seen.add(it.id);
+          search.items.push(it);
+          addResultCard(it);
+          added++;
+        });
+      }
     }
+    const failed = sources.filter((s) => search.perSource[s.id] && search.perSource[s.id].failed).map((s) => s.short);
+    const what = S.paintingsOnly ? 'paintings' : 'works';
+    const answered = sources.filter((s) => !(search.perSource[s.id] && search.perSource[s.id].failed));
+    const where = answered.length > 1 ? ` from ${answered.length} museums` : answered.length ? ` from ${answered[0].short}` : '';
+    let msg = search.items.length
+      ? `${search.items.length} public-domain ${what}${where} for “${q}”.`
+      : `No public-domain ${what} found for “${q}”${S.paintingsOnly ? '. Try turning off “Paintings only”.' : '.'}`;
+    if (failed.length) msg += ` Couldn’t reach ${failed.join(' or ')}.`;
+    setSearchMsg(msg, failed.length > 0 && !search.items.length);
+    $('#btn-more').hidden = !sources.some(hasMore);
+    $('#btn-add-all').hidden = !search.items.length;
   }
 
   function addResultCard(item) {
@@ -1140,12 +1207,13 @@
     card.dataset.id = item.id;
     card.innerHTML = `
       <button class="thumb" title="Study this painting"><img loading="lazy" alt=""></button>
-      <div class="meta"><b></b><span></span></div>
+      <div class="meta"><b></b><span></span><i></i></div>
       <div class="acts"><button class="btn" data-act="study">Study</button><button class="btn" data-act="queue">+ Session</button></div>`;
     card.querySelector('img').src = item.thumb;
     card.querySelector('img').alt = `${item.title}, ${item.artist}`;
     card.querySelector('b').textContent = item.title;
     card.querySelector('.meta span').textContent = [item.artist, item.date].filter(Boolean).join(', ');
+    card.querySelector('.meta i').textContent = M.available().length > 1 ? item.museum || '' : '';
     card.querySelector('.thumb').addEventListener('click', () => studyItem(item));
     card.querySelector('[data-act="study"]').addEventListener('click', () => studyItem(item));
     card.querySelector('[data-act="queue"]').addEventListener('click', () => toggleQueued(item));
@@ -1160,7 +1228,13 @@
   }
 
   function studyItem(item) {
-    return loadFromUrl(item.image, { meta: item, fallback: item.imageFallback });
+    const url = M.imageUrl(item);
+    if (!url) {
+      toast(`${item.museum || 'This museum'}’s images need the image relay set up first (see relay/README.md).`, true);
+      return Promise.resolve(false);
+    }
+    const fallback = item.imageFallback ? M.imageUrl(item, item.imageFallback) : null;
+    return loadFromUrl(url, { meta: item, fallback });
   }
 
   function toggleQueued(item) {
@@ -1210,6 +1284,11 @@
       if (!queue.some((q) => q.id === it.id)) queue.push(it);
     });
     queueChanged();
+  });
+  $('#museum-filter').addEventListener('change', (e) => {
+    S.museum = e.target.value;
+    save();
+    if (search.q) runSearch(search.q);
   });
   $('#paintings-only').addEventListener('change', (e) => {
     S.paintingsOnly = e.target.checked;
@@ -1493,6 +1572,7 @@
   setSeg($('#view-seg'), 'view', S.view);
   $('#btn-flip').setAttribute('aria-pressed', String(S.flip));
   $('#paintings-only').checked = S.paintingsOnly;
+  buildMuseumFilter();
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');

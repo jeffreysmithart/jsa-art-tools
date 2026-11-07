@@ -51,7 +51,11 @@
           <button class="btn primary" type="submit">Search</button>
         </form>
         <div class="chips" id="search-chips" aria-label="Suggestions"></div>
-        <label class="check"><input type="checkbox" id="paintings-only" checked> Paintings only</label>
+        <div class="grid-fields">
+          <label>Museum <select id="museum-filter"></select></label>
+          <label class="check"><input type="checkbox" id="paintings-only" checked> Paintings only</label>
+        </div>
+        <p class="hint" id="museum-setup" hidden>The Met and Cleveland need the image relay set up first (see <code>relay/README.md</code>).</p>
         <p class="msg" id="search-msg" role="status"></p>
         <div class="results" id="results"></div>
         <div class="row">
@@ -67,8 +71,7 @@
           <button class="btn" id="btn-shuffle">Shuffle</button>
           <button class="btn" id="btn-clear">Clear</button>
         </div>
-        <p class="fine">Public-domain images from the
-          <a href="https://www.artic.edu/open-access" target="_blank" rel="noopener">Art Institute of Chicago</a> open-access collection (CC0).</p>
+        <p class="fine" id="museum-credit">Public-domain images (CC0) from museum open-access collections.</p>
       </section>
 
       <!-- Study settings (both modes) -->
@@ -304,6 +307,7 @@
 
   <script src="js/color.js"></script>
   <script src="js/process.js"></script>
+  <script src="js/config.js"></script>
   <script src="js/museum.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/crop.js"></script>
