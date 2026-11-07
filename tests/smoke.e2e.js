@@ -1,6 +1,6 @@
 // Browser smoke test. Run: python3 -m http.server 8765 & node tests/smoke.e2e.js
 // Museum requests are answered by stand-ins, so it needs no network.
-const { chromium } = require('playwright');
+const { chromium, devices } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
@@ -18,6 +18,27 @@ const studyColors = (pg) => pg.evaluate(() => {
 });
 const settle = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
+
+// Sidebar controls live in tabs (Images / Study / Canvas). Like a person would,
+// open the tab that holds a control before using it.
+function aware(pg) {
+  const reveal = async (sel) => {
+    if (typeof sel !== 'string') return;
+    const css = sel.replace(/:has-text\([^)]*\)/g, '');
+    await pg.evaluate((css) => {
+      let el;
+      try { el = document.querySelector(css); } catch (e) { return; }
+      const panel = el && el.closest('.side-panel');
+      if (panel && panel.hidden && window.VST && window.VST.app && window.VST.app.setPanel) window.VST.app.setPanel(panel.dataset.panel);
+    }, css).catch(() => {});
+  };
+  for (const m of ['click', 'fill', 'selectOption', 'check', 'uncheck', 'isVisible']) {
+    const orig = pg[m].bind(pg);
+    pg[m] = async (sel, ...rest) => { await reveal(sel); return orig(sel, ...rest); };
+  }
+  return pg;
+}
+
 function check(cond, msg) {
   if (!cond) throw new Error('FAIL: ' + msg);
   console.log('ok -', msg);
@@ -26,6 +47,7 @@ function check(cond, msg) {
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+  aware(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
@@ -305,6 +327,7 @@ function check(cond, msg) {
   // with the relay: three museums searched together (all responses simulated)
   const mctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const mp = await mctx.newPage();
+  aware(mp);
   mp.on('pageerror', (e) => errors.push(e.message));
   const relayed = [];
   await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
@@ -407,18 +430,21 @@ function check(cond, msg) {
   const ctx2 = await browser.newContext();
   await ctx2.addInitScript((st) => localStorage.setItem('value-study:settings', st), await page.evaluate(() => localStorage.getItem('value-study:settings')));
   const p2 = await ctx2.newPage();
+  aware(p2);
   await p2.goto(BASE);
   const mig = await p2.evaluate(() => { const s = window.VST.app.settings; return { tone: s.tone, method: s.method, bands: s.bands, style: s.style }; });
   check(mig.tone === 'color' && mig.method === undefined && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
   const ctx4 = await browser.newContext();
   await ctx4.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', levelsMode: 'even' })));
   const p4 = await ctx4.newPage();
+  aware(p4);
   await p4.goto(BASE);
   check(await p4.evaluate(() => window.VST.app.settings.levelsMode) === 'average', 'earlier even-steps default switches to average');
   await ctx4.close();
   const ctx3 = await browser.newContext();
   await ctx3.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', method: 'poster', posterK: 6 })));
   const p3 = await ctx3.newPage();
+  aware(p3);
   await p3.goto(BASE);
   check(await p3.evaluate(() => window.VST.app.settings.tone) === 'poster', 'second-version main colors setting converts');
   await ctx3.close();
@@ -427,6 +453,7 @@ function check(cond, msg) {
   // ---- Compare my study: photo of a sketch, squared up and compared ----
   const cctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const cp = await cctx.newPage();
+  aware(cp);
   cp.on('pageerror', (e) => errors.push(e.message));
   await cp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await cp.goto(BASE);
@@ -528,6 +555,7 @@ function check(cond, msg) {
   // ---- Study sets and history (saved in the browser, survive a reload) ----
   const sctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
   const sp = await sctx.newPage();
+  aware(sp);
   sp.on('pageerror', (e) => errors.push(e.message));
   const answers = [];
   sp.on('dialog', (d) => d.accept(answers.length ? answers.shift() : undefined));
@@ -619,6 +647,7 @@ function check(cond, msg) {
   // ---- Presets: apply, save, reload, refit, and try on across a set ----
   const pctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const pp = await pctx.newPage();
+  aware(pp);
   pp.on('pageerror', (e) => errors.push(e.message));
   const pAnswers = [];
   pp.on('dialog', (d) => d.accept(pAnswers.length ? pAnswers.shift() : undefined));
@@ -691,8 +720,71 @@ function check(cond, msg) {
   check(await presetValue() === 'b-color4', 'tapping an image studies it with the chosen preset');
   await pctx.close();
 
+  // ---- Sidebar tabs, focus, touch sizes and the practice log ----
+  const tctx = await browser.newContext({ viewport: { width: 1180, height: 820 } });
+  const tp = await tctx.newPage();
+  tp.on('pageerror', (e) => errors.push(e.message));
+  await tp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await tp.goto(BASE);
+  const panelOn = (name) => tp.$eval(`#ptab-${name}`, (t) => t.getAttribute('aria-selected') === 'true');
+  check(await panelOn('images') && await tp.$eval('#panel-study', (x) => x.hidden), 'the sidebar opens on Images, with Study and Canvas in their own tabs');
+  await tp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+  await tp.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
+  check(await panelOn('study'), 'choosing your own image switches to the Study tab');
+  const studyTop = await tp.$eval('#sec-study', (el) => el.getBoundingClientRect().top);
+  check(studyTop < 200, `study settings are at the top of the sidebar, no scrolling (${Math.round(studyTop)}px)`);
+  await tp.click('#ptab-canvas');
+  check(await tp.isVisible('#grid-on') && !(await tp.isVisible('#bands-seg')), 'Canvas holds the grid and downloads');
+  await tp.focus('#ptab-canvas');
+  await tp.keyboard.press('ArrowLeft');
+  check(await panelOn('study') && await tp.evaluate(() => document.activeElement.id === 'ptab-study'), 'arrow keys move between sidebar tabs');
+  await tp.reload();
+  await tp.waitForTimeout(300);
+  check(await panelOn('study'), 'the chosen tab is remembered');
+  await tp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+  await tp.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
+  // focus moves into pop-up screens and comes back
+  await tp.click('#btn-crop');
+  check(await tp.evaluate(() => document.activeElement.id === 'crop-apply'), 'opening Crop moves focus to its main button');
+  await tp.click('#crop-cancel');
+  check(await tp.evaluate(() => document.activeElement.id === 'btn-crop'), 'closing Crop returns focus to the Crop button');
+  // practice log: on-screen time and a completed timed round
+  await tp.evaluate(() => window.VST.log.tick(Date.now() + 30000));
+  const rec = await tp.evaluate(() => window.VST.log.days()[window.VST.log.dayKey()].items[window.VST.app.img.item.id]);
+  check(rec && rec.secs >= 30, `the log records time spent with an image (${rec && rec.secs}s)`);
+  await tp.click('#btn-timer');
+  await tp.click('#t-play');
+  await tp.evaluate(() => window.VST.app.countdown.finish(true));
+  const rec2 = await tp.evaluate(() => window.VST.log.days()[window.VST.log.dayKey()].items[window.VST.app.img.item.id]);
+  check(rec2.rounds === 1 && rec2.drawSecs > 0, `a timed round that runs out is logged (${rec2.rounds} round, ${rec2.drawSecs}s)`);
+  await tp.click('#t-stop');
+  await tctx.close();
+
+  // touch devices: 44px targets and 16px fields
+  const ipad = await browser.newContext({ ...devices['iPad (gen 7)'] });
+  const ip = await ipad.newPage();
+  aware(ip);
+  ip.on('pageerror', (e) => errors.push(e.message));
+  await ip.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await ip.goto(BASE);
+  await ip.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+  await ip.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
+  for (const panel of ['images', 'study', 'canvas']) {
+    await ip.evaluate((p) => window.VST.app.setPanel(p), panel);
+    const small = await ip.evaluate(() => {
+      const els = [...document.querySelectorAll('.sidebar button, .sidebar select, .sidebar input[type=url], .sidebar input[type=search], .sidebar input[type=number], .sidebar label.btn, .toolbar button')]
+        .filter((e) => { const r = e.getBoundingClientRect(); return r.width && r.height && !e.closest('[hidden]'); });
+      return els.filter((e) => e.getBoundingClientRect().height < 43.5 && !e.matches('.chips button, .tile-x, .tile-add')).map((e) => `${e.id || e.textContent.trim().slice(0, 18)} ${Math.round(e.getBoundingClientRect().height)}px`);
+    });
+    check(small.length === 0, `on iPad, ${panel} controls are at least 44px tall${small.length ? ': ' + small.join(', ') : ''}`);
+  }
+  const fieldSizes = await ip.evaluate(() => [...document.querySelectorAll('input[type=url], input[type=search], input[type=number], select')].map((e) => parseFloat(getComputedStyle(e).fontSize)));
+  check(fieldSizes.every((f) => f >= 16), `on iPad, text fields and menus are 16px (no zoom on focus): ${[...new Set(fieldSizes)].join(', ')}px`);
+  await ipad.close();
+
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+  aware(phone);
   phone.on('pageerror', (e) => errors.push(e.message));
   await phone.goto(BASE);
   await phone.click('#tab-reference');

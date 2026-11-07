@@ -15,10 +15,6 @@
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       Value Study
     </div>
-    <nav class="tabs" role="tablist" aria-label="Mode">
-      <button role="tab" id="tab-reference" data-mode="reference" aria-selected="true">Reference</button>
-      <button role="tab" id="tab-master" data-mode="master" aria-selected="false">Master Copy</button>
-    </nav>
     <div class="top-actions">
       <button id="btn-timer" class="btn" aria-pressed="false" title="Show the timer (T)">Timer</button>
       <button id="btn-download" class="btn" title="Download the study image">Download</button>
@@ -27,10 +23,21 @@
 
   <div class="layout">
     <aside class="sidebar" aria-label="Controls">
+      <div class="side-tabs" role="tablist" aria-label="Sidebar">
+        <button role="tab" id="ptab-images" data-panel="images" aria-controls="panel-images" aria-selected="true">Images</button>
+        <button role="tab" id="ptab-study" data-panel="study" aria-controls="panel-study" aria-selected="false">Study</button>
+        <button role="tab" id="ptab-canvas" data-panel="canvas" aria-controls="panel-canvas" aria-selected="false">Canvas</button>
+      </div>
+
+      <!-- Images: everything for choosing what to study -->
+      <div class="side-panel" id="panel-images" data-panel="images" role="tabpanel" aria-labelledby="ptab-images">
+        <nav class="tabs source-switch" role="tablist" aria-label="Where images come from">
+          <button role="tab" id="tab-reference" data-mode="reference" aria-selected="true">Upload</button>
+          <button role="tab" id="tab-master" data-mode="master" aria-selected="false">Museums</button>
+        </nav>
 
       <!-- Reference mode: bring your own image -->
       <section class="group" id="sec-reference">
-        <h2>Image</h2>
         <label class="btn primary block file-btn">
           Choose an image…
           <input type="file" id="file-input" accept="image/*">
@@ -85,14 +92,15 @@
           <button class="btn tiny" id="set-add-current" type="button" title="Add the image you're studying to this set">+ Add current image</button>
           <button class="btn tiny" id="set-session" type="button" title="Run a timed session through this set">Timed session</button>
           <button class="btn tiny" id="set-tryon" type="button" title="See every image in this set with different presets">Try presets</button>
-          <button class="btn tiny" id="set-rename" type="button">Rename</button>
-          <button class="btn tiny" id="set-delete" type="button">Delete</button>
         </div>
         <div class="set-grid" id="set-items" aria-label="Images in this set"></div>
         <p class="hint" id="set-empty">Make a set, then add images to it: museum paintings or your own photos. Sets are saved in this browser.</p>
-        <div class="row tight">
-          <button class="btn tiny" id="set-export" type="button" title="Save this set as a file (a backup, or to move it to another device)">Export set</button>
-          <label class="btn tiny file-btn" title="Add a set from an exported file">Import set<input type="file" id="set-import" accept=".json,application/json"></label>
+        <div class="row tight set-manage">
+          <button class="btn tiny" id="set-rename" type="button">Rename</button>
+          <button class="btn tiny" id="set-export" type="button" title="Save this set as a file (a backup, or to move it to another device)">Export</button>
+          <label class="btn tiny file-btn" title="Add a set from an exported file">Import<input type="file" id="set-import" accept=".json,application/json"></label>
+          <span class="spacer"></span>
+          <button class="btn tiny danger" id="set-delete" type="button">Delete set</button>
         </div>
         <details class="history" id="history-box">
           <summary>History <span class="count" id="history-count"></span></summary>
@@ -101,40 +109,18 @@
           <button class="btn tiny" id="history-clear" type="button">Clear history</button>
         </details>
       </section>
+      </div>
 
-      <!-- My study: photo of your sketch, compared with the master -->
-      <section class="group" id="sec-mine">
-        <h2>My study</h2>
-        <p class="hint" id="mine-hint">Photograph your sketch, square it up, and compare it with the reference through the same value settings.</p>
-        <label class="btn block file-btn" id="mine-add"><span id="mine-add-label">Add a photo of my study…</span>
-          <input type="file" id="mine-input" accept="image/*">
-        </label>
-        <div id="mine-ctl" hidden>
-          <div class="row tight">
-            <button class="btn tiny" id="mine-square">Square up again</button>
-            <button class="btn tiny" id="mine-remove">Remove</button>
-          </div>
-          <label class="check" title="Phone photos make white paper look gray, which would skew every value"><input type="checkbox" id="mine-paper" checked> Correct paper to white</label>
-          <label class="check"><input type="checkbox" id="mine-overlay"> Overlay on the reference <kbd>O</kbd></label>
-          <div class="field" id="mine-opacity-field" hidden>
-            <div class="label-row">
-              <label class="label" for="mine-opacity">My study's strength</label>
-              <output id="mine-opacity-out" for="mine-opacity">50%</output>
-            </div>
-            <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
-          </div>
-        </div>
-      </section>
-
+      <!-- Study: the value study settings and comparing my own study -->
+      <div class="side-panel" id="panel-study" data-panel="study" role="tabpanel" aria-labelledby="ptab-study" hidden>
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
-        <h2>Study</h2>
         <div class="field preset-field">
           <span class="label">Preset</span>
-          <div class="inline-form preset-row">
-            <select id="preset-select" aria-label="Preset"></select>
-            <button class="btn" id="preset-save" type="button" title="Save the current settings as a preset">Save…</button>
-            <button class="btn" id="preset-delete" type="button" title="Delete this preset">Delete</button>
+          <select id="preset-select" aria-label="Preset"></select>
+          <div class="row tight preset-actions">
+            <button class="btn tiny" id="preset-save" type="button" title="Save the current settings as a preset">Save as preset…</button>
+            <button class="btn tiny" id="preset-delete" type="button" title="Delete this preset">Delete</button>
           </div>
           <p class="hint" id="preset-desc"></p>
         </div>
@@ -209,6 +195,33 @@
         </div>
       </section>
 
+      <!-- My study: photo of your sketch, compared with the master -->
+      <section class="group" id="sec-mine">
+        <h2>My study</h2>
+        <p class="hint" id="mine-hint">Photograph your sketch, square it up, and compare it with the reference through the same value settings.</p>
+        <label class="btn block file-btn" id="mine-add"><span id="mine-add-label">Add a photo of my study…</span>
+          <input type="file" id="mine-input" accept="image/*">
+        </label>
+        <div id="mine-ctl" hidden>
+          <div class="row tight">
+            <button class="btn tiny" id="mine-square">Square up again</button>
+            <button class="btn tiny" id="mine-remove">Remove</button>
+          </div>
+          <label class="check" title="Phone photos make white paper look gray, which would skew every value"><input type="checkbox" id="mine-paper" checked> Correct paper to white</label>
+          <label class="check"><input type="checkbox" id="mine-overlay"> Overlay on the reference <kbd>O</kbd></label>
+          <div class="field" id="mine-opacity-field" hidden>
+            <div class="label-row">
+              <label class="label" for="mine-opacity">My study's strength</label>
+              <output id="mine-opacity-out" for="mine-opacity">50%</output>
+            </div>
+            <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <!-- Canvas: transferring to the canvas, and downloads -->
+      <div class="side-panel" id="panel-canvas" data-panel="canvas" role="tabpanel" aria-labelledby="ptab-canvas" hidden>
       <section class="group" id="sec-overlay">
         <h2>Grid</h2>
         <label class="check"><input type="checkbox" id="grid-on"> Show grid <kbd>G</kbd></label>
@@ -257,6 +270,7 @@
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
         Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>Space</kbd> timer.</p>
+      </div>
     </aside>
 
     <main class="stage" id="stage">
@@ -413,6 +427,7 @@
   <script src="js/museum.js"></script>
   <script src="js/library.js"></script>
   <script src="js/presets.js"></script>
+  <script src="js/log.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/crop.js"></script>
   <script src="js/warp.js"></script>
