@@ -74,6 +74,33 @@
         <p class="fine" id="museum-credit">Public-domain images (CC0) from museum open-access collections.</p>
       </section>
 
+      <!-- Study sets and history (both modes) -->
+      <section class="group" id="sec-sets">
+        <h2>Study sets</h2>
+        <div class="inline-form set-picker">
+          <select id="set-select" aria-label="Study set"></select>
+          <button class="btn" id="set-new" type="button">New set</button>
+        </div>
+        <div class="row tight" id="set-actions">
+          <button class="btn tiny" id="set-add-current" type="button" title="Add the image you're studying to this set">+ Add current image</button>
+          <button class="btn tiny" id="set-session" type="button" title="Run a timed session through this set">Timed session</button>
+          <button class="btn tiny" id="set-rename" type="button">Rename</button>
+          <button class="btn tiny" id="set-delete" type="button">Delete</button>
+        </div>
+        <div class="set-grid" id="set-items" aria-label="Images in this set"></div>
+        <p class="hint" id="set-empty">Make a set, then add images to it: museum paintings or your own photos. Sets are saved in this browser.</p>
+        <div class="row tight">
+          <button class="btn tiny" id="set-export" type="button" title="Save this set as a file (a backup, or to move it to another device)">Export set</button>
+          <label class="btn tiny file-btn" title="Add a set from an exported file">Import set<input type="file" id="set-import" accept=".json,application/json"></label>
+        </div>
+        <details class="history" id="history-box">
+          <summary>History <span class="count" id="history-count"></span></summary>
+          <div class="set-grid" id="history-items" aria-label="Recently studied"></div>
+          <p class="hint" id="history-empty">Images you study show up here, even after a refresh.</p>
+          <button class="btn tiny" id="history-clear" type="button">Clear history</button>
+        </details>
+      </section>
+
       <!-- My study: photo of your sketch, compared with the master -->
       <section class="group" id="sec-mine">
         <h2>My study</h2>
@@ -219,7 +246,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>Space</kbd> timer.</p>
     </aside>
 
     <main class="stage" id="stage">
@@ -231,6 +258,7 @@
           <button data-view="compare" role="radio" id="view-compare" disabled title="Compare with my study (add a photo first)">Compare</button>
         </div>
         <div class="row tight">
+          <button class="btn" id="btn-save-set" title="Add this image to the current study set (S)">+ Set</button>
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
           <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
           <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
@@ -361,6 +389,7 @@
   <script src="js/process.js"></script>
   <script src="js/config.js"></script>
   <script src="js/museum.js"></script>
+  <script src="js/library.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/crop.js"></script>
   <script src="js/warp.js"></script>

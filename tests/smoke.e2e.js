@@ -525,6 +525,97 @@ function check(cond, msg) {
   check(await cp.$eval('#panels', (e) => e.dataset.view) === 'both' && await cp.isHidden('#swatches-mine-wrap'), 'a new reference clears the old study photo');
   await cctx.close();
 
+  // ---- Study sets and history (saved in the browser, survive a reload) ----
+  const sctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+  const sp = await sctx.newPage();
+  sp.on('pageerror', (e) => errors.push(e.message));
+  const answers = [];
+  sp.on('dialog', (d) => d.accept(answers.length ? answers.shift() : undefined));
+  await sp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await sp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
+  await sp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+  await sp.goto(BASE);
+  await sp.click('#tab-reference');
+  check(await sp.$eval('#set-select', (s) => s.disabled) && await sp.isVisible('#set-empty'), 'no sets at first');
+  const tiles = (sel) => sp.$$eval(`${sel} .tile`, (t) => t.map((x) => x.querySelector('.tile-title').textContent));
+  const waitItem = (src) => sp.waitForFunction((src) => window.VST.app.img.item && window.VST.app.img.item.source === src, src, { timeout: 10000 });
+
+  await sp.setInputFiles('#file-input', { name: 'lake-sky.png', mimeType: 'image/png', buffer: png });
+  await waitItem('upload');
+  answers.push('Lake skies');
+  await sp.click('#set-add-current');
+  check(JSON.stringify(await tiles('#set-items')) === '["lake-sky"]', 'first “+ Add current image” asks for a set name and adds the photo');
+  const png2 = Buffer.from(await sp.evaluate(() => { const c = document.createElement('canvas'); c.width = 600; c.height = 800; const x = c.getContext('2d'); x.fillStyle = '#c96'; x.fillRect(0, 0, 600, 800); x.fillStyle = '#123'; x.fillRect(0, 500, 600, 300); return c.toDataURL('image/png').split(',')[1]; }), 'base64');
+  await sp.setInputFiles('#file-input', { name: 'evening-field.png', mimeType: 'image/png', buffer: png2 });
+  await sp.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.title === 'evening-field');
+  await sp.click('#set-add-current');
+  await sp.click('#set-add-current');
+  check((await tiles('#set-items')).length === 2, 'adding the same image twice keeps one copy');
+  await sp.click('#tab-master');
+  await sp.selectOption('#museum-filter', 'aic');
+  await sp.fill('#search-input', 'Inness');
+  await sp.click('#search-form button');
+  await sp.waitForSelector('#results .card');
+  await sp.click('#results .card [data-act="study"]');
+  await waitItem('aic');
+  await sp.click('#btn-save-set'); // the toolbar's + Set does the same
+  check(JSON.stringify(await tiles('#set-items')) === '["lake-sky","evening-field","Landscape 1"]', 'a set mixes uploaded photos and museum paintings');
+  await sp.click('#history-box summary');
+  check(JSON.stringify(await tiles('#history-items')) === '["Landscape 1","evening-field","lake-sky"]', 'history lists studied images, newest first');
+  await sp.screenshot({ path: path.join(OUT, '20-sets.png') });
+
+  // reload: everything is still there, and an uploaded photo reopens from browser storage
+  await sp.reload();
+  await sp.waitForTimeout(300);
+  check((await sp.$eval('#set-select', (s) => s.selectedOptions[0].textContent)) === 'Lake skies (3)', 'the set survives a reload');
+  await sp.click('#history-box summary');
+  check((await tiles('#history-items')).length === 3, 'history survives a reload');
+  await sp.click('#set-items .tile[data-id^="up-"] .tile-open');
+  await sp.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item && window.VST.app.img.item.title === 'lake-sky');
+  check(await sp.$eval('#set-items .tile[data-id^="up-"]', (t) => t.classList.contains('current')), 'an uploaded photo reopens from storage after a reload, and is highlighted');
+
+  // add from history with +
+  answers.push('Evening fields');
+  await sp.click('#set-new');
+  await sp.click('#history-items .tile:has-text("evening-field") .tile-add');
+  check(JSON.stringify(await tiles('#set-items')) === '["evening-field"]', '+ on a history image adds it to the current set');
+  await sp.selectOption('#set-select', { label: 'Lake skies (3)' });
+
+  // export, delete, import
+  const [exp] = await Promise.all([sp.waitForEvent('download'), sp.click('#set-export')]);
+  const expPath = path.join(OUT, exp.suggestedFilename());
+  await exp.saveAs(expPath);
+  const exported = JSON.parse(fs.readFileSync(expPath, 'utf8'));
+  check(exp.suggestedFilename() === 'lake-skies.valuestudy.json' && exported.items.length === 3 && exported.items.filter((i) => i.data).length === 2, 'export saves the set with its photos inside');
+  await sp.click('#set-delete'); // confirm() is accepted
+  check(!(await sp.$$eval('#set-select option', (o) => o.map((x) => x.textContent))).some((t) => t.startsWith('Lake skies')), 'delete removes the set');
+  await sp.setInputFiles('#set-import', expPath);
+  await sp.waitForFunction(() => /Lake skies/.test(document.querySelector('#set-select').selectedOptions[0].textContent));
+  check((await tiles('#set-items')).length === 3, 'import brings the set back');
+  await sp.click('#set-items .tile[data-id^="up-"] .tile-open');
+  await sp.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.title === 'lake-sky' && window.VST.app.work.w > 0);
+  check(true, 'photos in an imported set open');
+
+  // timed session from a set (uploads included), and the session list survives a reload
+  await sp.click('#btn-timer');
+  await sp.selectOption('#t-break', '0');
+  await sp.click('#set-session');
+  await sp.waitForFunction(() => window.VST.app.flow.session && window.VST.app.countdown.running);
+  check(await sp.$eval('#tab-master', (t) => t.getAttribute('aria-selected') === 'true') && (await sp.$$('#queue li')).length === 3, 'Timed session runs the set in Master Copy');
+  check((await sp.textContent('#timer-status')).includes('Painting 1 of 3'), 'the session starts at the first image of the set');
+  await sp.click('#btn-session');
+  await sp.reload();
+  await sp.waitForTimeout(300);
+  check((await sp.$$('#queue li')).length === 3, 'a session list with uploaded photos survives a reload');
+
+  // remove and clear
+  await sp.click('#set-items .tile:first-child .tile-x');
+  check((await tiles('#set-items')).length === 2, '× removes an image from the set');
+  await sp.click('#history-box summary');
+  await sp.click('#history-clear');
+  check((await tiles('#history-items')).length === 0 && (await tiles('#set-items')).length === 2, 'clearing history keeps the sets');
+  await sctx.close();
+
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   phone.on('pageerror', (e) => errors.push(e.message));
