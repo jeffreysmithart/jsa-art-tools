@@ -616,6 +616,81 @@ function check(cond, msg) {
   check((await tiles('#history-items')).length === 0 && (await tiles('#set-items')).length === 2, 'clearing history keeps the sets');
   await sctx.close();
 
+  // ---- Presets: apply, save, reload, refit, and try on across a set ----
+  const pctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const pp = await pctx.newPage();
+  pp.on('pageerror', (e) => errors.push(e.message));
+  const pAnswers = [];
+  pp.on('dialog', (d) => d.accept(pAnswers.length ? pAnswers.shift() : undefined));
+  await pp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await pp.goto(BASE);
+  await pp.click('#tab-reference');
+  await pp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+  await pp.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
+  const presetValue = () => pp.$eval('#preset-select', (s) => s.value);
+  await pp.selectOption('#preset-select', 'b-notan');
+  check(await swatchCount(pp, 2), 'choosing the Notan preset sets 2 values');
+  check(await presetValue() === 'b-notan' && (await pp.textContent('#preset-desc')).includes('fit to each image'), 'the preset stays selected with a description');
+  await pp.$eval('#thresholds input', (i) => { i.value = 30; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await settle(pp);
+  check(await presetValue() === '', 'changing a setting shows “Custom settings”');
+  await pp.selectOption('#preset-select', 'b-squint3');
+  await settle(pp);
+  check((await pp.textContent('#study-caption')).includes('squint') && await swatchCount(pp, 3), 'Squint, 3 values applies squint and 3 values');
+  const split3 = await pp.evaluate(() => window.VST.app.settings.thresholds[3].join());
+
+  // save my own preset, and it survives a reload
+  await pp.$eval('#blur', (i) => { i.value = 20; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  pAnswers.push('Soft 3');
+  await pp.click('#preset-save');
+  await settle(pp);
+  check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'saving names the preset and selects it');
+  check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 1, 'saved presets are listed under My presets');
+  await pp.reload();
+  await pp.waitForTimeout(300);
+  check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'my preset (and the settings) survive a reload');
+
+  // "fit to each image" splits follow a new image
+  await pp.selectOption('#preset-select', 'b-3');
+  await settle(pp);
+  const png3 = Buffer.from(await pp.evaluate(() => { const c = document.createElement('canvas'); c.width = 800; c.height = 600; const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 600); g.addColorStop(0, '#fff'); g.addColorStop(0.3, '#ddd'); g.addColorStop(1, '#333'); x.fillStyle = g; x.fillRect(0, 0, 800, 600); return c.toDataURL('image/png').split(',')[1]; }), 'base64');
+  const before3 = await pp.evaluate(() => window.VST.app.settings.thresholds[3].join());
+  await pp.setInputFiles('#file-input', { name: 'gradient.png', mimeType: 'image/png', buffer: png3 });
+  await pp.waitForFunction((b) => window.VST.app.img.item && window.VST.app.img.item.title === 'gradient' && window.VST.app.settings.thresholds[3].join() !== b, before3);
+  check(await presetValue() === 'b-3', `a “fit to each image” preset refits its splits to a new image (${before3} → ${await pp.evaluate(() => window.VST.app.settings.thresholds[3].join())})`);
+
+  // delete my preset
+  await pp.selectOption('#preset-select', { label: 'Soft 3' });
+  await pp.click('#preset-delete');
+  check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 0, 'delete removes my preset');
+  check(await pp.$eval('#preset-delete', (b) => b.disabled) === true || await presetValue() === '', 'built-in presets can’t be deleted');
+
+  // try presets on a set of two photos
+  pAnswers.push('Try-on set');
+  await pp.click('#btn-save-set'); // gradient
+  await pp.click('#history-box summary');
+  await pp.click('#history-items .tile:has-text("river") .tile-add');
+  await pp.click('#set-tryon');
+  await pp.waitForSelector('#tryon-modal:not([hidden])');
+  await pp.waitForFunction(() => document.querySelectorAll('#tryon-grid .tryon-tile.ready').length === 2);
+  check(true, 'Try presets shows every image in the set');
+  await pp.click('#tryon-presets button[data-id="b-notan"]');
+  await pp.waitForFunction(() => document.querySelectorAll('#tryon-grid .tryon-tile.ready').length === 2);
+  const tileGrays = await pp.$$eval('#tryon-grid .tryon-tile canvas', (cs) => cs.map((c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const s = new Set(); for (let i = 0; i < d.length; i += 4) s.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); return s.size; }));
+  check(tileGrays.every((n) => n === 2), `with Notan, every image shows exactly 2 values (${tileGrays})`);
+  check((await pp.$$eval('#tryon-grid .tt-bar', (b) => b.map((x) => x.children.length))).every((n) => n === 2), 'each image gets a value-balance bar');
+  await pp.screenshot({ path: path.join(OUT, '21-tryon.png') });
+  await pp.click('#tryon-presets button[data-id="original"]');
+  await pp.waitForFunction(() => document.querySelectorAll('#tryon-grid .tryon-tile.ready').length === 2);
+  check((await pp.$$('#tryon-grid .tt-bar')).length === 0, 'Original shows the images as they are');
+  await pp.click('#tryon-presets button[data-id="b-color4"]');
+  await pp.waitForFunction(() => document.querySelectorAll('#tryon-grid .tryon-tile.ready').length === 2);
+  await pp.click('#tryon-grid .tryon-tile:has-text("river")');
+  await pp.waitForFunction(() => document.getElementById('tryon-modal').hidden && window.VST.app.img.item && window.VST.app.img.item.title === 'river' && window.VST.app.work.w > 0);
+  await settle(pp);
+  check(await presetValue() === 'b-color4', 'tapping an image studies it with the chosen preset');
+  await pctx.close();
+
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   phone.on('pageerror', (e) => errors.push(e.message));
