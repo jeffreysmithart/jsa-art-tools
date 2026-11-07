@@ -55,6 +55,7 @@
     breakSec: 10,
     chime: true,
     paintingsOnly: true,
+    cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
     settingsVersion: 3,
   };
 
@@ -774,6 +775,9 @@
     apply: $('#crop-apply'),
     cancel: $('#crop-cancel'),
     reset: $('#crop-reset'),
+    customBox: $('#crop-custom'),
+    customW: $('#crop-cw'),
+    customH: $('#crop-ch'),
   });
   function openCrop() {
     if (!img.el) return toast('Load an image first.');
@@ -782,10 +786,13 @@
       rect: img.crop,
       presetId: img.cropPreset,
       landscape: img.cropLandscape,
-      onApply(rect, { presetId, landscape }) {
+      custom: S.cropCustom,
+      onApply(rect, { presetId, landscape, custom }) {
         img.crop = rect;
         img.cropPreset = presetId;
         img.cropLandscape = landscape;
+        S.cropCustom = custom; // remembered for the next image
+        save();
         buildSource();
       },
     });

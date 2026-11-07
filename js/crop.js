@@ -18,8 +18,14 @@
     { id: '12x16', label: '12 × 16 in', w: 12, h: 16 },
     { id: '16x20', label: '16 × 20 in', w: 16, h: 20 },
     { id: '18x24', label: '18 × 24 in', w: 18, h: 24 },
+    { id: '20x24', label: '20 × 24 in', w: 20, h: 24 },
+    { id: '24x30', label: '24 × 30 in', w: 24, h: 30 },
     { id: '24x36', label: '24 × 36 in', w: 24, h: 36 },
+    { id: '30x40', label: '30 × 40 in', w: 30, h: 40 },
+    { id: '36x48', label: '36 × 48 in', w: 36, h: 48 },
     { id: '12x24', label: '12 × 24 in', w: 12, h: 24 },
+    { id: '18x36', label: '18 × 36 in', w: 18, h: 36 },
+    { id: 'custom', label: 'Custom size…' },
   ];
 
   const HANDLE = 22; // touch-friendly hit radius in CSS px
@@ -29,10 +35,11 @@
     return PRESETS.find((p) => p.id === id) || PRESETS[0];
   }
 
-  /** Width / height for a preset, or null for free. */
-  function aspectFor(preset, landscape, imgW, imgH) {
+  /** Width / height for a preset, or null for free. Custom uses the typed size as is. */
+  function aspectFor(preset, landscape, imgW, imgH, custom) {
     if (preset.id === 'free') return null;
     if (preset.id === 'original') return imgW / imgH;
+    if (preset.id === 'custom') return custom && custom.w > 0 && custom.h > 0 ? custom.w / custom.h : null;
     const long = Math.max(preset.w, preset.h);
     const short = Math.min(preset.w, preset.h);
     return landscape ? long / short : short / long;
@@ -50,8 +57,13 @@
     return { x: (imgW - w) / 2, y: (imgH - h) / 2, w, h };
   }
 
+  /** 18 -> "18", 2.50 -> "2.5" */
+  function fmt(n) {
+    return String(Math.round(n * 100) / 100);
+  }
+
   function create(els) {
-    const { modal, canvas, preset: presetSel, orient, info, apply, cancel, reset } = els;
+    const { modal, canvas, preset: presetSel, orient, info, apply, cancel, reset, customBox, customW, customH } = els;
     const ctx = canvas.getContext('2d');
     let image = null;
     let imgW = 0;
@@ -59,6 +71,7 @@
     let rect = null;
     let presetId = 'free';
     let landscape = false;
+    let custom = { w: 18, h: 36 }; // last custom canvas size (any unit)
     let onApply = null;
     let view = { scale: 1, ox: 0, oy: 0 };
     let drag = null;
@@ -71,7 +84,7 @@
     });
 
     function ar() {
-      return aspectFor(presetById(presetId), landscape, imgW, imgH);
+      return aspectFor(presetById(presetId), landscape, imgW, imgH, custom);
     }
 
     function layout() {
@@ -128,7 +141,9 @@
       const h = Math.round(rect.h);
       const p = presetById(presetId);
       let shape = `${(w / h).toFixed(2)} : 1`;
-      if (p.w && p.w !== p.h) {
+      if (p.id === 'custom') {
+        shape = custom.w === custom.h ? 'square' : `${fmt(custom.w)} × ${fmt(custom.h)} proportions`;
+      } else if (p.w && p.w !== p.h) {
         const long = Math.max(p.w, p.h);
         const short = Math.min(p.w, p.h);
         shape = landscape ? `${long} × ${short} proportions` : `${short} × ${long} proportions`;
@@ -237,8 +252,15 @@
       presetId = id;
       presetSel.value = id;
       const p = presetById(id);
-      orient.disabled = !p.w || p.w === p.h;
-      orient.textContent = landscape ? 'Landscape' : 'Portrait';
+      const isCustom = id === 'custom';
+      customBox.hidden = !isCustom;
+      if (isCustom) {
+        orient.disabled = custom.w === custom.h;
+        orient.textContent = custom.w > custom.h ? 'Landscape' : 'Portrait';
+      } else {
+        orient.disabled = !p.w || p.w === p.h;
+        orient.textContent = landscape ? 'Landscape' : 'Portrait';
+      }
       if (refit) rect = fitRect(ar(), imgW, imgH);
       draw();
     }
@@ -249,9 +271,28 @@
     canvas.addEventListener('pointercancel', onUp);
     presetSel.addEventListener('change', () => setPreset(presetSel.value));
     orient.addEventListener('click', () => {
-      landscape = !landscape;
+      if (presetId === 'custom') {
+        custom = { w: custom.h, h: custom.w }; // swap width and height
+        customW.value = fmt(custom.w);
+        customH.value = fmt(custom.h);
+      } else {
+        landscape = !landscape;
+      }
       setPreset(presetId);
     });
+    // typed canvas size: any unit, decimals allowed; ignored until both are > 0
+    function onCustomInput() {
+      const w = parseFloat(customW.value);
+      const h = parseFloat(customH.value);
+      const ok = w > 0 && h > 0;
+      customW.classList.toggle('invalid', !(w > 0));
+      customH.classList.toggle('invalid', !(h > 0));
+      if (!ok) return;
+      custom = { w, h };
+      setPreset('custom');
+    }
+    customW.addEventListener('input', onCustomInput);
+    customH.addEventListener('input', onCustomInput);
     reset.addEventListener('click', () => {
       landscape = imgW > imgH;
       setPreset('free');
@@ -269,7 +310,7 @@
       const cb = onApply;
       const full = r.x === 0 && r.y === 0 && r.w === imgW && r.h === imgH;
       close();
-      cb && cb(full ? null : r, { presetId, landscape });
+      cb && cb(full ? null : r, { presetId, landscape, custom: { ...custom } });
     });
     root.addEventListener('resize', () => {
       if (!modal.hidden) layout();
@@ -284,6 +325,11 @@
       imgH = image.naturalHeight || image.height;
       onApply = opts.onApply;
       landscape = opts.landscape != null ? opts.landscape : imgW > imgH;
+      if (opts.custom && opts.custom.w > 0 && opts.custom.h > 0) custom = { w: +opts.custom.w, h: +opts.custom.h };
+      customW.value = fmt(custom.w);
+      customH.value = fmt(custom.h);
+      customW.classList.remove('invalid');
+      customH.classList.remove('invalid');
       modal.hidden = false;
       rect = opts.rect ? { ...opts.rect } : fitRect(null, imgW, imgH);
       setPreset(opts.presetId || 'free', !opts.rect);

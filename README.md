@@ -18,7 +18,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** the **average** of each area (the default, true to the image's light key), **even steps** from dark to light (most contrast), or **custom**, which starts from the averages so you can adjust each value to match your markers (0 = black, 10 = white).
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).
-- **Crop** with canvas-size presets (5×7 to 24×36, square, original), portrait or landscape.
+- **Crop** with canvas-size presets (5×7 to 36×48, panoramic 12×24 and 18×36, square, original), portrait or landscape, or **Custom size**: type your canvas's width × height (any unit, decimals allowed) and the crop locks to those proportions. Your last custom size is remembered.
 - **Present:** hides every control so only the image or images show, as large as the screen allows, for painting from the screen. It goes full screen where the browser allows and keeps the screen awake. Shortcuts still work; press `Esc` or `P`, or tap and choose **Exit presentation**, to bring the controls back.
 - **Download** the study or the cropped original as PNG or JPG, with or without the grid, or a letter-size **side-by-side sheet** with the value scale.
 

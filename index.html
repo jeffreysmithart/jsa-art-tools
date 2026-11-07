@@ -284,6 +284,11 @@
   <div class="modal" id="crop-modal" hidden role="dialog" aria-modal="true" aria-label="Crop image">
     <div class="modal-bar">
       <label>Canvas size <select id="crop-preset"></select></label>
+      <span class="crop-custom" id="crop-custom" hidden>
+        <input type="number" id="crop-cw" min="0" step="any" inputmode="decimal" aria-label="Canvas width" title="Width (any unit)">
+        <span aria-hidden="true">×</span>
+        <input type="number" id="crop-ch" min="0" step="any" inputmode="decimal" aria-label="Canvas height" title="Height (any unit)">
+      </span>
       <button class="btn" id="crop-orient" title="Switch between portrait and landscape">Portrait</button>
       <span class="crop-info" id="crop-info"></span>
       <span class="spacer"></span>

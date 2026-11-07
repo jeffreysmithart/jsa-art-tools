@@ -169,7 +169,34 @@ function check(cond, msg) {
   await page.click('#crop-orient');
   info = await page.textContent('#crop-info');
   check(/480 × 600 px/.test(info), `orientation switches to portrait 8x10 (${info})`);
+
+  // custom canvas size, e.g. an 18 x 36 in canvas
+  check(!(await page.isVisible('#crop-custom')), 'size boxes stay hidden for presets');
+  await page.selectOption('#crop-preset', 'custom');
+  check(await page.isVisible('#crop-custom'), 'Custom size shows width and height boxes');
+  check(await page.inputValue('#crop-cw') === '18' && await page.inputValue('#crop-ch') === '36', 'custom starts at 18 x 36');
+  info = await page.textContent('#crop-info');
+  check(/300 × 600 px · 18 × 36 proportions/.test(info), `18 x 36 crop fits the image (${info})`);
+  await page.click('#crop-orient');
+  info = await page.textContent('#crop-info');
+  check(await page.inputValue('#crop-cw') === '36' && /900 × 450 px · 36 × 18 proportions/.test(info), `Landscape swaps to 36 x 18 (${info})`);
+  await page.fill('#crop-cw', '7.5');
+  await page.fill('#crop-ch', '10');
+  info = await page.textContent('#crop-info');
+  check(/450 × 600 px · 7.5 × 10 proportions/.test(info), `decimals work: 7.5 x 10 (${info})`);
+  await page.fill('#crop-ch', '');
+  check(/7.5 × 10 proportions/.test(await page.textContent('#crop-info')) && await page.$eval('#crop-ch', (e) => e.classList.contains('invalid')), 'a blank box keeps the last size and is flagged');
+  await page.fill('#crop-ch', '10');
+  await page.screenshot({ path: path.join(OUT, '4b-crop-custom.png') });
+
+  await page.selectOption('#crop-preset', '8x10');
   await page.screenshot({ path: path.join(OUT, '4-crop.png') });
+  await page.click('#crop-apply');
+  await page.keyboard.press('c');
+  await page.selectOption('#crop-preset', 'custom');
+  check(await page.inputValue('#crop-cw') === '7.5' && await page.inputValue('#crop-ch') === '10', 'custom size is remembered for next time');
+  check(await page.evaluate(() => window.VST.app.settings.cropCustom.w === 7.5), 'custom size is saved with the settings');
+  await page.selectOption('#crop-preset', '8x10');
   await page.click('#crop-apply');
   const wh = await page.evaluate(() => [window.VST.app.work.w, window.VST.app.work.h]);
   check(Math.abs(wh[0] / wh[1] - 0.8) < 0.01, `cropped study is 4:5 (${wh})`);

@@ -271,6 +271,9 @@ figcaption { text-align: center; color: #dcdcdc; font-size: 12.5px; height: 28px
 }
 .modal-bar label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .crop-info { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.crop-custom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.crop-custom input { width: 72px; }
+input.invalid { border-color: var(--danger); }
 .spacer { flex: 1; }
 .crop-area { flex: 1; min-height: 0; position: relative; }
 .crop-area canvas { position: absolute; inset: 0; touch-action: none; }
