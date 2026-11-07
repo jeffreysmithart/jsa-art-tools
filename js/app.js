@@ -57,6 +57,7 @@
     paintingsOnly: true,
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
     cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
+    currentSet: null, // the study set shown in the sidebar
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
@@ -112,7 +113,7 @@
   /* ================= State ================= */
 
   let presenting = false; // Present mode: controls hidden
-  const img = { el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
+  const img = { item: null, el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
   const cvOrig = $('#cv-original');
@@ -202,6 +203,12 @@
     try {
       const el = await loadImageElement(url, { cors: false });
       setImage(el, { name: (file.name || 'pasted image').replace(/\.[^.]+$/, ''), objectUrl: url });
+      // keep a copy in this browser so it can be reopened from History or a set
+      L.saveUpload(file, el)
+        .then((item) => img.el === el && remember(item))
+        .catch(() => {
+          /* storage unavailable (e.g. private browsing): the image still works now */
+        });
     } catch (e) {
       URL.revokeObjectURL(url);
       toast('This browser couldn’t open that image. Try a JPG or PNG.', true);
@@ -224,10 +231,9 @@
         el = await loadImageElement(fallback, { cors: true });
       }
       if (!canReadPixels(el)) throw new Error('cors');
-      setImage(el, {
-        name: meta ? `${meta.artist} ${meta.title}` : decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, ''),
-        meta,
-      });
+      const name = meta ? `${meta.artist} ${meta.title}` : decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '');
+      setImage(el, { name, meta });
+      remember(meta ? L.clean(meta) : { id: `link-${url}`, source: 'link', title: name || 'Image link', image: url, thumb: url, added: Date.now() });
       return true;
     } catch (e) {
       const msg = meta
@@ -249,8 +255,9 @@
     el.classList.toggle('error', !!isError);
   }
 
-  function setImage(el, { name, meta = null, objectUrl = null }) {
+  function setImage(el, { name, meta = null, objectUrl = null, item = null }) {
     if (img.url) URL.revokeObjectURL(img.url);
+    img.item = item;
     img.el = el;
     img.w = el.naturalWidth;
     img.h = el.naturalHeight;
@@ -1324,7 +1331,7 @@
   /* ================= Master Copy: library ================= */
 
   const M = VST.museum;
-  let queue = (store.get('queue', []) || []).filter((q) => q && q.image);
+  let queue = (store.get('queue', []) || []).filter((q) => q && (q.image || q.blobId));
   const search = { q: '', items: [], perSource: {}, controller: null };
 
   /** The museums to search, from the filter (falls back to all available). */
@@ -1540,7 +1547,7 @@
       li.querySelector('img').src = item.thumb;
       li.querySelector('b').textContent = item.title;
       li.querySelector('span').textContent = item.artist;
-      li.querySelector('.q-title').addEventListener('click', () => studyItem(item));
+      li.querySelector('.q-title').addEventListener('click', () => openItem(item));
       li.querySelector('.q-x').addEventListener('click', () => {
         queue.splice(i, 1);
         if (flow.session && i < flow.index) flow.index--;
@@ -1596,6 +1603,233 @@
       runSearch(s);
     });
     $('#search-chips').appendChild(b);
+  });
+
+
+  /* ================= Study sets and history ================= */
+
+  const L = VST.library;
+
+  /** Opens any saved item: a museum painting, an uploaded photo or a link. */
+  async function openItem(item) {
+    if (!item) return false;
+    if (item.source === 'upload') {
+      setBusy(true);
+      try {
+        const blob = await L.loadUpload(item);
+        const url = URL.createObjectURL(blob);
+        const el = await loadImageElement(url, { cors: false });
+        setImage(el, { name: item.title, objectUrl: url, item });
+        L.record(item);
+        renderLibrary();
+        return true;
+      } catch (e) {
+        toast('That photo is no longer stored in this browser.', true);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    }
+    if (item.source === 'link') return loadFromUrl(item.image);
+    return studyItem(item);
+  }
+
+  /** Remembers what's being studied, for history and "Add current image". */
+  function remember(item) {
+    img.item = item;
+    L.record(item);
+    renderLibrary();
+  }
+
+  function currentSet() {
+    return (S.currentSet && L.getSet(S.currentSet)) || null;
+  }
+
+  function tile(item, { onRemove, onAdd, removeLabel }) {
+    const el = document.createElement('div');
+    el.className = 'tile' + (img.item && img.item.id === item.id ? ' current' : '');
+    el.dataset.id = item.id;
+    el.innerHTML = '<button class="tile-open" type="button"><img alt="" loading="lazy"></button><span class="tile-title"></span><button class="tile-x" type="button">×</button>';
+    const label = [item.title, item.artist].filter(Boolean).join(', ');
+    el.querySelector('img').src = item.thumb || item.image || '';
+    el.querySelector('img').alt = label;
+    el.querySelector('.tile-open').title = `Study ${label}`;
+    el.querySelector('.tile-title').textContent = item.title || 'Untitled';
+    el.querySelector('.tile-open').addEventListener('click', () => openItem(item));
+    const x = el.querySelector('.tile-x');
+    x.setAttribute('aria-label', removeLabel);
+    x.title = removeLabel;
+    x.addEventListener('click', onRemove);
+    if (onAdd) {
+      const add = document.createElement('button');
+      add.className = 'tile-add';
+      add.type = 'button';
+      add.textContent = '+';
+      add.title = 'Add to the current set';
+      add.setAttribute('aria-label', `Add ${label} to the current set`);
+      add.addEventListener('click', onAdd);
+      el.appendChild(add);
+    }
+    return el;
+  }
+
+  function renderLibrary() {
+    const all = L.sets();
+    if (S.currentSet && !all.some((s) => s.id === S.currentSet)) S.currentSet = all.length ? all[0].id : null;
+    if (!S.currentSet && all.length) S.currentSet = all[0].id;
+    const sel = $('#set-select');
+    sel.innerHTML = '';
+    if (!all.length) {
+      const o = document.createElement('option');
+      o.textContent = 'No sets yet';
+      o.value = '';
+      sel.appendChild(o);
+    }
+    all.forEach((s) => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = `${s.name} (${s.items.length})`;
+      sel.appendChild(o);
+    });
+    sel.value = S.currentSet || '';
+    sel.disabled = !all.length;
+    const set = currentSet();
+    ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).disabled = !set));
+    $('#set-session').disabled = !set || !set.items.length;
+    const box = $('#set-items');
+    box.innerHTML = '';
+    if (set) {
+      set.items.forEach((it) =>
+        box.appendChild(
+          tile(it, {
+            removeLabel: 'Remove from this set',
+            onRemove: () => {
+              L.removeFromSet(set.id, it.id);
+              renderLibrary();
+            },
+          })
+        )
+      );
+    }
+    $('#set-empty').hidden = !!(set && set.items.length);
+    $('#set-empty').textContent = set
+      ? 'This set is empty. Study an image, then choose “+ Add current image”, or use + on an image in History.'
+      : 'Make a set, then add images to it: museum paintings or your own photos. Sets are saved in this browser.';
+    // history
+    const hist = L.history();
+    const hbox = $('#history-items');
+    hbox.innerHTML = '';
+    hist.forEach((it) =>
+      hbox.appendChild(
+        tile(it, {
+          removeLabel: 'Remove from history',
+          onRemove: () => {
+            L.removeFromHistory(it.id);
+            renderLibrary();
+          },
+          onAdd: () => addToCurrentSet(it),
+        })
+      )
+    );
+    $('#history-count').textContent = hist.length ? `· ${hist.length}` : '';
+    $('#history-empty').hidden = hist.length > 0;
+    $('#history-clear').hidden = !hist.length;
+    save();
+  }
+
+  function ensureSet() {
+    let set = currentSet();
+    if (set) return set;
+    const name = prompt('Name your first study set:', 'My study set');
+    if (name == null) return null;
+    set = L.createSet(name);
+    S.currentSet = set.id;
+    return set;
+  }
+
+  function addToCurrentSet(item) {
+    const set = ensureSet();
+    if (!set) return;
+    if (L.addToSet(set.id, item)) toast(`Added to “${set.name}”.`);
+    else toast(`Already in “${set.name}”.`);
+    renderLibrary();
+  }
+
+  $('#set-select').addEventListener('change', (e) => {
+    S.currentSet = e.target.value || null;
+    renderLibrary();
+  });
+  $('#set-new').addEventListener('click', () => {
+    const name = prompt('Name the new study set:', 'New study set');
+    if (name == null) return;
+    const set = L.createSet(name);
+    S.currentSet = set.id;
+    renderLibrary();
+    toast(`Created “${set.name}”.`);
+  });
+  $('#set-rename').addEventListener('click', () => {
+    const set = currentSet();
+    if (!set) return;
+    const name = prompt('Rename this set:', set.name);
+    if (name == null || !name.trim()) return;
+    L.renameSet(set.id, name);
+    renderLibrary();
+  });
+  $('#set-delete').addEventListener('click', () => {
+    const set = currentSet();
+    if (!set || !confirm(`Delete the set “${set.name}”? Its images stay in History.`)) return;
+    L.deleteSet(set.id);
+    S.currentSet = null;
+    renderLibrary();
+  });
+  function addCurrentImage() {
+    if (!img.item) return toast(img.el ? 'Still saving this image; try again in a moment.' : 'Load an image first.');
+    addToCurrentSet(img.item);
+  }
+  $('#set-add-current').addEventListener('click', addCurrentImage);
+  $('#btn-save-set').addEventListener('click', addCurrentImage);
+  $('#set-session').addEventListener('click', () => {
+    const set = currentSet();
+    if (!set || !set.items.length) return;
+    if (flow.session) stopFlow();
+    queue = set.items.map((it) => ({ ...it }));
+    queueChanged();
+    setMode('master');
+    startSession();
+  });
+  $('#set-export').addEventListener('click', async () => {
+    const set = currentSet();
+    if (!set) return;
+    try {
+      const blob = await L.exportSet(set.id);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${slug(set.name)}.valuestudy.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) {
+      toast('Couldn’t export that set.', true);
+    }
+  });
+  $('#set-import').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const set = await L.importSet(await file.text());
+      S.currentSet = set.id;
+      renderLibrary();
+      toast(`Imported “${set.name}” (${set.items.length} image${set.items.length === 1 ? '' : 's'}).`);
+    } catch (err) {
+      toast(err.message || 'Couldn’t import that file.', true);
+    }
+  });
+  $('#history-clear').addEventListener('click', () => {
+    if (!confirm('Clear your study history? Images in your sets are kept.')) return;
+    L.clearHistory();
+    renderLibrary();
   });
 
   /* ================= Timer and sessions ================= */
@@ -1666,7 +1900,7 @@
     if (next === 'image') {
       flow.index++;
       flow.round = 1;
-      studyItem(queue[flow.index]);
+      openItem(queue[flow.index]);
       renderQueue();
     }
     if (S.breakSec > 0) {
@@ -1703,7 +1937,7 @@
     S.timerVisible = true;
     renderQueue();
     updateTimerUi();
-    const ok = await studyItem(queue[0]);
+    const ok = await openItem(queue[0]);
     if (!ok || !flow.session) return;
     startDraw();
   }
@@ -1837,6 +2071,7 @@
       const order = mine.el ? ['both', 'study', 'original', 'compare'] : ['both', 'study', 'original'];
       setView(order[(order.indexOf(S.view) + 1) % order.length]);
     } else if (/^[02-6]$/.test(k)) setBands(+k);
+    else if (k === 's') addCurrentImage();
     else if (k === 'o' && mine.el) {
       if (S.view !== 'compare') setView('compare');
       setOverlay(!S.mineOverlay);
@@ -1856,6 +2091,7 @@
   $('#btn-flip').setAttribute('aria-pressed', String(S.flip));
   $('#paintings-only').checked = S.paintingsOnly;
   buildMuseumFilter();
+  renderLibrary();
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');
@@ -1866,5 +2102,5 @@
   window.addEventListener('resize', () => drawHistogram());
 
   // exposed for automated tests
-  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine };
+  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem };
 })();
