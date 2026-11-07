@@ -2414,8 +2414,22 @@
     onEnd: onPhaseEnd,
   });
 
-  function drawSeconds() {
-    return Math.round(S.minutes * 60);
+  /*
+   * Time is one length for every round (e.g. 10), or a list for rounds that
+   * get shorter (e.g. '10,5,2': 10 minutes, then 5, then 2). A list sets
+   * the number of rounds itself.
+   */
+  function timeList() {
+    const list = String(S.minutes).split(',').map(Number).filter((m) => m > 0);
+    return list.length ? list : [10];
+  }
+  function totalRounds() {
+    const list = timeList();
+    return list.length > 1 ? list.length : S.rounds;
+  }
+  function drawSeconds(round = flow.round) {
+    const list = timeList();
+    return Math.round(list[Math.min(Math.max(1, round), list.length) - 1] * 60);
   }
 
   /** Hidden while drawing from memory, unless you chose to peek. */
@@ -2433,7 +2447,7 @@
       parts.push(flow.pending === 'image' ? 'Break · next painting' : flow.pending === 'round' ? `Break · round ${flow.round + 1} next` : 'Break');
       if (flow.memory) parts.push('compare with the reference');
     } else {
-      if (S.rounds > 1) parts.push(`Round ${flow.round} of ${S.rounds}`);
+      if (totalRounds() > 1) parts.push(`Round ${flow.round} of ${totalRounds()}`);
       if (flow.phase === 'look') parts.push(countdown.running ? 'Look and remember' : fresh ? 'Ready · look first, then draw from memory' : 'Paused · looking');
       else if (memoryHiding()) parts.push(countdown.running ? 'Drawing from memory' : 'Paused');
       else if (flow.reveal && fresh && !countdown.running) parts.push('Ready · reveals in stages');
@@ -2442,7 +2456,7 @@
     }
     if (flow.session) parts.unshift(`Painting ${flow.index + 1} of ${queue.length}`);
     $('#timer-status').textContent = parts.join(' · ');
-    $('#t-skip').hidden = !(flow.session || S.rounds > 1 || flow.phase === 'break' || flow.phase === 'look' || flow.memory);
+    $('#t-skip').hidden = !(flow.session || totalRounds() > 1 || flow.phase === 'break' || flow.phase === 'look' || flow.memory);
     $('#btn-session').textContent = flow.session ? 'Stop session' : 'Start timed session';
     const hide = memoryHiding();
     $('#memory-cover').hidden = !hide;
@@ -2492,7 +2506,7 @@
       return;
     }
     let next = null;
-    if (flow.round < S.rounds) next = 'round';
+    if (flow.round < totalRounds()) next = 'round';
     else if (flow.session && flow.index < queue.length - 1) next = 'image';
     if (!next) {
       if (S.chime) T.chime('done');
@@ -2606,13 +2620,23 @@
   function syncTimerControls() {
     $('#t-minutes').value = String(S.minutes);
     $('#t-rounds').value = String(S.rounds);
+    syncRoundsControl();
     $('#t-break').value = String(S.breakSec);
     $('#t-memory').value = String(S.memorySec);
     $('#t-reveal').value = S.revealSeq;
     $('#t-chime').checked = S.chime;
   }
+  /** Shorter-and-shorter times set the rounds themselves. */
+  function syncRoundsControl() {
+    const fixed = timeList().length > 1;
+    $('#t-rounds').disabled = fixed;
+    $('#t-rounds').title = fixed ? 'Set by the time: one round per length' : 'Draw the same image more than once';
+    if (fixed) $('#t-rounds').value = String(timeList().length);
+    else $('#t-rounds').value = String(S.rounds);
+  }
   $('#t-minutes').addEventListener('change', (e) => {
-    S.minutes = +e.target.value;
+    S.minutes = e.target.value.includes(',') ? e.target.value : +e.target.value;
+    syncRoundsControl();
     if (flow.phase === 'draw' && !countdown.running) countdown.set(drawSeconds());
     updateTimerUi();
     save();
