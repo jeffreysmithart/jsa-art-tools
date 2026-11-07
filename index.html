@@ -74,6 +74,30 @@
         <p class="fine" id="museum-credit">Public-domain images (CC0) from museum open-access collections.</p>
       </section>
 
+      <!-- My study: photo of your sketch, compared with the master -->
+      <section class="group" id="sec-mine">
+        <h2>My study</h2>
+        <p class="hint" id="mine-hint">Photograph your sketch, square it up, and compare it with the reference through the same value settings.</p>
+        <label class="btn block file-btn" id="mine-add"><span id="mine-add-label">Add a photo of my study…</span>
+          <input type="file" id="mine-input" accept="image/*">
+        </label>
+        <div id="mine-ctl" hidden>
+          <div class="row tight">
+            <button class="btn tiny" id="mine-square">Square up again</button>
+            <button class="btn tiny" id="mine-remove">Remove</button>
+          </div>
+          <label class="check" title="Phone photos make white paper look gray, which would skew every value"><input type="checkbox" id="mine-paper" checked> Correct paper to white</label>
+          <label class="check"><input type="checkbox" id="mine-overlay"> Overlay on the reference <kbd>O</kbd></label>
+          <div class="field" id="mine-opacity-field" hidden>
+            <div class="label-row">
+              <label class="label" for="mine-opacity">My study's strength</label>
+              <output id="mine-opacity-out" for="mine-opacity">50%</output>
+            </div>
+            <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
+          </div>
+        </div>
+      </section>
+
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
         <h2>Study</h2>
@@ -131,7 +155,12 @@
           </div>
         </div>
 
+        <p class="label swatch-title" id="swatches-master-label" hidden>Reference</p>
         <div class="swatches" id="swatches" aria-label="Values in this study"></div>
+        <div id="swatches-mine-wrap" hidden>
+          <p class="label swatch-title">My study</p>
+          <div class="swatches" id="swatches-mine" aria-label="Values in my study"></div>
+        </div>
         <p class="hint" id="swatch-hint">Value scale 0 (black) to 10 (white), like Munsell value.</p>
 
         <div class="field">
@@ -190,7 +219,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>Space</kbd> timer.</p>
     </aside>
 
     <main class="stage" id="stage">
@@ -199,6 +228,7 @@
           <button data-view="both" role="radio" title="Original and study side by side">Both</button>
           <button data-view="study" role="radio">Study</button>
           <button data-view="original" role="radio">Original</button>
+          <button data-view="compare" role="radio" id="view-compare" disabled title="Compare with my study (add a photo first)">Compare</button>
         </div>
         <div class="row tight">
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
@@ -214,7 +244,10 @@
           <div class="frame-wrap"><div class="frame"><canvas id="cv-original"></canvas><canvas class="overlay"></canvas></div><figcaption>Original</figcaption></div>
         </figure>
         <figure class="panel" id="panel-study">
-          <div class="frame-wrap"><div class="frame"><canvas id="cv-study"></canvas><canvas class="overlay"></canvas></div><figcaption id="study-caption">Study</figcaption></div>
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-study"></canvas><canvas id="cv-mine-overlay" class="mine-overlay" hidden></canvas><canvas class="overlay"></canvas></div><figcaption id="study-caption">Study</figcaption></div>
+        </figure>
+        <figure class="panel" id="panel-mine">
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-mine"></canvas><canvas class="overlay"></canvas></div><figcaption id="mine-caption">My study</figcaption></div>
         </figure>
         <div class="empty" id="empty">
           <div class="empty-box" id="empty-reference">
@@ -303,6 +336,25 @@
     <p class="modal-hint">Drag a corner to resize, drag inside to move, or drag outside to draw a new crop.</p>
   </div>
 
+  <div class="modal" id="square-modal" hidden role="dialog" aria-modal="true" aria-label="Square up my study">
+    <div class="modal-bar">
+      <strong>Square up my study</strong>
+      <label>Shape
+        <select id="square-aspect">
+          <option value="match">Match the reference</option>
+          <option value="drawn">As drawn</option>
+        </select>
+      </label>
+      <button class="btn" id="square-rotate" title="Turn the result 90° (if the photo is sideways)">Rotate 90°</button>
+      <span class="spacer"></span>
+      <button class="btn" id="square-reset">Reset</button>
+      <button class="btn" id="square-cancel">Cancel</button>
+      <button class="btn primary" id="square-apply">Square up</button>
+    </div>
+    <div class="crop-area"><canvas id="square-canvas"></canvas></div>
+    <p class="modal-hint" id="square-info">Drag the dots onto the corners of your drawing.</p>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/color.js"></script>
@@ -311,6 +363,8 @@
   <script src="js/museum.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/crop.js"></script>
+  <script src="js/warp.js"></script>
+  <script src="js/squareup.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

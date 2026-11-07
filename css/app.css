@@ -337,3 +337,14 @@ body.presenting .timer-status { font-size: 12px; }
 /* the museum names are long: let the dropdown take the full row and shrink to fit */
 .grid-fields .museum-field { flex: 1 1 100%; }
 .museum-field select { flex: 1; min-width: 0; width: 100%; }
+
+/* ---------- Compare my study ---------- */
+.panels:not([data-view="compare"]) #panel-mine { display: none; }
+.panels[data-view="compare"] #panel-original { display: none; }
+.panels[data-view="compare"].overlaying #panel-mine { display: none; }
+.frame .mine-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.swatch-title { margin: 14px 0 0; }
+#swatches-mine-wrap .swatches { margin-top: 6px; }
+.modal-hint.error { color: var(--danger); }
+.modal-bar strong { color: var(--text); }
+#levels-mode { width: 100%; max-width: 100%; }

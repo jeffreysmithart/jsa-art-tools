@@ -57,6 +57,9 @@
     paintingsOnly: true,
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
     cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
+    minePaper: true, // compare: correct the photographed paper to white
+    mineOverlay: false, // compare: lay my study over the reference
+    mineOpacity: 50,
     settingsVersion: 3,
   };
 
@@ -89,6 +92,7 @@
     return s;
   }
   const S = loadSettings();
+  if (S.view === 'compare') S.view = 'both'; // the study photo isn't kept between visits
   let saveTimer = 0;
   function flushSave() {
     clearTimeout(saveTimer);
@@ -256,6 +260,7 @@
     img.meta = meta;
     img.name = name || 'reference';
     img.url = objectUrl;
+    if (mine.el) clearMine(); // the old study photo belonged to the previous reference
     showUrlMsg('');
     renderCredit();
     buildSource();
@@ -372,6 +377,7 @@
     const bands = produceStudy(work.lab, work.hist, imageData.data);
     ctxStudy.putImageData(imageData, 0, 0);
     renderSwatches(bands);
+    renderMine();
     drawHistogram();
     save();
   }
@@ -391,10 +397,11 @@
     const panels = $('#panels');
     panels.dataset.view = S.view;
     if (!work.w) return;
-    const ar = work.w / work.h;
     $$('.panel').forEach((panel) => {
       const wrap = panel.querySelector('.frame-wrap');
       const frame = panel.querySelector('.frame');
+      const cv = frame.querySelector('canvas');
+      const ar = cv.width && cv.height ? cv.width / cv.height : work.w / work.h;
       const box = wrap.getBoundingClientRect();
       const availH = box.height - (presenting ? 0 : 28); // room for the caption
       if (!box.width || availH <= 0) return;
@@ -482,7 +489,10 @@
     let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors` }[S.tone];
     if (grouped()) text += ` · ${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`;
     if (S.blur) text += ' · squint';
-    $('#study-caption').textContent = text;
+    const comparing = S.view === 'compare' && mine.el;
+    const overlay = comparing && S.mineOverlay;
+    $('#study-caption').textContent = overlay ? `Reference with my study on top · ${text}` : comparing ? `Reference · ${text}` : text;
+    $('#mine-caption').textContent = `My study · ${text}`;
   }
 
   function buildThresholdSliders() {
@@ -517,12 +527,13 @@
     requestStudy();
   }
 
-  function renderSwatches(bands) {
-    const box = $('#swatches');
+  function renderSwatches(bands, box = $('#swatches')) {
+    const forMine = box.id === 'swatches-mine';
     box.innerHTML = '';
-    $('#swatch-hint').hidden = !bands;
+    if (!forMine) $('#swatch-hint').hidden = !bands;
+    if (forMine) $('#swatches-mine-wrap').hidden = !bands;
     if (!bands) return;
-    const editable = grouped() && S.levelsMode === 'custom';
+    const editable = !forMine && grouped() && S.levelsMode === 'custom';
     // bars are scaled to the largest share so differences are easy to see;
     // the percentage above each bar gives the true share of the picture
     const maxShare = Math.max(...bands.map((b) => b.share)) || 1;
@@ -751,8 +762,10 @@
   /* ================= View, flip, crop ================= */
 
   function setView(v) {
+    if (v === 'compare' && !mine.el) v = 'both';
     S.view = v;
     setSeg($('#view-seg'), 'view', v);
+    syncMineUi();
     layout();
     save();
   }
@@ -801,6 +814,205 @@
     });
   }
   $('#btn-crop').addEventListener('click', openCrop);
+
+
+  /* ================= Compare my study ================= */
+
+  /*
+   * A photo of the painter's own sketch, squared up (perspective-corrected)
+   * to the reference's shape, then run through the same value settings:
+   * same splits, same painted values, same squint, so the two compare fairly.
+   */
+  const mine = { el: null, url: null, quad: null, mode: 'match', aspect: 1, w: 0, h: 0, lab0: null, p95: 100, lab: null, labKey: null, hist: null };
+  const MINE_SOURCE_MAX = 2400; // photos are downscaled to this before straightening
+  const cvMine = $('#cv-mine');
+  const ctxMine = cvMine.getContext('2d');
+  const cvMineOverlay = $('#cv-mine-overlay');
+
+  const squarer = VST.squareup.create({
+    modal: $('#square-modal'),
+    canvas: $('#square-canvas'),
+    aspect: $('#square-aspect'),
+    rotate: $('#square-rotate'),
+    reset: $('#square-reset'),
+    cancel: $('#square-cancel'),
+    apply: $('#square-apply'),
+    info: $('#square-info'),
+  });
+
+  function hasMine() {
+    return !!(mine.el && mine.lab0);
+  }
+
+  async function loadMineFile(file) {
+    if (!file) return;
+    if (!img.el) return toast('Load a reference or master painting first, then add your study.');
+    if (!/^image\//.test(file.type) && !/\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$/i.test(file.name || '')) return toast('That file isn’t an image.', true);
+    const url = URL.createObjectURL(file);
+    try {
+      const el = await loadImageElement(url, { cors: false });
+      openSquare(el, url, null);
+    } catch (e) {
+      URL.revokeObjectURL(url);
+      toast('This browser couldn’t open that photo. Try a JPG or PNG.', true);
+    }
+  }
+
+  function openSquare(el, url, quad) {
+    squarer.open({
+      image: el,
+      quad,
+      mode: mine.mode,
+      refAspect: work.w / work.h,
+      onApply({ quad: q, mode, aspect }) {
+        if (url && mine.url && mine.url !== url) URL.revokeObjectURL(mine.url);
+        Object.assign(mine, { el, url: url || mine.url, quad: q, mode, aspect });
+        buildMine();
+        setView('compare');
+      },
+    });
+  }
+
+  /** Straightens the photo into the study's pixel grid and measures its paper. */
+  function buildMine() {
+    if (!mine.el || !work.w) return;
+    // output size: the reference's grid when matching its shape, else the drawing's own proportions
+    let w = work.w;
+    let h = work.h;
+    if (mine.mode === 'drawn') {
+      const long = Math.max(work.w, work.h);
+      if (mine.aspect >= 1) {
+        w = long;
+        h = Math.max(1, Math.round(long / mine.aspect));
+      } else {
+        h = long;
+        w = Math.max(1, Math.round(long * mine.aspect));
+      }
+    }
+    const nw = mine.el.naturalWidth;
+    const nh = mine.el.naturalHeight;
+    const s = Math.min(1, MINE_SOURCE_MAX / Math.max(nw, nh));
+    const sw = Math.max(1, Math.round(nw * s));
+    const sh = Math.max(1, Math.round(nh * s));
+    const tmp = document.createElement('canvas');
+    tmp.width = sw;
+    tmp.height = sh;
+    const tctx = tmp.getContext('2d', { willReadFrequently: true });
+    tctx.imageSmoothingQuality = 'high';
+    tctx.drawImage(mine.el, 0, 0, sw, sh);
+    const src = tctx.getImageData(0, 0, sw, sh).data;
+    const rgba = VST.warp.warpQuad(src, sw, sh, mine.quad.map(([x, y]) => [x * s, y * s]), w, h);
+    if (!rgba) return toast('Those corners don’t make a four-sided shape. Try squaring up again.', true);
+    cvMine.width = w;
+    cvMine.height = h;
+    mine.w = w;
+    mine.h = h;
+    mine.lab0 = P.computeLab(rgba, w * h);
+    // the paper is the bright end of the photo: 95th percentile of its values
+    const hist = P.histogram(mine.lab0.L);
+    let acc = 0;
+    let p95 = 100;
+    for (let i = 0; i <= 100; i++) {
+      acc += hist[i];
+      if (acc >= 0.95 * w * h) {
+        p95 = i;
+        break;
+      }
+    }
+    mine.p95 = Math.max(1, p95);
+    mine.labKey = null;
+    syncMineUi();
+    layout();
+    renderStudy();
+  }
+
+  function ensureMineLab() {
+    const key = `${S.blur}|${S.minePaper}`;
+    if (mine.lab && mine.labKey === key) return;
+    let lab = mine.lab0;
+    if (S.minePaper) {
+      // scale values so the paper reads as white (96), like the paper in hand
+      const f = Math.min(2.5, 96 / mine.p95);
+      const L = new Float32Array(lab.L.length);
+      for (let i = 0; i < L.length; i++) L[i] = Math.min(100, lab.L[i] * f);
+      lab = { L, A: lab.A, B: lab.B };
+    }
+    mine.lab = P.blurLab(lab, mine.w, mine.h, blurSigma(mine.w, mine.h));
+    mine.labKey = key;
+  }
+
+  /** Renders my study with the reference's settings: same splits, levels and palette. */
+  function renderMine() {
+    if (!hasMine() || !work.lab) return;
+    ensureMineLab();
+    const imageData = ctxMine.createImageData(mine.w, mine.h);
+    const bands = produceStudy(mine.lab, work.hist, imageData.data);
+    ctxMine.putImageData(imageData, 0, 0);
+    if (S.mineOverlay) {
+      cvMineOverlay.width = mine.w;
+      cvMineOverlay.height = mine.h;
+      cvMineOverlay.getContext('2d').drawImage(cvMine, 0, 0);
+    }
+    mine.bands = bands;
+    renderSwatches(bands, $('#swatches-mine'));
+  }
+
+  function clearMine() {
+    if (mine.url) URL.revokeObjectURL(mine.url);
+    Object.assign(mine, { el: null, url: null, quad: null, lab0: null, lab: null, labKey: null, w: 0, h: 0 });
+    if (S.view === 'compare') S.view = 'both';
+    syncMineUi();
+  }
+
+  function syncMineUi() {
+    const has = hasMine();
+    $('#mine-ctl').hidden = !has;
+    $('#mine-add-label').textContent = has ? 'Replace photo…' : 'Add a photo of my study…';
+    $('#mine-hint').hidden = has;
+    $('#view-compare').disabled = !has;
+    $('#view-compare').title = has ? 'My study next to the reference' : 'Compare with my study (add a photo first)';
+    $('#swatches-mine-wrap').hidden = !has;
+    $('#swatches-master-label').hidden = !has;
+    $('#mine-paper').checked = S.minePaper;
+    $('#mine-overlay').checked = S.mineOverlay;
+    $('#mine-opacity').value = S.mineOpacity;
+    $('#mine-opacity-out').textContent = `${S.mineOpacity}%`;
+    $('#mine-opacity-field').hidden = !S.mineOverlay;
+    cvMineOverlay.hidden = !(has && S.mineOverlay && S.view === 'compare');
+    cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
+    $('#panels').classList.toggle('overlaying', has && S.mineOverlay);
+    setSeg($('#view-seg'), 'view', S.view);
+    updateCaption();
+  }
+
+  function setOverlay(on) {
+    S.mineOverlay = on;
+    syncMineUi();
+    layout();
+    renderStudy();
+  }
+
+  $('#mine-input').addEventListener('change', (e) => {
+    loadMineFile(e.target.files[0]);
+    e.target.value = '';
+  });
+  $('#mine-square').addEventListener('click', () => mine.el && openSquare(mine.el, null, mine.quad));
+  $('#mine-remove').addEventListener('click', () => {
+    clearMine();
+    layout();
+    renderStudy();
+  });
+  $('#mine-paper').addEventListener('change', (e) => {
+    S.minePaper = e.target.checked;
+    requestStudy();
+  });
+  $('#mine-overlay').addEventListener('change', (e) => setOverlay(e.target.checked));
+  $('#mine-opacity').addEventListener('input', (e) => {
+    S.mineOpacity = +e.target.value;
+    $('#mine-opacity-out').textContent = `${S.mineOpacity}%`;
+    cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
+    save();
+  });
 
   /* ================= Downloads ================= */
 
@@ -934,8 +1146,10 @@
     ctx.fillText(title.length > 80 ? `${title.slice(0, 79)}…` : title, m, m + 30);
     ctx.font = '36px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
     ctx.fillStyle = '#555';
-    const sub = img.meta ? `${img.meta.artist}${img.meta.date ? `, ${img.meta.date}` : ''} · ${img.meta.credit}` : $('#study-caption').textContent;
-    ctx.fillText(sub, m, m + 90);
+    const comparing = S.view === 'compare' && hasMine();
+    let sub = img.meta ? `${img.meta.artist}${img.meta.date ? `, ${img.meta.date}` : ''} · ${img.meta.credit}` : $('#study-caption').textContent;
+    if (comparing) sub = `Reference and my study · ${$('#mine-caption').textContent.replace(/^My study · /, '')}${img.meta ? ` · ${img.meta.artist}` : ''}`;
+    ctx.fillText(sub.length > 140 ? `${sub.slice(0, 139)}…` : sub, m, m + 90);
 
     const top = m + 150;
     const swatchH = r.bands ? 360 : 0;
@@ -952,18 +1166,32 @@
       ctx.lineWidth = 3;
       ctx.strokeRect(x, y, w, h);
     };
-    place(finish(r.original, withGrid), m);
-    place(finish(r.study, withGrid), m * 2 + boxW);
+    // in Compare view: the reference's study beside mine; otherwise original beside study
+    const labelAbove = (text, x0) => {
+      ctx.font = '600 38px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.fillStyle = '#333';
+      ctx.fillText(text, x0, top - 18);
+    };
+    if (comparing) {
+      place(finish(r.study, withGrid), m);
+      place(finish(cvMine, withGrid), m * 2 + boxW);
+      labelAbove('Reference', m);
+      labelAbove('My study', m * 2 + boxW);
+    } else {
+      place(finish(r.original, withGrid), m);
+      place(finish(r.study, withGrid), m * 2 + boxW);
+    }
 
-    if (r.bands) {
-      // bar chart of how much of the picture each value covers
+    // bar chart of how much of the picture each value covers
+    const drawBars = (bands, x0, width) => {
       const barMax = swatchH - 130;
       const base = H - m - 60; // bottom of the bars
-      const sw = Math.min(200, (W - m * 2) / r.bands.length - 24);
-      const maxShare = Math.max(...r.bands.map((b) => b.share)) || 1;
+      const gap = 24;
+      const sw = Math.min(200, width / bands.length - gap);
+      const maxShare = Math.max(...bands.map((b) => b.share)) || 1;
       ctx.textAlign = 'center';
-      r.bands.forEach((b, i) => {
-        const x = m + i * (sw + 24);
+      bands.forEach((b, i) => {
+        const x = x0 + i * (sw + gap);
         const g = C.lToGray8(b.L);
         const rgb = b.rgb || [g, g, g];
         const h = b.share > 0 ? Math.max(4, (b.share / maxShare) * barMax) : 0;
@@ -981,10 +1209,16 @@
       });
       // baseline under the bars
       ctx.fillStyle = '#888';
-      ctx.fillRect(m - 10, base, r.bands.length * (sw + 24) - 4, 3);
+      ctx.fillRect(x0 - 10, base, bands.length * (sw + gap) - 4, 3);
       ctx.textAlign = 'left';
+    };
+    if (r.bands && comparing && mine.bands) {
+      drawBars(r.bands, m, boxW);
+      drawBars(mine.bands, m * 2 + boxW, boxW);
+    } else if (r.bands) {
+      drawBars(r.bands, m, W - m * 2);
     }
-    download(c, `${studyName()}-sheet`);
+    download(c, `${studyName()}-${comparing ? 'comparison' : 'sheet'}`);
   }
 
   $('#btn-dl-study').addEventListener('click', downloadStudy);
@@ -1591,7 +1825,7 @@
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
-    if (cropper.isOpen() || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (cropper.isOpen() || squarer.isOpen() || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === 'escape' && presenting) setPresenting(false);
     else if (k === 'p') setPresenting(!presenting);
@@ -1600,10 +1834,13 @@
     else if (k === 'c') openCrop();
     else if (k === 't') $('#btn-timer').click();
     else if (k === 'v') {
-      const order = ['both', 'study', 'original'];
+      const order = mine.el ? ['both', 'study', 'original', 'compare'] : ['both', 'study', 'original'];
       setView(order[(order.indexOf(S.view) + 1) % order.length]);
     } else if (/^[02-6]$/.test(k)) setBands(+k);
-    else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray' }[S.tone]);
+    else if (k === 'o' && mine.el) {
+      if (S.view !== 'compare') setView('compare');
+      setOverlay(!S.mineOverlay);
+    } else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray' }[S.tone]);
     else if (k === ' ' && !$('#timerbar').hidden) {
       e.preventDefault();
       playPause();
@@ -1625,8 +1862,9 @@
   countdown.set(drawSeconds());
   renderQueue();
   setMode(S.mode);
+  syncMineUi();
   window.addEventListener('resize', () => drawHistogram());
 
   // exposed for automated tests
-  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting };
+  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine };
 })();
