@@ -268,6 +268,16 @@ figcaption { text-align: center; color: var(--on-stage); font-size: 12.5px; heig
   background: var(--scrim); padding: 10px 16px; border-radius: 999px; font-weight: 600;
 }
 
+/* Memory mode: the reference is hidden while you draw from memory */
+.memory-cover {
+  position: absolute; inset: 0; z-index: var(--z-sticky); display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--stage);
+}
+.memory-box { max-width: 420px; text-align: center; color: var(--on-stage); }
+.memory-box p { margin: 0 0 14px; text-wrap: pretty; }
+.memory-box .empty-title { margin-bottom: 6px; }
+.panels.memory-hidden .panel { visibility: hidden; }
+
 .credit { margin: 0; padding: 0 16px 10px; text-align: center; color: var(--on-stage); font-size: 12.5px; }
 .credit:empty { display: none; }
 .credit a { color: inherit; }
@@ -281,6 +291,7 @@ figcaption { text-align: center; color: var(--on-stage); font-size: 12.5px; heig
 .timer-main { display: flex; align-items: baseline; gap: 14px; min-width: 210px; }
 .timer-clock { font: 600 34px/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .timer-clock.break { color: var(--accent-text); }
+.timer-clock.look { color: var(--accent-text); }
 .timer-status { color: var(--muted); font-size: 12.5px; max-width: 170px; }
 .timer-buttons, .timer-settings { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .timer-settings { margin-left: auto; gap: 12px; }

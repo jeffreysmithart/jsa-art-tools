@@ -10,7 +10,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
 - **Canvas** holds the grid and downloads.
-- **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied and for how long (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
+- **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied, for how long, and how many timed rounds (and memory rounds) you drew (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
 
 The study image and its toolbar stay in view whichever tab is open. Choosing your own image switches to Study automatically. On touch devices, controls are at least 44 px and text fields 16 px, so iPad Safari doesn't zoom.
 
@@ -38,8 +38,9 @@ The study image and its toolbar stay in view whichever tab is open. Choosing you
 **Timer (optional)**
 - 30 seconds to 60 minutes, 1–5 rounds of the same image, and a break between rounds or paintings to turn the page.
 - In a Master Copy session it moves through the queue automatically. A chime plays at the end of each round, and the screen stays awake while the timer runs.
+- **Memory mode** (`M`, or **Memory** in the timer): each round starts with a look of 15 seconds to 90 seconds, then the image is hidden while you draw from memory. It comes back when the round ends (and during the break) so you can compare. **Peek at the reference** shows it again if you're stuck; that round then counts as a regular timed round. It works with rounds, breaks and timed sessions, and the Log counts memory rounds separately.
 
-Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `0` all values, `2`–`6` number of values, `Space` start/pause.
+Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `M` memory mode, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
 Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They don't sync between devices; use Export / Import to move a set. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), so export sets you care about, or add the site to your Home Screen.
 
