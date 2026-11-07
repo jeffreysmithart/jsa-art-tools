@@ -39,13 +39,12 @@
     mode: 'reference',
     view: 'both',
     flip: false,
-    style: 'values',
-    bands: 4,
+    tone: 'gray', // 'gray' | 'color'
+    method: 'values', // 'values' | 'poster' (main colors)
+    bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
     levelsMode: 'even',
     customLevels: {}, // per number of values, L* 0..100
-    valuesColor: false,
-    posterColor: true,
     posterK: 5,
     blur: 0,
     grid: { on: false, cols: 3, rows: 3, diag: false, color: 'black', opacity: 70 },
@@ -63,6 +62,24 @@
     const saved = store.get('settings', {}) || {};
     const s = { ...DEFAULTS, ...saved };
     s.grid = { ...DEFAULTS.grid, ...(saved.grid || {}) };
+    // settings saved by the first version used a single "style" choice
+    if (saved.style && !saved.tone) {
+      if (saved.style === 'gray') {
+        s.tone = 'gray';
+        s.method = 'values';
+        s.bands = 0;
+      } else if (saved.style === 'poster') {
+        s.tone = saved.posterColor === false ? 'gray' : 'color';
+        s.method = 'poster';
+      } else {
+        s.tone = saved.valuesColor ? 'color' : 'gray';
+        s.method = 'values';
+      }
+    }
+    delete s.style;
+    delete s.valuesColor;
+    delete s.posterColor;
+    if (![0, 2, 3, 4, 5, 6].includes(s.bands)) s.bands = 4;
     return s;
   }
   const S = loadSettings();
@@ -289,6 +306,11 @@
     work.centroids = null;
   }
 
+  /** True when the study is grouped into a set number of values. */
+  function grouped() {
+    return S.method === 'values' && S.bands >= 2;
+  }
+
   function currentThresholds() {
     const t = P.sanitizeThresholds(S.thresholds[S.bands], S.bands);
     S.thresholds[S.bands] = t;
@@ -308,23 +330,25 @@
 
   /** Renders the study for a Lab image into `out` (RGBA). Returns band info. */
   function produceStudy(lab, hist, out) {
-    if (S.style === 'gray') {
-      P.renderGray(lab, out);
+    const color = S.tone === 'color';
+    if (S.method === 'poster') {
+      const shares = P.renderPoster(lab, work.centroids, color, out);
+      return work.centroids.map((c, i) => ({ L: c[0], rgb: color ? C.labToRgb8(c[0], c[1], c[2], [0, 0, 0]) : null, share: shares[i] }));
+    }
+    if (!grouped()) {
+      if (color) P.renderColor(lab, out);
+      else P.renderGray(lab, out);
       return null;
     }
-    if (S.style === 'poster') {
-      const shares = P.renderPoster(lab, work.centroids, S.posterColor, out);
-      return work.centroids.map((c, i) => ({ L: c[0], rgb: C.labToRgb8(c[0], c[1], c[2], [0, 0, 0]), share: shares[i] }));
-    }
     const levels = currentLevels(hist);
-    const shares = P.renderValues(lab, currentThresholds(), levels, S.valuesColor, out);
+    const shares = P.renderValues(lab, currentThresholds(), levels, color, out);
     return levels.map((L, i) => ({ L, share: shares[i] }));
   }
 
   function renderStudy() {
     if (!work.rgba) return;
     ensureLab();
-    if (S.style === 'poster') ensureCentroids();
+    if (S.method === 'poster') ensureCentroids();
     const imageData = ctxStudy.createImageData(work.w, work.h);
     const bands = produceStudy(work.lab, work.hist, imageData.data);
     ctxStudy.putImageData(imageData, 0, 0);
@@ -421,26 +445,33 @@
   /* ================= Study controls ================= */
 
   function syncStudyControls() {
-    setSeg($('#style-seg'), 'style', S.style);
+    setSeg($('#tone-seg'), 'tone', S.tone);
+    setSeg($('#method-seg'), 'method', S.method);
     setSeg($('#bands-seg'), 'n', S.bands);
     setSeg($('#k-seg'), 'k', S.posterK);
-    $('#values-ctl').hidden = S.style !== 'values';
-    $('#poster-ctl').hidden = S.style !== 'poster';
-    $('#color-ctl').hidden = S.style === 'gray';
-    $('#keep-color').checked = S.style === 'poster' ? S.posterColor : S.valuesColor;
-    $('#keep-color-label').textContent = S.style === 'poster' ? 'Show in color' : 'Keep color (values only change)';
+    $('#values-ctl').hidden = S.method !== 'values';
+    $('#poster-ctl').hidden = S.method !== 'poster';
+    $('#split-ctl').hidden = !grouped();
+    $('#levels-ctl').hidden = !grouped();
     $('#levels-mode').value = S.levelsMode;
     $('#blur').value = S.blur;
     $('#blur-out').textContent = S.blur ? `${S.blur}` : 'Off';
-    const names = { gray: 'Grayscale', values: `${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`, poster: `${S.posterK} main colors` };
-    $('#study-caption').textContent = names[S.style] + (S.blur ? ' · squint' : '');
+    updateCaption();
     buildThresholdSliders();
+  }
+
+  function updateCaption() {
+    let text = S.tone === 'color' ? 'Color' : 'Grayscale';
+    if (S.method === 'poster') text += ` · ${S.posterK} main colors`;
+    else if (grouped()) text += ` · ${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`;
+    if (S.blur) text += ' · squint';
+    $('#study-caption').textContent = text;
   }
 
   function buildThresholdSliders() {
     const box = $('#thresholds');
     box.innerHTML = '';
-    if (S.style !== 'values') return;
+    if (!grouped()) return;
     const t = currentThresholds();
     t.forEach((v, i) => {
       const label = document.createElement('label');
@@ -474,11 +505,11 @@
     box.innerHTML = '';
     $('#swatch-hint').hidden = !bands;
     if (!bands) return;
-    const editable = S.style === 'values' && S.levelsMode === 'custom';
+    const editable = grouped() && S.levelsMode === 'custom';
     bands.forEach((b, i) => {
       const el = document.createElement('div');
       el.className = 'swatch';
-      const rgb = b.rgb && S.posterColor ? b.rgb : null;
+      const rgb = b.rgb;
       const g = C.lToGray8(b.L);
       const chip = document.createElement('div');
       chip.className = 'chip';
@@ -516,7 +547,7 @@
   /* Histogram of the image's values with the splits drawn on top. */
   const histCanvas = $('#histogram');
   function drawHistogram() {
-    if (S.style !== 'values') return;
+    if (!grouped()) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.max(1, Math.round(histCanvas.clientWidth * dpr));
     const H = Math.max(1, Math.round(histCanvas.clientHeight * dpr));
@@ -568,10 +599,19 @@
   });
   ['pointerup', 'pointercancel'].forEach((ev) => histCanvas.addEventListener(ev, () => (histDrag = -1)));
 
-  $('#style-seg').addEventListener('click', (e) => {
+  function setTone(tone) {
+    S.tone = tone;
+    syncStudyControls();
+    requestStudy();
+  }
+  $('#tone-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) setTone(b.dataset.tone);
+  });
+  $('#method-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    S.style = b.dataset.style;
+    S.method = b.dataset.method;
     syncStudyControls();
     requestStudy();
   });
@@ -581,7 +621,7 @@
   });
   function setBands(n) {
     S.bands = n;
-    if (S.style !== 'values') S.style = 'values';
+    S.method = 'values';
     syncStudyControls();
     requestStudy();
   }
@@ -611,15 +651,10 @@
     S.levelsMode = mode;
     requestStudy();
   });
-  $('#keep-color').addEventListener('change', (e) => {
-    if (S.style === 'poster') S.posterColor = e.target.checked;
-    else S.valuesColor = e.target.checked;
-    requestStudy();
-  });
   $('#blur').addEventListener('input', (e) => {
     S.blur = +e.target.value;
     $('#blur-out').textContent = S.blur ? `${S.blur}` : 'Off';
-    $('#study-caption').textContent = $('#study-caption').textContent.replace(/ · squint$/, '') + (S.blur ? ' · squint' : '');
+    updateCaption();
     requestStudy();
   });
 
@@ -758,7 +793,7 @@
     const lab = P.blurLab(P.computeLab(rgba, w * h), w, h, blurSigma(w, h));
     const hist = P.histogram(lab.L);
     ensureLab();
-    if (S.style === 'poster') ensureCentroids(); // same palette as the preview
+    if (S.method === 'poster') ensureCentroids(); // same palette as the preview
     const out = new Uint8ClampedArray(w * h * 4);
     const bands = produceStudy(lab, hist, out);
     return { w, h, original: src, study: canvasFrom(out, w, h), bands };
@@ -811,8 +846,10 @@
   }
 
   function studyName() {
-    const parts = { gray: 'grayscale', values: `${S.bands}-values`, poster: `${S.posterK}-colors` };
-    return `${slug(img.name)}-${parts[S.style]}`;
+    const parts = [S.tone === 'color' ? 'color' : 'grayscale'];
+    if (S.method === 'poster') parts.push(`${S.posterK}-main-colors`);
+    else if (grouped()) parts.push(`${S.bands}-values`);
+    return `${slug(img.name)}-${parts.join('-')}`;
   }
 
   function exportGuard() {
@@ -897,7 +934,7 @@
       r.bands.forEach((b, i) => {
         const x = m + i * (sw + 20);
         const g = C.lToGray8(b.L);
-        const rgb = b.rgb && S.posterColor ? b.rgb : [g, g, g];
+        const rgb = b.rgb || [g, g, g];
         ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
         ctx.fillRect(x, y, sw, 90);
         ctx.strokeStyle = '#bbb';
@@ -1339,7 +1376,8 @@
     else if (k === 'v') {
       const order = ['both', 'study', 'original'];
       setView(order[(order.indexOf(S.view) + 1) % order.length]);
-    } else if (/^[2-6]$/.test(k)) setBands(+k);
+    } else if (/^[02-6]$/.test(k)) setBands(+k);
+    else if (k === 'k') setTone(S.tone === 'color' ? 'gray' : 'color');
     else if (k === ' ' && !$('#timerbar').hidden) {
       e.preventDefault();
       playPause();

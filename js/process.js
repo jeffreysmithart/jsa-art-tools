@@ -281,6 +281,19 @@
     }
   }
 
+  /** Full-range color (used to show the squinted image in color). */
+  function renderColor(lab, out) {
+    const { L, A, B } = lab;
+    const rgb = [0, 0, 0];
+    for (let i = 0, j = 0; i < L.length; i++, j += 4) {
+      C.labToRgb8(L[i], A[i], B[i], rgb);
+      out[j] = rgb[0];
+      out[j + 1] = rgb[1];
+      out[j + 2] = rgb[2];
+      out[j + 3] = 255;
+    }
+  }
+
   /**
    * Value bands. In gray mode each band is a flat gray; in color mode each
    * pixel keeps its hue and chroma but takes its band's value.
@@ -454,6 +467,7 @@
     sanitizeThresholds,
     bandLevels,
     renderGray,
+    renderColor,
     renderValues,
     kmeans,
     renderPoster,

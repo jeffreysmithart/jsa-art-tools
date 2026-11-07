@@ -10,6 +10,14 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const swatchCount = (pg, n) => pg.waitForFunction((n) => document.querySelectorAll('#swatches .swatch').length === n, n, { timeout: 3000 }).then(() => true, () => false);
 
+const studyColors = (pg) => pg.evaluate(() => {
+  const c = document.getElementById('cv-study'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  const set = new Set(); let allGray = true;
+  for (let i = 0; i < d.length; i += 4) { set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); if (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2]) allGray = false; }
+  return { count: set.size, allGray };
+});
+const settle = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
 function check(cond, msg) {
   if (!cond) throw new Error('FAIL: ' + msg);
   console.log('ok -', msg);
@@ -73,18 +81,48 @@ function check(cond, msg) {
   check(before !== after, `moving a split changes the dark share (${before} -> ${after})`);
   await page.click('#btn-auto');
 
-  // color values and main colors
+  // number of values works in both grayscale and color
   await page.keyboard.press('4');
-  await page.check('#keep-color');
-  await page.waitForTimeout(100);
+  await settle(page);
+  let sc = await studyColors(page);
+  check(sc.allGray && sc.count === 4, `grayscale + 4 values: exactly 4 grays (${sc.count})`);
+  await page.click('[data-tone="color"]');
+  await settle(page);
+  check(await page.isVisible('#bands-seg') && await page.isVisible('#split-ctl'), 'number of values and splits stay visible in color');
+  check(await swatchCount(page, 4), 'color + 4 values still shows 4 value swatches');
+  sc = await studyColors(page);
+  check(!sc.allGray, 'color + 4 values keeps the hues');
   await page.screenshot({ path: path.join(OUT, '2-color-values-grid.png') });
-  await page.click('[data-style="poster"]');
+  await page.click('[data-n="0"]');
+  await settle(page);
+  check(await swatchCount(page, 0) && !(await page.isVisible('#split-ctl')), 'All values hides the splits');
+  sc = await studyColors(page);
+  check(!sc.allGray && sc.count > 50, `color + all values shows the full image (${sc.count} colors)`);
+  await page.keyboard.press('k');
+  await settle(page);
+  sc = await studyColors(page);
+  check(sc.allGray && sc.count > 20, `K switches to full grayscale (${sc.count} grays)`);
+  await page.keyboard.press('3');
+  await settle(page);
+  sc = await studyColors(page);
+  check(sc.allGray && sc.count === 3, `then 3 values in grayscale (${sc.count})`);
+  check((await page.textContent('#study-caption')) === 'Grayscale · 3 values', 'caption names tone and values');
+
+  // main colors, in color and in gray
+  await page.click('[data-tone="color"]');
+  await page.click('[data-method="poster"]');
   await page.click('[data-k="5"]');
   check(await swatchCount(page, 5), 'main colors shows 5 swatches');
   await page.screenshot({ path: path.join(OUT, '3-main-colors.png') });
+  await page.click('[data-tone="gray"]');
+  await settle(page);
+  sc = await studyColors(page);
+  check(sc.allGray && sc.count <= 5, `main colors in grayscale paints their values (${sc.count})`);
+  await page.click('[data-tone="color"]');
 
   // custom levels
-  await page.click('[data-style="values"]');
+  await page.click('[data-method="values"]');
+  await page.click('[data-n="4"]');
   await page.selectOption('#levels-mode', 'custom');
   check(await page.waitForFunction(() => document.querySelectorAll('#swatches input').length === 4).then(() => true, () => false), 'custom mode shows editable values');
 
@@ -108,7 +146,7 @@ function check(cond, msg) {
   check(Math.abs(wh[0] / wh[1] - 0.8) < 0.01, `cropped study is 4:5 (${wh})`);
 
   // downloads
-  for (const [btn, re] of [['#btn-dl-study', /river-landscape-4-values\.png/], ['#btn-dl-sheet', /sheet\.png/], ['#btn-dl-original', /reference\.png/]]) {
+  for (const [btn, re] of [['#btn-dl-study', /river-landscape-color-4-values\.png/], ['#btn-dl-sheet', /sheet\.png/], ['#btn-dl-original', /reference\.png/]]) {
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click(btn)]);
     const file = path.join(OUT, dl.suggestedFilename());
     await dl.saveAs(file);
@@ -175,6 +213,21 @@ function check(cond, msg) {
   const remembered = await page.evaluate(() => ({ mode: window.VST.app.settings.mode, grid: window.VST.app.settings.grid.on }));
   check(remembered.mode === 'master' && remembered.grid, 'settings remembered after reload ' + JSON.stringify(remembered));
   check((await page.$$('#queue li')).length === 5, 'session queue remembered after reload');
+
+  // settings saved by the first version (single "style" choice) carry over
+  await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('value-study:settings'));
+    delete st.tone; delete st.method;
+    Object.assign(st, { style: 'values', valuesColor: true, bands: 5 });
+    localStorage.setItem('value-study:settings', JSON.stringify(st));
+  });
+  const ctx2 = await browser.newContext();
+  await ctx2.addInitScript((st) => localStorage.setItem('value-study:settings', st), await page.evaluate(() => localStorage.getItem('value-study:settings')));
+  const p2 = await ctx2.newPage();
+  await p2.goto(BASE);
+  const mig = await p2.evaluate(() => { const s = window.VST.app.settings; return { tone: s.tone, method: s.method, bands: s.bands, style: s.style }; });
+  check(mig.tone === 'color' && mig.method === 'values' && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
+  await ctx2.close();
 
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });

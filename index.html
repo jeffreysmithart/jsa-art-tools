@@ -74,16 +74,24 @@
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
         <h2>Study</h2>
-        <div class="seg" id="style-seg" role="radiogroup" aria-label="Study style">
-          <button data-style="gray" role="radio">Grayscale</button>
-          <button data-style="values" role="radio">Values</button>
-          <button data-style="poster" role="radio">Main colors</button>
+        <div class="seg" id="tone-seg" role="radiogroup" aria-label="Grayscale or color">
+          <button data-tone="gray" role="radio">Grayscale</button>
+          <button data-tone="color" role="radio">Color</button>
+        </div>
+
+        <div class="field">
+          <span class="label">Simplify by</span>
+          <div class="seg small" id="method-seg" role="radiogroup" aria-label="Simplify by">
+            <button data-method="values" role="radio" title="Group the image into a few values">Value</button>
+            <button data-method="poster" role="radio" title="Repaint with the few colors that best sum up the image">Main colors</button>
+          </div>
         </div>
 
         <div id="values-ctl">
           <div class="field">
             <span class="label">Number of values</span>
             <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
+              <button data-n="0" role="radio" title="Full range, no grouping (0)">All</button>
               <button data-n="2" role="radio" title="Two values (notan)">2</button>
               <button data-n="3" role="radio">3</button>
               <button data-n="4" role="radio">4</button>
@@ -91,7 +99,7 @@
               <button data-n="6" role="radio">6</button>
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="split-ctl">
             <div class="label-row">
               <span class="label">Where values split</span>
               <span class="row tight">
@@ -102,7 +110,7 @@
             <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
             <div id="thresholds" class="thresholds"></div>
           </div>
-          <div class="field">
+          <div class="field" id="levels-ctl">
             <label class="label" for="levels-mode">Paint each value as</label>
             <select id="levels-mode">
               <option value="even">Even steps, dark to light</option>
@@ -125,8 +133,6 @@
             </div>
           </div>
         </div>
-
-        <label class="check" id="color-ctl"><input type="checkbox" id="keep-color"> <span id="keep-color-label">Keep color</span></label>
 
         <div class="swatches" id="swatches" aria-label="Values in this study"></div>
         <p class="hint" id="swatch-hint">Value scale 0 (black) to 10 (white), like Munsell value.</p>
@@ -187,7 +193,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> gray/color, <kbd>Space</kbd> timer.</p>
     </aside>
 
     <main class="stage" id="stage">
