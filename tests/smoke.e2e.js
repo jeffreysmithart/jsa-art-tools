@@ -298,6 +298,22 @@ function check(cond, msg) {
   await page.keyboard.press('m');
   await page.click('#t-stop');
 
+  // rounds that get shorter: 2 min, then 1, then 30 sec
+  await page.selectOption('#t-minutes', '2,1,0.5');
+  check(await page.$eval('#t-rounds', (e) => e.disabled && e.value === '3') && (await page.textContent('#timer-clock')) === '2:00', 'a shorter-each-round time sets 3 rounds and starts at 2:00');
+  await page.click('#t-play');
+  await page.click('#t-skip');
+  if (await page.evaluate(() => window.VST.app.flow.phase === 'break')) await page.click('#t-skip');
+  check((await page.textContent('#timer-status')).includes('Round 2 of 3'), 'skip goes to round 2');
+  check(await page.evaluate(() => window.VST.app.countdown.duration === 60), 'round 2 is 1 minute');
+  await page.click('#t-skip');
+  if (await page.evaluate(() => window.VST.app.flow.phase === 'break')) await page.click('#t-skip');
+  check(await page.evaluate(() => window.VST.app.countdown.duration === 30) && (await page.textContent('#timer-status')).includes('Round 3 of 3'), 'round 3 is 30 seconds');
+  await page.click('#t-stop');
+  check((await page.textContent('#timer-clock')) === '2:00', 'stopping goes back to the first length');
+  await page.selectOption('#t-minutes', '0.5');
+  check(await page.$eval('#t-rounds', (e) => !e.disabled), 'a single length gives the rounds back');
+
   // staged reveal by hand: 2 values, 3 values, the original, then back to your own settings
   const st = () => page.evaluate(() => ({ view: window.VST.app.settings.view, bands: window.VST.app.settings.bands, tone: window.VST.app.settings.tone }));
   const own = await st();

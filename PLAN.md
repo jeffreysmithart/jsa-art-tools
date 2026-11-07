@@ -32,9 +32,7 @@ Also: crop with canvas presets and custom sizes, flip, a timer with rounds, brea
 
 ## What's next
 
-Remaining from v2:
-
-1. **Decreasing-time rounds:** the same image at 10, then 5, then 2 minutes. Today's rounds all have the same length. The timer's phase flow (`armRound` / `startRound` / `onPhaseEnd` in `js/app.js`) is the place to hook it in; `drawSeconds()` would take the round number.
+v2 is complete: decreasing-time rounds ("Shorter each round" in the timer's Time menu) was the last item.
 
 v3, a larger project to scope on its own:
 
