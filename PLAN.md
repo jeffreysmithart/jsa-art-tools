@@ -7,7 +7,7 @@ A browser-based practice tool for painters. It turns any reference image into si
 This project was sparked by two tools that are genuinely useful and interesting:
 
 - **[Proko's value tool](https://www.proko.com/values)**: simplifying a reference into a few clear values.
-- **The Massa Art drawing timer**: structured, timed drawing sessions.
+- **[The Massa Art drawing timer](https://drawingtimer.com/)**: structured, timed drawing sessions.
 
 We admire both and are building on their *ideas*, not copying their design, layout, wording or branding. This tool should have its own look and feel.
 
