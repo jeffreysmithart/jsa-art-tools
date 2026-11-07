@@ -424,6 +424,107 @@ function check(cond, msg) {
   await ctx3.close();
   await ctx2.close();
 
+  // ---- Compare my study: photo of a sketch, squared up and compared ----
+  const cctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const cp = await cctx.newPage();
+  cp.on('pageerror', (e) => errors.push(e.message));
+  await cp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await cp.goto(BASE);
+  await cp.click('#tab-reference');
+  check(await cp.$eval('#view-compare', (b) => b.disabled), 'Compare is unavailable until a study photo is added');
+  await cp.setInputFiles('#file-input', { name: 'river-landscape.png', mimeType: 'image/png', buffer: png });
+  await cp.waitForFunction(() => window.VST.app.work.w > 0);
+  await cp.click('[data-tone="gray"]');
+  await cp.click('[data-n="4"]');
+  await cp.selectOption('#levels-mode', 'even'); // like gray markers on white paper
+  await settle(cp);
+  const refShares = await cp.$$eval('#swatches .swatch .pct', (els) => els.map((e) => parseInt(e.textContent)));
+
+  // a fake phone photo: the 4-value study as the "sketch", rotated on a tabletop, 20% darker (gray-looking paper)
+  const photo = await cp.evaluate(() => {
+    const study = document.getElementById('cv-study');
+    const c = document.createElement('canvas'); c.width = 1400; c.height = 1000;
+    const x = c.getContext('2d');
+    x.fillStyle = '#6b5b4b'; x.fillRect(0, 0, 1400, 1000);
+    const m = new DOMMatrix().translate(700, 500).rotate(7).translate(-450, -300);
+    x.setTransform(m);
+    x.drawImage(study, 0, 0, 900, 600);
+    x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(0, 0, 900, 600);
+    const corners = [[0, 0], [900, 0], [900, 600], [0, 600]].map(([px, py]) => { const q = m.transformPoint(new DOMPoint(px, py)); return [q.x, q.y]; });
+    return { b64: c.toDataURL('image/png').split(',')[1], corners };
+  });
+  await cp.setInputFiles('#mine-input', { name: 'my-sketch.png', mimeType: 'image/png', buffer: Buffer.from(photo.b64, 'base64') });
+  await cp.waitForSelector('#square-modal:not([hidden])');
+  await cp.waitForTimeout(150);
+  // drag each default dot (12% inset) onto the sketch's corners, as a person would
+  const area = await cp.$eval('#square-canvas', (c) => { const r = c.parentElement.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const ssc = Math.min((area.w - 56) / 1400, (area.h - 56) / 1000);
+  const ox = area.x + (area.w - 1400 * ssc) / 2;
+  const oy = area.y + (area.h - 1000 * ssc) / 2;
+  const toScr = ([X, Y]) => [ox + X * ssc, oy + Y * ssc];
+  const defaults = [[168, 120], [1232, 120], [1232, 880], [168, 880]];
+  for (let i = 0; i < 4; i++) {
+    const [fx, fy] = toScr(defaults[i]);
+    const [tx, ty] = toScr(photo.corners[i]);
+    await cp.mouse.move(fx, fy);
+    await cp.mouse.down();
+    await cp.mouse.move((fx + tx) / 2, (fy + ty) / 2, { steps: 4 });
+    if (i === 0) await cp.screenshot({ path: path.join(OUT, '15-square-up-loupe.png') });
+    await cp.mouse.move(tx, ty, { steps: 4 });
+    await cp.mouse.up();
+  }
+  const quad = await cp.evaluate(() => window.VST.app.squarer.getQuad());
+  const maxErr = Math.max(...quad.map((q, i) => Math.hypot(q[0] - photo.corners[i][0], q[1] - photo.corners[i][1])));
+  check(maxErr < 3 / ssc, `dragged dots land on the sketch corners (within ${maxErr.toFixed(1)} px)`);
+  await cp.screenshot({ path: path.join(OUT, '16-square-up.png') });
+  await cp.click('#square-apply');
+  await cp.waitForFunction(() => document.querySelectorAll('#swatches-mine .swatch').length === 4);
+  check(await cp.$eval('#panels', (e) => e.dataset.view) === 'compare' && await cp.isVisible('#panel-mine') && !(await cp.isVisible('#panel-original')), 'squaring up switches to Compare: reference study beside mine');
+  const mineShares = await cp.$$eval('#swatches-mine .swatch .pct', (els) => els.map((e) => parseInt(e.textContent)));
+  const worst = Math.max(...mineShares.map((v, i) => Math.abs(v - refShares[i])));
+  check(worst <= 4, `my study's value balance matches the reference it was copied from (${mineShares} vs ${refShares})`);
+  check(await cp.isVisible('#swatches-master-label') && await cp.isVisible('#swatches-mine-wrap'), 'two bar charts: reference and my study');
+  const dims = await cp.evaluate(() => [document.getElementById('cv-mine').width, document.getElementById('cv-mine').height, window.VST.app.work.w, window.VST.app.work.h]);
+  check(dims[0] === dims[2] && dims[1] === dims[3], 'my study is fitted to the reference\'s shape');
+  await cp.screenshot({ path: path.join(OUT, '17-compare.png') });
+
+  // without paper correction the darker photo reads differently
+  await cp.uncheck('#mine-paper');
+  await settle(cp);
+  const uncorrected = await cp.$$eval('#swatches-mine .swatch .pct', (els) => els.map((e) => parseInt(e.textContent)));
+  check(uncorrected.join() !== mineShares.join(), `turning off paper correction changes the result (${uncorrected})`);
+  await cp.check('#mine-paper');
+
+  // overlay
+  await cp.keyboard.press('o');
+  await settle(cp);
+  check(await cp.isVisible('#cv-mine-overlay') && !(await cp.isVisible('#panel-mine')), 'O lays my study over the reference');
+  await cp.$eval('#mine-opacity', (i) => { i.value = 30; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  check(await cp.$eval('#cv-mine-overlay', (c) => c.style.opacity) === '0.3', 'overlay strength slider works');
+  await cp.screenshot({ path: path.join(OUT, '18-overlay.png') });
+  await cp.keyboard.press('o');
+
+  // comparison sheet
+  const [dl] = await Promise.all([cp.waitForEvent('download'), cp.click('#btn-dl-sheet')]);
+  check(/-comparison\.png$/.test(dl.suggestedFilename()), `side-by-side sheet becomes a comparison in Compare view (${dl.suggestedFilename()})`);
+  await dl.saveAs(path.join(OUT, dl.suggestedFilename()));
+
+  // "As drawn" keeps the drawing's own proportions; Rotate turns the result
+  await cp.click('#mine-square');
+  await cp.waitForSelector('#square-modal:not([hidden])');
+  await cp.selectOption('#square-aspect', 'drawn');
+  await cp.click('#square-rotate');
+  await cp.click('#square-apply');
+  await settle(cp);
+  const d2 = await cp.evaluate(() => [document.getElementById('cv-mine').width, document.getElementById('cv-mine').height]);
+  check(Math.abs(d2[0] / d2[1] - 600 / 900) < 0.03, `rotated, as-drawn study is portrait 2:3 (${d2})`);
+
+  // a new reference clears the old study photo
+  await cp.setInputFiles('#file-input', { name: 'other.png', mimeType: 'image/png', buffer: png });
+  await cp.waitForFunction(() => document.getElementById('view-compare').disabled);
+  check(await cp.$eval('#panels', (e) => e.dataset.view) === 'both' && await cp.isHidden('#swatches-mine-wrap'), 'a new reference clears the old study photo');
+  await cctx.close();
+
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   phone.on('pageerror', (e) => errors.push(e.message));
