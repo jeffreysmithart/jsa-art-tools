@@ -111,7 +111,21 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
-  // threshold slider changes the study
+  // composition guides: rule of thirds, golden section, diagonals, crossings
+  const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  const gridInk = await inkOn(page);
+  await page.keyboard.press('l');
+  const thirdsInk = await inkOn(page);
+  const cs = await page.evaluate(() => window.VST.app.settings.compose);
+  check(cs.on && cs.thirds && thirdsInk > gridInk, `L shows the rule of thirds over the study (${gridInk} -> ${thirdsInk} px)`);
+  await page.check('[data-compose="diag"]');
+  await page.check('[data-compose="cross"]');
+  const diagInk = await inkOn(page);
+  check(diagInk > thirdsInk, `diagonals and crossing lines add more guides (${diagInk} px)`);
+  await page.screenshot({ path: path.join(OUT, '2b-composition.png') });
+  await page.keyboard.press('l');
+  check((await inkOn(page)) === gridInk && (await page.evaluate(() => window.VST.app.settings.compose.diag)), 'L hides the guides and keeps the choices');
+
   const before = await page.$eval('#swatches .swatch .pct', (d) => d.textContent);
   await page.$eval('#thresholds input', (i) => { i.value = 80; i.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(100);
@@ -214,6 +228,16 @@ function check(cond, msg) {
   await page.screenshot({ path: path.join(OUT, '4b-crop-custom.png') });
 
   await page.selectOption('#crop-preset', '8x10');
+  // the chosen guides show in Crop, and can be changed there
+  check(await page.$eval('[data-guide="diag"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'Crop shows the guides chosen in the Canvas tab');
+  const cropInk = () => page.$eval('#crop-canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) n++; return n; });
+  const withDiag = await cropInk();
+  await page.click('[data-guide="diag"]');
+  await page.click('[data-guide="cross"]');
+  const cset = await page.evaluate(() => window.VST.app.settings.compose);
+  check(!cset.diag && !cset.cross && !cset.on && (await cropInk()) < withDiag, 'turning guides off in Crop redraws it, without showing guides over the study');
+  await page.click('[data-guide="golden"]');
+  check(await page.evaluate(() => window.VST.app.settings.compose.golden) && await page.isChecked('[data-compose="golden"]'), 'a guide chosen in Crop is checked in the Canvas tab too');
   await page.screenshot({ path: path.join(OUT, '4-crop.png') });
   await page.click('#crop-apply');
   await page.keyboard.press('c');

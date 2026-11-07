@@ -8,6 +8,7 @@
   const P = VST.process;
   const C = VST.color;
   const T = VST.timer;
+  const CO = VST.compose;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -47,6 +48,8 @@
     posterK: 5,
     blur: 0,
     grid: { on: false, cols: 3, rows: 3, diag: false, color: 'black', opacity: 70 },
+    // composition guides; the chosen kinds also show in Crop, even when hidden here
+    compose: { on: false, thirds: true, golden: false, diag: false, cross: false, color: 'white' },
     exportFormat: 'png',
     exportGrid: true,
     timerVisible: false,
@@ -72,6 +75,7 @@
     const saved = store.get('settings', {}) || {};
     const s = { ...DEFAULTS, ...saved };
     s.grid = { ...DEFAULTS.grid, ...(saved.grid || {}) };
+    s.compose = { ...DEFAULTS.compose, ...(saved.compose || {}) };
     // settings saved by the first version used a single "style" choice
     if (saved.style && !saved.tone) {
       if (saved.style === 'gray') {
@@ -472,6 +476,13 @@
     ctx.restore();
   }
 
+  /** Composition guides over a picture (rule of thirds, golden section, diagonals). */
+  function drawCompose(ctx, W, H, lineWidth) {
+    const g = S.compose;
+    if (!g.on) return;
+    CO.draw(ctx, g, 0, 0, W, H, { color: GRID_COLORS[g.color] || GRID_COLORS.white, alpha: 0.8, lineWidth });
+  }
+
   function drawOverlays() {
     const dpr = window.devicePixelRatio || 1;
     $$('.frame .overlay').forEach((ov) => {
@@ -483,9 +494,11 @@
       const ctx = ov.getContext('2d');
       ctx.clearRect(0, 0, W, H);
       drawGrid(ctx, W, H, Math.max(1, Math.round(dpr)));
+      drawCompose(ctx, W, H, Math.max(1, Math.round(dpr)));
     });
     $('#btn-grid').setAttribute('aria-pressed', String(S.grid.on));
     $('#grid-on').checked = S.grid.on;
+    $('#compose-on').checked = S.compose.on;
   }
 
   new ResizeObserver(() => layout()).observe($('#panels'));
@@ -785,6 +798,42 @@
     })
   );
 
+  /* ================= Composition guides ================= */
+
+  function syncComposeControls() {
+    const g = S.compose;
+    $('#compose-on').checked = g.on;
+    $$('[data-compose]').forEach((el) => (el.checked = !!g[el.dataset.compose]));
+    $$('[data-guide]').forEach((b) => b.setAttribute('aria-pressed', String(!!g[b.dataset.guide])));
+    $('#compose-color').value = g.color;
+  }
+  function composeChanged() {
+    syncComposeControls();
+    drawOverlays();
+    if (cropper.isOpen()) cropper.redraw();
+    save();
+  }
+  function toggleCompose(on = !S.compose.on) {
+    S.compose.on = on;
+    // showing guides with none chosen would show nothing: start with thirds
+    if (on && !CO.any(S.compose)) S.compose.thirds = true;
+    composeChanged();
+  }
+  /** Turns one kind of guide on or off. Choosing one in the Canvas tab also shows the guides. */
+  function setGuide(kind, on, show = true) {
+    S.compose[kind] = on;
+    if (on && show) S.compose.on = true;
+    composeChanged();
+  }
+  $('#compose-on').addEventListener('change', (e) => toggleCompose(e.target.checked));
+  $$('[data-compose]').forEach((el) => el.addEventListener('change', () => setGuide(el.dataset.compose, el.checked)));
+  $('#compose-color').addEventListener('change', (e) => {
+    S.compose.color = e.target.value;
+    composeChanged();
+  });
+  // the same choices inside Crop (they don't turn the guides on over the study)
+  $$('[data-guide]').forEach((b) => b.addEventListener('click', () => setGuide(b.dataset.guide, !S.compose[b.dataset.guide], false)));
+
   /* ================= View, flip, crop ================= */
 
   function setView(v) {
@@ -820,6 +869,10 @@
     customBox: $('#crop-custom'),
     customW: $('#crop-cw'),
     customH: $('#crop-ch'),
+    // the composition guides chosen in the Canvas tab, over the crop
+    drawGuides(ctx, x, y, w, h) {
+      CO.draw(ctx, S.compose, x, y, w, h, { alpha: 0.6, lineWidth: 1 });
+    },
   });
   function openCrop() {
     if (!img.el) return toast('Load an image first.');
@@ -1284,7 +1337,12 @@
     return { w, h, original: src, study: canvasFrom(out, w, h), bands };
   }
 
-  /** Applies flip and (optionally) the grid, returning a new canvas. */
+  /** Downloads include the grid and guides that are showing, if asked to. */
+  function exportLines() {
+    return S.exportGrid && (S.grid.on || S.compose.on);
+  }
+
+  /** Applies flip and (optionally) the grid and guides, returning a new canvas. */
   function finish(source, withGrid) {
     const c = document.createElement('canvas');
     c.width = source.width;
@@ -1296,7 +1354,11 @@
     }
     ctx.drawImage(source, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (withGrid) drawGrid(ctx, c.width, c.height, Math.max(2, Math.round(Math.max(c.width, c.height) / 900)));
+    if (withGrid) {
+      const lw = Math.max(2, Math.round(Math.max(c.width, c.height) / 900));
+      drawGrid(ctx, c.width, c.height, lw);
+      drawCompose(ctx, c.width, c.height, lw);
+    }
     return c;
   }
 
@@ -1348,7 +1410,7 @@
     if (!exportGuard()) return;
     try {
       const r = renderForExport();
-      download(finish(r.study, S.exportGrid && S.grid.on), studyName());
+      download(finish(r.study, exportLines()), studyName());
     } catch (e) {
       toast(CORS_HELP, true);
     }
@@ -1358,7 +1420,7 @@
     if (!exportGuard()) return;
     try {
       const r = renderForExport();
-      download(finish(r.original, S.exportGrid && S.grid.on), `${slug(img.name)}-reference`);
+      download(finish(r.original, exportLines()), `${slug(img.name)}-reference`);
     } catch (e) {
       toast(CORS_HELP, true);
     }
@@ -1373,7 +1435,7 @@
     } catch (e) {
       return toast(CORS_HELP, true);
     }
-    const withGrid = S.exportGrid && S.grid.on;
+    const withGrid = exportLines();
     const W = 3300;
     const H = 2550;
     const m = 120;
@@ -2622,6 +2684,7 @@
     if (k === 'escape' && presenting) setPresenting(false);
     else if (k === 'p') setPresenting(!presenting);
     else if (k === 'g') toggleGrid();
+    else if (k === 'l') toggleCompose();
     else if (k === 'f') toggleFlip();
     else if (k === 'c') openCrop();
     else if (k === 't') $('#btn-timer').click();
@@ -2645,6 +2708,7 @@
 
   syncStudyControls();
   syncGridControls();
+  syncComposeControls();
   syncTimerControls();
   setSeg($('#view-seg'), 'view', S.view);
   $('#btn-flip').setAttribute('aria-pressed', String(S.flip));

@@ -244,6 +244,27 @@
 
       <!-- Canvas: transferring to the canvas, and downloads -->
       <div class="side-panel" id="panel-canvas" data-panel="canvas" role="tabpanel" aria-labelledby="ptab-canvas" hidden>
+      <section class="group" id="sec-compose">
+        <h2>Composition</h2>
+        <label class="check"><input type="checkbox" id="compose-on"> Show guides <kbd>L</kbd></label>
+        <div class="compose-kinds" role="group" aria-label="Guides">
+          <label class="check" title="Lines at a third of the width and height"><input type="checkbox" data-compose="thirds"> Rule of thirds</label>
+          <label class="check" title="Lines at 0.382 and 0.618 of the width and height"><input type="checkbox" data-compose="golden"> Golden section</label>
+          <label class="check" title="Corner to corner, plus the lines at right angles to them from the other corners"><input type="checkbox" data-compose="diag"> Diagonals</label>
+          <label class="check" title="Verticals and horizontals through the points where the diagonals cross"><input type="checkbox" data-compose="cross"> Lines through the crossings</label>
+        </div>
+        <div class="grid-fields">
+          <label>Color
+            <select id="compose-color">
+              <option value="white">White</option>
+              <option value="black">Black</option>
+              <option value="red">Red</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">The guides you choose also show in <b>Crop</b>, so you can place the horizon and the big shapes on them as you frame the picture.</p>
+      </section>
+
       <section class="group" id="sec-overlay">
         <h2>Grid</h2>
         <label class="check"><input type="checkbox" id="grid-on"> Show grid <kbd>G</kbd></label>
@@ -279,7 +300,7 @@
               <option value="jpeg">JPG</option>
             </select>
           </label>
-          <label class="check"><input type="checkbox" id="export-grid" checked> Include grid</label>
+          <label class="check"><input type="checkbox" id="export-grid" checked> Include grid and guides</label>
         </div>
         <div class="stack">
           <button class="btn" id="btn-dl-study">Download study</button>
@@ -291,7 +312,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>L</kbd> guides, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>Space</kbd> timer.</p>
       </div>
     </aside>
 
@@ -417,6 +438,12 @@
         <input type="number" id="crop-ch" min="0" step="any" inputmode="decimal" aria-label="Canvas height" title="Height (any unit)">
       </span>
       <button class="btn" id="crop-orient" title="Switch between portrait and landscape">Portrait</button>
+      <span class="crop-guides" role="group" aria-label="Composition guides">
+        <button class="btn tiny" type="button" data-guide="thirds" aria-pressed="true" title="Rule of thirds">Thirds</button>
+        <button class="btn tiny" type="button" data-guide="golden" aria-pressed="false" title="Golden section">Golden</button>
+        <button class="btn tiny" type="button" data-guide="diag" aria-pressed="false" title="Diagonals">Diagonals</button>
+        <button class="btn tiny" type="button" data-guide="cross" aria-pressed="false" title="Lines through the crossings">Crossings</button>
+      </span>
       <span class="crop-info" id="crop-info"></span>
       <span class="spacer"></span>
       <button class="btn" id="crop-reset">Full image</button>
@@ -468,6 +495,7 @@
   <script src="js/presets.js"></script>
   <script src="js/log.js"></script>
   <script src="js/timer.js"></script>
+  <script src="js/compose.js"></script>
   <script src="js/crop.js"></script>
   <script src="js/warp.js"></script>
   <script src="js/squareup.js"></script>

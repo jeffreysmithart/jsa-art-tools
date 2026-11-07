@@ -63,7 +63,7 @@
   }
 
   function create(els) {
-    const { modal, canvas, preset: presetSel, orient, info, apply, cancel, reset, customBox, customW, customH } = els;
+    const { modal, canvas, preset: presetSel, orient, info, apply, cancel, reset, customBox, customW, customH, drawGuides } = els;
     const ctx = canvas.getContext('2d');
     let image = null;
     let imgW = 0;
@@ -118,17 +118,21 @@
       ctx.rect(ox, oy, imgW * s, imgH * s);
       ctx.rect(rx, ry, rw, rh);
       ctx.fill('evenodd');
-      // rule-of-thirds guides
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let i = 1; i < 3; i++) {
-        ctx.moveTo(rx + (rw * i) / 3, ry);
-        ctx.lineTo(rx + (rw * i) / 3, ry + rh);
-        ctx.moveTo(rx, ry + (rh * i) / 3);
-        ctx.lineTo(rx + rw, ry + (rh * i) / 3);
+      // composition guides (the app's choice), else rule of thirds
+      if (drawGuides) {
+        drawGuides(ctx, rx, ry, rw, rh);
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 1; i < 3; i++) {
+          ctx.moveTo(rx + (rw * i) / 3, ry);
+          ctx.lineTo(rx + (rw * i) / 3, ry + rh);
+          ctx.moveTo(rx, ry + (rh * i) / 3);
+          ctx.lineTo(rx + rw, ry + (rh * i) / 3);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.strokeRect(rx, ry, rw, rh);
@@ -342,7 +346,7 @@
       onApply = null;
     }
 
-    return { open, close, isOpen: () => !modal.hidden };
+    return { open, close, isOpen: () => !modal.hidden, redraw: draw };
   }
 
   VST.crop = { create, PRESETS, aspectFor, fitRect };
