@@ -46,18 +46,18 @@
       this.set(this.duration);
       if (wasRunning) this.start();
     }
-    /** End the current countdown now, as if it had run out. */
-    finish() {
+    /** End the current countdown now. `natural` is true when it ran out on its own. */
+    finish(natural = false) {
       this.stopTicking();
       this.running = false;
       this.remainingMs = 0;
       this.emit();
-      this.onEnd && this.onEnd();
+      this.onEnd && this.onEnd(natural);
     }
     tick() {
       this.remainingMs = Math.max(0, this.endAt - Date.now());
       this.emit();
-      if (this.remainingMs <= 0) this.finish();
+      if (this.remainingMs <= 0) this.finish(true);
     }
     stopTicking() {
       if (this.handle) clearInterval(this.handle);

@@ -59,6 +59,7 @@
     cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
     currentSet: null, // the study set shown in the sidebar
     splitSource: {}, // per number of values: 'auto' (fit to image), 'even' or 'fixed' (dragged)
+    panel: 'images', // sidebar tab: 'images' | 'study' | 'canvas'
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
@@ -204,6 +205,7 @@
     try {
       const el = await loadImageElement(url, { cors: false });
       setImage(el, { name: (file.name || 'pasted image').replace(/\.[^.]+$/, ''), objectUrl: url });
+      setPanel('study');
       // keep a copy in this browser so it can be reopened from History or a set
       L.saveUpload(file, el)
         .then((item) => img.el === el && remember(item))
@@ -235,6 +237,7 @@
       const name = meta ? `${meta.artist} ${meta.title}` : decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '');
       setImage(el, { name, meta });
       remember(meta ? L.clean(meta) : { id: `link-${url}`, source: 'link', title: name || 'Image link', image: url, thumb: url, added: Date.now() });
+      if (!meta) setPanel('study');
       return true;
     } catch (e) {
       const msg = meta
@@ -1035,6 +1038,58 @@
     save();
   });
 
+
+  /* ================= Sidebar tabs: Images / Study / Canvas ================= */
+
+  const PANELS = ['images', 'study', 'canvas'];
+
+  function setPanel(name) {
+    if (!PANELS.includes(name)) name = 'images';
+    S.panel = name;
+    PANELS.forEach((p) => {
+      const on = p === name;
+      $(`#panel-${p}`).hidden = !on;
+      const tab = $(`#ptab-${p}`);
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+    });
+    if (name === 'study') drawHistogram(); // it can't be measured while hidden
+    save();
+  }
+
+  $$('.side-tabs [role="tab"]').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      setPanel(tab.dataset.panel);
+      $('.sidebar').scrollTop = 0;
+    });
+    // arrow keys move between tabs, as in any tab list
+    tab.addEventListener('keydown', (e) => {
+      const i = PANELS.indexOf(tab.dataset.panel);
+      const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? PANELS.length - 1 : null;
+      if (next == null) return;
+      e.preventDefault();
+      const p = PANELS[(next + PANELS.length) % PANELS.length];
+      setPanel(p);
+      $(`#ptab-${p}`).focus();
+    });
+  });
+
+  /* Pop-up screens: move keyboard focus in when they open and back to where it was when they close. */
+  function manageFocus(modal) {
+    let returnTo = null;
+    new MutationObserver(() => {
+      if (!modal.hidden) {
+        returnTo = document.activeElement;
+        const first = modal.querySelector('.btn.primary:not([disabled])') || modal.querySelector('button:not([disabled]), select');
+        if (first) first.focus({ preventScroll: true });
+      } else if (returnTo && document.contains(returnTo)) {
+        returnTo.focus({ preventScroll: true });
+        returnTo = null;
+      }
+    }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+  }
+  ['#crop-modal', '#square-modal', '#tryon-modal'].forEach((sel) => manageFocus($(sel)));
+
   /* ================= Downloads ================= */
 
   function canvasFrom(rgbaOrCanvas, w, h) {
@@ -1652,6 +1707,7 @@
   function remember(item) {
     img.item = item;
     L.record(item);
+    VST.log.start(item);
     renderLibrary();
   }
 
@@ -2106,6 +2162,7 @@
 
   const countdown = new T.Countdown({
     onTick(ms, running) {
+      VST.log.setTimerRunning(running && flow.phase === 'draw');
       $('#timer-clock').textContent = T.format(ms);
       $('#timer-clock').classList.toggle('break', flow.phase === 'break');
       $('#timerbar').classList.toggle('ending', flow.phase === 'draw' && running && ms <= 10000);
@@ -2145,7 +2202,8 @@
     updateTimerUi();
   }
 
-  function onPhaseEnd() {
+  function onPhaseEnd(natural) {
+    if (natural && flow.phase === 'draw') VST.log.round(countdown.duration);
     if (flow.phase === 'break') {
       if (flow.pending === 'round') flow.round++;
       startDraw();
@@ -2362,9 +2420,10 @@
   countdown.set(drawSeconds());
   renderQueue();
   setMode(S.mode);
+  setPanel(S.panel);
   syncMineUi();
   window.addEventListener('resize', () => drawHistogram());
 
   // exposed for automated tests
-  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem };
+  VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem, setPanel };
 })();

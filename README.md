@@ -6,11 +6,18 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 
 ## What's in v1
 
-**Two modes**
-- **Reference:** choose, drop or paste an image, or load one from a link.
-- **Master Copy:** search public-domain paintings by artist or subject across six museums (the **Art Institute of Chicago**, **The Met**, the **National Gallery of Art** in Washington, the **Minneapolis Institute of Art (Mia)**, the **Cleveland Museum of Art** and **The National Gallery, London**), or pick one with the **Museum** filter. Study a painting, or build a timed session from several. The Met, Mia and Cleveland need the free image relay; see [Museum image relay](#museum-image-relay).
+**Layout:** the sidebar has three tabs:
+- **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
+- **Study** holds the value study settings and My study.
+- **Canvas** holds the grid and downloads.
 
-**Study tools (both modes)**
+The study image and its toolbar stay in view whichever tab is open. Choosing your own image switches to Study automatically. On touch devices, controls are at least 44 px and text fields 16 px, so iPad Safari doesn't zoom.
+
+**Finding images**
+- **Upload:** choose, drop or paste an image, or load one from a link.
+- **Museums:** search public-domain paintings by artist or subject across six museums (the **Art Institute of Chicago**, **The Met**, the **National Gallery of Art** in Washington, the **Minneapolis Institute of Art (Mia)**, the **Cleveland Museum of Art** and **The National Gallery, London**), or pick one with the **Museum** filter. Study a painting, or build a timed session from several. The Met, Mia and Cleveland need the free image relay; see [Museum image relay](#museum-image-relay).
+
+**Study tools**
 - **Color:** Grayscale, Color, or Main colors.
 - **Number of values** (Grayscale or Color): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
 - **Main colors:** repaints the image with the 2–8 colors that best summarize it.
@@ -33,7 +40,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 
 Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
-Settings, study sets, history and the session list are remembered in this browser (uploaded photos are stored too). They don't sync between devices; use Export / Import to move a set. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), so export sets you care about, or add the site to your Home Screen.
+Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They don't sync between devices; use Export / Import to move a set. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), so export sets you care about, or add the site to your Home Screen.
 
 ## Running it
 
@@ -73,6 +80,7 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/warp.js`, `js/squareup.js`: perspective correction and the square-up screen for study photos
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset
+- `js/log.js`: the practice log (records study time and timed rounds per day)
 - `js/library.js`: study sets and history (localStorage, with uploaded photos in IndexedDB)
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it
