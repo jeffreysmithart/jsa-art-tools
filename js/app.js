@@ -10,6 +10,7 @@
   const T = VST.timer;
   const CO = VST.compose;
   const G = VST.gamut;
+  const PAL = VST.palette;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -41,7 +42,7 @@
     mode: 'reference',
     view: 'both',
     flip: false,
-    tone: 'gray', // 'gray' | 'color' | 'poster' (main colors)
+    tone: 'gray', // 'gray' | 'color' | 'poster' (main colors) | 'palette' (limited palette)
     bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
     levelsMode: 'average', // true to the image's light key
@@ -72,6 +73,9 @@
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
     spaceUnused: false, // color space: also show the colors the picture doesn't use
+    palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
+    palMark: true, // Palette study: stripe what the palette can't reach
+    palRange: true, // color space: show what the palette can mix
     settingsVersion: 3,
   };
 
@@ -93,7 +97,8 @@
     }
     // the second version kept "main colors" as a separate method
     if (saved.method === 'poster') s.tone = 'poster';
-    if (!['gray', 'color', 'poster'].includes(s.tone)) s.tone = 'gray';
+    if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
+    if (!Array.isArray(s.palette) || !s.palette.length) s.palette = DEFAULTS.palette.slice();
     // earlier versions defaulted to even steps; the default is now the image's average
     if ((saved.settingsVersion || 1) < 3 && s.levelsMode === 'even') s.levelsMode = 'average';
     s.settingsVersion = DEFAULTS.settingsVersion;
@@ -349,7 +354,7 @@
 
   /** True when the study is grouped into a set number of values. */
   function grouped() {
-    return S.tone !== 'poster' && S.bands >= 2;
+    return (S.tone === 'gray' || S.tone === 'color') && S.bands >= 2;
   }
 
   function currentThresholds() {
@@ -380,7 +385,8 @@
   }
 
   /** Renders the study for a Lab image into `out` (RGBA). Returns band info. */
-  function produceStudy(lab, hist, out) {
+  function produceStudy(lab, hist, out, width) {
+    if (S.tone === 'palette') return renderPalette(lab, out, width);
     if (S.tone === 'poster') {
       const shares = P.renderPoster(lab, work.centroids, true, out);
       return work.centroids.map((c, i) => ({ L: c[0], rgb: C.labToRgb8(c[0], c[1], c[2], [0, 0, 0]), share: shares[i] }));
@@ -409,7 +415,7 @@
     }
     if (S.tone === 'poster') ensureCentroids();
     const imageData = ctxStudy.createImageData(work.w, work.h);
-    const bands = produceStudy(work.lab, work.hist, imageData.data);
+    const bands = produceStudy(work.lab, work.hist, imageData.data, work.w);
     ctxStudy.putImageData(imageData, 0, 0);
     renderSwatches(bands);
     renderMine();
@@ -520,8 +526,11 @@
     setSeg($('#tone-seg'), 'tone', S.tone);
     setSeg($('#bands-seg'), 'n', S.bands);
     setSeg($('#k-seg'), 'k', S.posterK);
-    $('#values-ctl').hidden = S.tone === 'poster';
+    $('#values-ctl').hidden = S.tone === 'poster' || S.tone === 'palette';
     $('#poster-ctl').hidden = S.tone !== 'poster';
+    $('#palette-ctl').hidden = S.tone !== 'palette';
+    $('#pal-mark').checked = S.palMark;
+    $('#palette-name').textContent = paletteName();
     $('#split-ctl').hidden = !grouped();
     $('#levels-ctl').hidden = !grouped();
     $('#levels-mode').value = S.levelsMode;
@@ -532,7 +541,7 @@
   }
 
   function updateCaption() {
-    let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors` }[S.tone];
+    let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors`, palette: `Palette · ${paletteName()}` }[S.tone];
     if (grouped()) text += ` · ${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`;
     if (S.blur) text += ' · squint';
     const comparing = S.view === 'compare' && mine.el;
@@ -703,7 +712,7 @@
   });
   function setBands(n) {
     S.bands = n;
-    if (S.tone === 'poster') S.tone = 'color'; // values apply to grayscale or color
+    if (S.tone === 'poster' || S.tone === 'palette') S.tone = 'color'; // values apply to grayscale or color
     if (S.splitSource[n] === 'auto') work.refit = true;
     syncStudyControls();
     requestStudy();
@@ -1036,7 +1045,7 @@
     if (!hasMine() || !work.lab) return;
     ensureMineLab();
     const imageData = ctxMine.createImageData(mine.w, mine.h);
-    const bands = produceStudy(mine.lab, work.hist, imageData.data);
+    const bands = produceStudy(mine.lab, work.hist, imageData.data, mine.w);
     ctxMine.putImageData(imageData, 0, 0);
     if (S.mineOverlay) {
       cvMineOverlay.width = mine.w;
@@ -1186,11 +1195,20 @@
     }
     const marks = S.tone === 'poster' && work.centroids ? work.centroids.map((c) => ({ L: c[0], a: c[1], b: c[2] })) : [];
     if (S.spaceUnused && !shell) shell = CS.solidShell((r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]));
-    return { cells: colorCache.cells, shell: S.spaceUnused ? shell : [], marks, stats: colorCache.stats };
+    const pal = paletteReach();
+    return {
+      cells: colorCache.cells,
+      shell: S.spaceUnused ? shell : [],
+      marks,
+      stats: colorCache.stats,
+      palette: S.palRange && pal ? ensurePalette().mixes : [],
+      out: S.palRange && pal ? pal.outCells : null,
+    };
   }
 
   function renderGamut() {
     if (!$('#space-small').clientWidth) return; // hidden
+    renderPaletteUi();
     const d = colorData();
     $('#gamut-empty').hidden = !!d;
     spaceSmall.setShowUnused(S.spaceUnused);
@@ -1216,6 +1234,7 @@
       `Open the color space larger. Main hue ${mh ? mh.hueName : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
     );
     $('#gamut-marks-hint').hidden = !d.marks.length;
+    $('#pal-out-hint').hidden = !(d.out && d.out.size);
     if (!$('#space-modal').hidden) spaceBig.setData(d);
   }
 
@@ -1244,8 +1263,16 @@
     const [r, g, b] = toRgb(cell.L, cell.a, cell.b);
     box.querySelector('.sw').style.background = `rgb(${r},${g},${b})`;
     box.querySelector('b').textContent = m.hue === 'N' ? `Value ${m.value} · neutral gray` : `Value ${m.value} · chroma ≈ ${m.chroma} · hue ≈ ${m.hue} (${m.hueName})`;
+    const model = ensurePalette();
+    const hit = model && PAL.nearest(model, cell.L, cell.a, cell.b);
+    const near = hit && model.mixes[hit.i];
+    $('#space-palette').textContent = !near
+      ? ''
+      : hit.d <= PAL.REACH
+        ? `Your palette: ${PAL.recipe(near.parts)} (ΔE ${Math.round(hit.d)})`
+        : `Out of your palette’s reach: the closest mix is ${Math.round(hit.d)} ΔE away (${PAL.recipe(near.parts)})`;
     const pct = cell.share * 100;
-    box.querySelector('span:not(.sw)').textContent = pct < 0.1 ? 'under 0.1% of the picture' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}% of the picture`;
+    box.querySelector('.share').textContent = pct < 0.1 ? 'under 0.1% of the picture' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}% of the picture`;
   }
 
   function openSpace() {
@@ -1292,6 +1319,186 @@
     else return;
     e.preventDefault();
   });
+
+  /* ================= Limited palette ================= */
+
+  /*
+   * A few paints, what they can mix (simulated with spectral.js), how much
+   * of the picture that reaches, and a Palette study that repaints the
+   * picture with the nearest mixes, striping what's out of reach.
+   */
+  const palState = { key: '', model: null, reachKey: '', reach: null };
+
+  function ensurePalette() {
+    const key = S.palette.join(',');
+    if (palState.key !== key) {
+      palState.key = key;
+      palState.model = window.spectral ? PAL.build(S.palette, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0])) : null;
+      palState.reachKey = '';
+    }
+    return palState.model;
+  }
+
+  /** How much of the current picture the palette reaches (cached per image and palette). */
+  function paletteReach() {
+    const model = ensurePalette();
+    if (!model || !work.lab) return null;
+    if (colorCache.lab !== work.lab) colorData();
+    const key = `${palState.key}|${work.blurKey}|${work.w}x${work.h}`;
+    if (palState.reachKey !== key || !palState.reach) {
+      palState.reach = PAL.reach(model, colorCache.cells);
+      palState.reachKey = key;
+    }
+    return palState.reach;
+  }
+
+  function samePaints(a, b) {
+    return a.length === b.length && a.every((id) => b.includes(id));
+  }
+  function paletteName() {
+    const p = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
+    return p ? p.name.replace(/ \(.*\)$/, '') : 'my palette';
+  }
+
+  /** The study, repainted with the palette's nearest mixes. */
+  function renderPalette(lab, out, width) {
+    const model = ensurePalette();
+    const n = lab.L.length;
+    if (!model) {
+      P.renderColor(lab, out);
+      return null;
+    }
+    const counts = new Map();
+    const w = width || n;
+    // thin diagonal lines over what the palette can't reach, sized to the image,
+    // light on dark mixes and dark on light ones, so the mix still reads between them
+    const period = Math.max(8, Math.round(w / 70));
+    const line = Math.max(2, Math.round(period * 0.28));
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      const hit = PAL.nearestCached(model, lab.L[i], lab.A[i], lab.B[i]);
+      const m = model.mixes[hit.i];
+      counts.set(hit.i, (counts.get(hit.i) || 0) + 1);
+      let r = m.rgb[0];
+      let g = m.rgb[1];
+      let b = m.rgb[2];
+      if (S.palMark && hit.d > PAL.REACH && ((i % w) + ((i / w) | 0)) % period < line) {
+        const ink = m.L > 55 ? 0 : 255;
+        r = r * 0.35 + ink * 0.65;
+        g = g * 0.35 + ink * 0.65;
+        b = b * 0.35 + ink * 0.65;
+      }
+      out[j] = r;
+      out[j + 1] = g;
+      out[j + 2] = b;
+      out[j + 3] = 255;
+    }
+    // swatches: the mixes that cover the most, light to dark
+    return [...counts.entries()]
+      .sort((p, q) => q[1] - p[1])
+      .slice(0, 6)
+      .map(([i, c]) => ({ L: model.mixes[i].L, rgb: model.mixes[i].rgb, share: c / n }))
+      .sort((p, q) => p.L - q.L);
+  }
+
+  function renderPaletteUi() {
+    const sel = $('#pal-preset');
+    const match = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
+    sel.value = match ? match.id : 'custom';
+    const box = $('#pal-paints');
+    box.innerHTML = '';
+    for (const p of PAL.paintsFor(S.palette)) {
+      const chip = document.createElement('span');
+      chip.className = 'pal-chip';
+      chip.innerHTML = '<i></i><span></span><button type="button" class="pal-remove">×</button>';
+      chip.querySelector('i').style.background = p.hex;
+      chip.querySelector('span').textContent = p.name;
+      const rm = chip.querySelector('button');
+      rm.setAttribute('aria-label', `Remove ${p.name}`);
+      rm.title = `Remove ${p.name}`;
+      rm.disabled = S.palette.length <= 1;
+      rm.addEventListener('click', () => setPalette(S.palette.filter((id) => id !== p.id)));
+      box.appendChild(chip);
+    }
+    const add = $('#pal-add');
+    add.innerHTML = '<option value="">+ Add a paint…</option>';
+    for (const p of PAL.PIGMENTS) {
+      if (S.palette.includes(p.id)) continue;
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      add.appendChild(o);
+    }
+    $('#pal-range').checked = S.palRange;
+    const stats = $('#pal-stats');
+    const r = paletteReach();
+    if (!r) {
+      stats.innerHTML = '';
+      return;
+    }
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    // name the one or two hue families that make up most of what's out of reach
+    // (an average hue of, say, greens and blues would name neither)
+    let outLabel = 'Nothing';
+    if (r.outShare >= 0.005) {
+      const families = new Map();
+      for (const c of r.outCells) {
+        const m = CS.munsell(c.L, c.a, c.b);
+        const name = m.hue === 'N' ? (c.L < 50 ? 'dark grays' : 'light grays') : `${m.hueName}s`;
+        families.set(name, (families.get(name) || 0) + c.share);
+      }
+      const ranked = [...families.entries()].sort((p, q) => q[1] - p[1]);
+      const named = ranked.filter(([, v], i) => i === 0 || (i === 1 && v >= r.outShare * 0.25)).map(([n]) => n);
+      const text = named.join(' and ');
+      outLabel = text.charAt(0).toUpperCase() + text.slice(1);
+    }
+    const pct = (v) => (v > 0 && v < 0.01 ? '<1' : Math.round(v * 100));
+    stats.innerHTML = stat(`${pct(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `out of reach · ${pct(r.outShare)}% of the picture` : 'out of reach');
+  }
+
+  /** A new set of paints: rebuild what it mixes and repaint what shows it. */
+  function setPalette(ids) {
+    S.palette = ids.slice();
+    ensurePalette();
+    renderPaletteUi();
+    syncStudyControls();
+    if (S.tone === 'palette') requestStudy();
+    renderGamut();
+    save();
+  }
+  $('#pal-preset').addEventListener('change', (e) => {
+    const p = PAL.PRESETS.find((x) => x.id === e.target.value);
+    if (p) setPalette(p.paints);
+  });
+  $('#pal-add').addEventListener('change', (e) => {
+    if (e.target.value) setPalette([...S.palette, e.target.value]);
+  });
+  $('#pal-range').addEventListener('change', (e) => {
+    S.palRange = e.target.checked;
+    renderGamut();
+    save();
+  });
+  $('#pal-mark').addEventListener('change', (e) => {
+    S.palMark = e.target.checked;
+    requestStudy();
+    save();
+  });
+  $('#pal-study').addEventListener('click', () => {
+    if (!img.el) return toast('Load an image first.');
+    setTone('palette');
+    setPanel('study');
+  });
+  $('#pal-choose').addEventListener('click', () => setPanel('color'));
+  PAL.PRESETS.forEach((p) => {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.name;
+    $('#pal-preset').appendChild(o);
+  });
+  const customOpt = document.createElement('option');
+  customOpt.value = 'custom';
+  customOpt.textContent = 'My palette';
+  customOpt.disabled = true;
+  $('#pal-preset').appendChild(customOpt);
 
   /* ================= Log tab ================= */
 
@@ -1475,7 +1682,7 @@
     ensureLab();
     if (S.tone === 'poster') ensureCentroids(); // same palette as the preview
     const out = new Uint8ClampedArray(w * h * 4);
-    const bands = produceStudy(lab, hist, out);
+    const bands = produceStudy(lab, hist, out, w);
     return { w, h, original: src, study: canvasFrom(out, w, h), bands };
   }
 
@@ -2359,6 +2566,7 @@
     else renderPresetSelect();
   });
   $('#preset-save').addEventListener('click', () => {
+    if (S.tone === 'palette') return toast('Presets don’t include palettes yet: choose Grayscale, Color or Main colors to save one.');
     const name = prompt('Name this preset:', '');
     if (name == null) return;
     const p = PR.save(currentPreset(name));
@@ -2824,7 +3032,7 @@
       setView('original');
     } else {
       const tone = reveal.snapshot.tone;
-      S.tone = tone === 'poster' ? 'gray' : tone; // main colors has no values to step through
+      S.tone = tone === 'gray' || tone === 'color' ? tone : 'gray'; // main colors and palette have no values to step through
       S.bands = st;
       if (S.splitSource[st] === 'auto') work.refit = true;
       syncStudyControls();
@@ -3003,7 +3211,7 @@
     else if (k === 'o' && mine.el) {
       if (S.view !== 'compare') setView('compare');
       setOverlay(!S.mineOverlay);
-    } else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray' }[S.tone]);
+    } else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray', palette: 'gray' }[S.tone]);
     else if (k === ' ' && !$('#timerbar').hidden) {
       e.preventDefault();
       playPause();

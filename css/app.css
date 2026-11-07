@@ -527,8 +527,27 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   padding: 8px 14px 8px 8px; border-radius: 12px; background: var(--scrim); font-size: 13px;
 }
 .space-readout .sw { width: 28px; height: 28px; border-radius: 6px; flex: none; box-shadow: inset 0 0 0 1px var(--hairline); }
+.space-readout .rd { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .space-readout b { font-weight: 600; }
-.space-readout span:not(.sw) { color: var(--muted); white-space: nowrap; }
+.space-readout .share { color: var(--muted); }
+.space-readout .pal { color: var(--muted); }
+.space-readout .pal:empty { display: none; }
+.pal-paints { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.pal-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 2px 2px 8px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 12.5px;
+}
+.pal-chip i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--hairline); flex: none; }
+.pal-remove {
+  border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1;
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+}
+.pal-remove:hover { color: var(--text); background: var(--panel-2); }
+.pal-remove:disabled { visibility: hidden; }
+#pal-preset, #pal-add { width: 100%; }
+.pal-stats { margin: 12px 0 4px; }
+#sec-palette .btn.block { margin-top: 10px; }
+@media (pointer: coarse) { .pal-remove { width: 44px; height: 44px; } }
 #space-modal .modal-bar .check { margin: 0; }
 .gamut-stats { margin-bottom: 4px; }
 .gamut-stats .stat b { font-size: 16px; }

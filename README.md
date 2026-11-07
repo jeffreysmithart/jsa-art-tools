@@ -10,6 +10,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
 - **Color** shows the picture's colors in a 3D **color space** laid out like the Munsell color solid: **value** runs up the middle from black (0) to white (10), **hue** goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and **chroma** gets stronger away from the gray center. Each dot is a color in the picture, bigger where it covers more; in Main colors the main colors are ringed. **Show colors not in the picture** adds the rest of the colors a screen can show as a faint ghost, so you can see what the picture leaves out. Tap the view to open it large: drag to turn it, scroll or pinch to zoom (arrow keys and +/− work too), **Top** and **Side** views, a **Value** menu to see one level at a time like a page of a Munsell book, and tap a dot to read its value, chroma, hue and share of the picture. Below the view: the main hue, how strong the strongest colors are, how much is near gray, and the value range. Positions are CIE Lab (value = L\* ÷ 10, chroma ≈ Lab chroma ÷ 5), so hue and chroma are close to Munsell, not exact. Squint smooths out noise first.
+- **Limited palette** (also in the Color tab): choose a palette (Prussian blue, yellow ochre and vermilion; Zorn; warm or cool primaries; an earth palette; split primaries) or build your own from 22 common paints, with or without white and black. The app simulates everything those paints can mix and shows how much of the picture they reach and which colors they can't (for example "yellow-greens and purple-blues"). In the color space, the palette's range shows as a ghost and the picture's colors it can't mix are ringed; tapping a color gives a rough recipe ("mostly yellow ochre, some titanium white, a touch of vermilion") or how far out of reach it is. **Paint the study with this palette** switches the study to **Palette**, which repaints the picture with the nearest mixes and stripes what the palette can't mix. Mixing uses [spectral.js](https://github.com/rvanwijnen/spectral.js) (Kubelka–Munk, MIT license) from typical colors of each paint; brands vary, so treat it as a guide.
 - **Canvas** holds the composition guides, the grid and downloads.
 - **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied, for how long, and how many timed rounds (and memory rounds) you drew (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
 
@@ -23,6 +24,7 @@ The study image and its toolbar stay in view whichever tab is open. Choosing you
 - **Color:** Grayscale, Color, or Main colors.
 - **Number of values** (Grayscale or Color): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
 - **Main colors:** repaints the image with the 2–8 colors that best summarize it.
+- **Palette:** repaints the image with what your limited palette can mix (see the Color tab), striping what it can't.
 - **Value bar chart:** a bar for each value (or main color) shows how much of the picture it covers, with the largest highlighted, so you can see at a glance which value dominates. It also appears on the side-by-side sheet.
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** the **average** of each area (the default, true to the image's light key), **even steps** from dark to light (most contrast), or **custom**, which starts from the averages so you can adjust each value to match your markers (0 = black, 10 = white).
@@ -86,6 +88,8 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/compose.js`: composition guides (thirds, golden section, diagonals and their crossings)
 - `js/colorspace.js`: the 3D color space (colors counted into cells, the screen's color solid, Munsell-style readings, and the turnable view)
 - `js/gamut.js`: the Color tab's figures (main hue, strongest colors, near gray, value range)
+- `js/palette.js`: the limited palette (paints, presets, sampling what they mix, nearest mix, reach and recipes)
+- `js/vendor/spectral.js`: [spectral.js](https://github.com/rvanwijnen/spectral.js) 3.0.0 by Ronald van Wijnen, unchanged, MIT license (`js/vendor/spectral.LICENSE`)
 - `js/warp.js`, `js/squareup.js`: perspective correction and the square-up screen for study photos
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset
