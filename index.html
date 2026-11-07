@@ -27,6 +27,7 @@
         <button role="tab" id="ptab-images" data-panel="images" aria-controls="panel-images" aria-selected="true">Images</button>
         <button role="tab" id="ptab-study" data-panel="study" aria-controls="panel-study" aria-selected="false">Study</button>
         <button role="tab" id="ptab-canvas" data-panel="canvas" aria-controls="panel-canvas" aria-selected="false">Canvas</button>
+        <button role="tab" id="ptab-log" data-panel="log" aria-controls="panel-log" aria-selected="false">Log</button>
       </div>
 
       <!-- Images: everything for choosing what to study -->
@@ -217,6 +218,27 @@
             <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
           </div>
         </div>
+      </section>
+      </div>
+
+      <!-- Log: what you studied, on which days, for how long -->
+      <div class="side-panel" id="panel-log" data-panel="log" role="tabpanel" aria-labelledby="ptab-log" hidden>
+      <section class="group" id="sec-log">
+        <div class="log-stats" id="log-stats"></div>
+        <div class="cal-head">
+          <button class="btn tiny cal-nav" id="cal-prev" type="button" aria-label="Previous month">‹</button>
+          <h3 id="cal-title" aria-live="polite"></h3>
+          <button class="btn tiny cal-nav" id="cal-next" type="button" aria-label="Next month">›</button>
+        </div>
+        <div class="cal" id="cal" aria-labelledby="cal-title"></div>
+        <div class="cal-legend" aria-hidden="true">Less <i class="lv1"></i><i class="lv2"></i><i class="lv3"></i><i class="lv4"></i> More</div>
+        <div class="log-day" id="log-day" aria-live="polite"></div>
+        <div class="row tight set-manage">
+          <button class="btn tiny" id="log-export" type="button" title="Download the log as a spreadsheet (CSV)">Download log</button>
+          <span class="spacer"></span>
+          <button class="btn tiny danger" id="log-clear" type="button">Clear log</button>
+        </div>
+        <p class="fine">Study time counts while an image is on screen (it pauses after 30 idle minutes unless a timer is running). Saved in this browser.</p>
       </section>
       </div>
 

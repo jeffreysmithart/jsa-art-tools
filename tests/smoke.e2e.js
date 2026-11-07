@@ -760,6 +760,59 @@ function check(cond, msg) {
   await tp.click('#t-stop');
   await tctx.close();
 
+  // ---- Log tab: summary, calendar, day detail, reopen, export, clear ----
+  const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+  await lctx.addInitScript(() => {
+    if (localStorage.getItem('value-study:log')) return;
+    const key = (n) => { const d = new Date(); d.setDate(d.getDate() - n); const p = (x) => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+    const met = { id: 'aic-100', title: 'Landscape 1', artist: 'George Inness', museum: 'Art Institute', source: 'aic', image: 'https://www.artic.edu/iiif/2/img0/full/1686,/0/default.jpg', credit: 'Art Institute of Chicago, CC0' };
+    const days = {};
+    days[key(1)] = { items: { 'aic-100': { ...met, secs: 1500, drawSecs: 1200, rounds: 2 }, 'up-x': { id: 'up-x', title: 'my sketch photo', source: 'upload', secs: 300, drawSecs: 0, rounds: 0 } } };
+    days[key(2)] = { items: { 'aic-100': { ...met, secs: 4000, drawSecs: 0, rounds: 0 } } };
+    days[key(3)] = { items: { 'aic-100': { ...met, secs: 30, drawSecs: 0, rounds: 0 } } }; // too little to count
+    days[key(40)] = { items: { 'aic-100': { ...met, secs: 600, drawSecs: 0, rounds: 0 } } };
+    localStorage.setItem('value-study:log', JSON.stringify({ version: 1, days }));
+  });
+  const lp = await lctx.newPage();
+  aware(lp);
+  lp.on('pageerror', (e) => errors.push(e.message));
+  const lAnswers = [];
+  lp.on('dialog', (d) => d.accept(lAnswers.length ? lAnswers.shift() : undefined));
+  await lp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await lp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+  await lp.goto(BASE);
+  await lp.click('#ptab-log');
+  const stats = await lp.$$eval('#log-stats .stat', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
+  check(stats[1].startsWith('2 days') && /best 2/.test(stats[1]), `streak counts the last two days (${stats[1]})`);
+  check(/all time · 3 days/.test(stats[3]), `all-time total counts practiced days only (${stats[3]})`);
+  const shaded = await lp.$$eval('#cal button[class*="lv"]', (b) => b.map((x) => x.className));
+  check(shaded.length === 0 || (shaded.some((c) => c.includes('lv4')) && shaded.some((c) => c.includes('lv3'))), `calendar shades days by time: 66 min deepest, 30 min next (${shaded.join(', ')})`);
+  check(await lp.$eval('#cal .today', (b) => !!b), 'today is outlined');
+  const yKey = await lp.evaluate(() => window.VST.log.shiftDay(window.VST.log.dayKey(), -1));
+  if (await lp.$(`#cal button[data-day="${yKey}"]`) === null) await lp.click('#cal-prev'); // yesterday may be in last month
+  await lp.click(`#cal button[data-day="${yKey}"]`);
+  const sumText = await lp.textContent('#log-day .day-sum');
+  check(/30 min · 2 images · 2 timed rounds \(20 min\)/.test(sumText), `day detail totals (${sumText})`);
+  const rows = await lp.$$eval('#log-day .log-row', (r) => r.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  check(rows.length === 2 && /Landscape 1.*George Inness · Art Institute.*25 min · 2×/.test(rows[0]) && /my sketch photo.*My photo.*5 min/.test(rows[1]), `day detail lists what was studied (${rows.join(' | ')})`);
+  await lp.screenshot({ path: path.join(OUT, '26-log.png') });
+  await lp.click('#log-day .log-row:first-child');
+  await lp.waitForFunction(() => window.VST.app.img.meta && window.VST.app.img.meta.title === 'Landscape 1' && window.VST.app.work.w > 0);
+  check(true, 'tapping a logged painting opens it again');
+  const [csvDl] = await Promise.all([lp.waitForEvent('download'), lp.click('#log-export')]);
+  const csvPath = path.join(OUT, csvDl.suggestedFilename());
+  await csvDl.saveAs(csvPath);
+  const csvText = fs.readFileSync(csvPath, 'utf8').trim().split('\n');
+  check(csvText[0] === 'date,title,artist,museum,source,study_minutes,timed_rounds,timed_minutes' && csvText.some((l) => /Landscape 1,George Inness,Art Institute,aic,25\.0,2,20\.0/.test(l)), `the log downloads as a spreadsheet (${csvText.length - 1} rows)`);
+  const atCurrentMonth = await lp.evaluate(() => !!document.querySelector('#cal .today'));
+  check(atCurrentMonth === (await lp.$eval('#cal-next', (b) => b.disabled)), 'next month is disabled only at the current month');
+  await lp.click('#cal-prev');
+  check((await lp.textContent('#cal-title')).length > 0, 'previous months can be browsed');
+  await lp.click('#log-clear');
+  await lp.waitForFunction(() => document.querySelectorAll('#cal button[class*="lv"]').length === 0);
+  check(/all time · 0 days/.test(await lp.textContent('#log-stats')), 'clear log empties it');
+  await lctx.close();
+
   // touch devices: 44px targets and 16px fields
   const ipad = await browser.newContext({ ...devices['iPad (gen 7)'] });
   const ip = await ipad.newPage();
@@ -769,7 +822,7 @@ function check(cond, msg) {
   await ip.goto(BASE);
   await ip.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
   await ip.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
-  for (const panel of ['images', 'study', 'canvas']) {
+  for (const panel of ['images', 'study', 'canvas', 'log']) {
     await ip.evaluate((p) => window.VST.app.setPanel(p), panel);
     const small = await ip.evaluate(() => {
       const els = [...document.querySelectorAll('.sidebar button, .sidebar select, .sidebar input[type=url], .sidebar input[type=search], .sidebar input[type=number], .sidebar label.btn, .toolbar button')]

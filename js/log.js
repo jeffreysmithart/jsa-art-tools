@@ -27,12 +27,17 @@
     }
     return { version: 1, days: {} };
   }
+  const listeners = [];
   function store(data) {
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
     } catch (e) {
       /* storage unavailable or full */
     }
+    listeners.forEach((fn) => fn());
+  }
+  function onChange(fn) {
+    listeners.push(fn);
   }
 
   function dayKey(t = Date.now()) {
@@ -45,7 +50,10 @@
     const day = (data.days[dayKey(t)] = data.days[dayKey(t)] || { items: {} });
     const e = (day.items[item.id] = day.items[item.id] || { id: item.id, secs: 0, drawSecs: 0, rounds: 0 });
     // keep the details current (titles can arrive after the first record)
-    for (const k of ['title', 'artist', 'museum', 'source']) if (item[k]) e[k] = item[k];
+    for (const k of ['title', 'artist', 'museum', 'source', 'date', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId']) {
+      if (item[k] !== undefined && item[k] !== '') e[k] = item[k];
+    }
+    if (item.thumb && !String(item.thumb).startsWith('data:')) e.thumb = item.thumb;
     return e;
   }
 
@@ -108,6 +116,96 @@
     return load().days;
   }
 
+  /* ---------- reading the log ---------- */
+
+  /** A day counts as practice with at least a minute of study or one timed round. */
+  function practiced(day) {
+    if (!day) return false;
+    return Object.values(day.items).some((e) => e.secs >= 60 || e.rounds > 0);
+  }
+
+  function totals(day) {
+    const t = { secs: 0, drawSecs: 0, rounds: 0, images: 0 };
+    if (!day) return t;
+    for (const e of Object.values(day.items)) {
+      t.secs += e.secs || 0;
+      t.drawSecs += e.drawSecs || 0;
+      t.rounds += e.rounds || 0;
+      if ((e.secs || 0) >= 10 || e.rounds) t.images += 1;
+    }
+    return t;
+  }
+
+  function shiftDay(key, n) {
+    const [y, m, d] = key.split('-').map(Number);
+    return dayKey(new Date(y, m - 1, d + n).getTime());
+  }
+
+  /**
+   * Summary numbers. `today` is a day key. Weeks start on Monday.
+   * The current streak counts back from today (or from yesterday, so a
+   * streak isn't "broken" before you've had the chance to practice today).
+   */
+  function stats(daysMap, today = dayKey()) {
+    const keys = Object.keys(daysMap).filter((k) => practiced(daysMap[k])).sort();
+    const set = new Set(keys);
+    const [y, m, d] = today.split('-').map(Number);
+    const dow = (new Date(y, m - 1, d).getDay() + 6) % 7; // 0 = Monday
+    const weekStart = shiftDay(today, -dow);
+    const monthPrefix = today.slice(0, 7);
+    let weekSecs = 0;
+    let weekDays = 0;
+    let monthDays = 0;
+    let totalSecs = 0;
+    for (const k of Object.keys(daysMap)) {
+      const t = totals(daysMap[k]);
+      totalSecs += t.secs;
+      if (k >= weekStart && k <= today) {
+        weekSecs += t.secs;
+        if (set.has(k)) weekDays += 1;
+      }
+      if (k.startsWith(monthPrefix) && set.has(k)) monthDays += 1;
+    }
+    let streak = 0;
+    let cursor = set.has(today) ? today : shiftDay(today, -1);
+    while (set.has(cursor)) {
+      streak += 1;
+      cursor = shiftDay(cursor, -1);
+    }
+    let longest = 0;
+    let run = 0;
+    let prev = null;
+    for (const k of keys) {
+      run = prev && shiftDay(prev, 1) === k ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      prev = k;
+    }
+    return { weekSecs, weekDays, monthDays, streak, longest, totalSecs, totalDays: keys.length };
+  }
+
+  /** One row per image per day, for a spreadsheet. */
+  function csv(daysMap) {
+    const esc = (v) => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = [['date', 'title', 'artist', 'museum', 'source', 'study_minutes', 'timed_rounds', 'timed_minutes']];
+    for (const k of Object.keys(daysMap).sort()) {
+      for (const e of Object.values(daysMap[k].items)) {
+        if (!(e.secs >= 10 || e.rounds)) continue;
+        rows.push([k, e.title, e.artist, e.museum, e.source, (e.secs / 60).toFixed(1), e.rounds, ((e.drawSecs || 0) / 60).toFixed(1)]);
+      }
+    }
+    return rows.map((r) => r.map(esc).join(',')).join('\n') + '\n';
+  }
+
+  function clear() {
+    state.pendingMs = 0;
+    store({ version: 1, days: {} });
+    if (state.item) start(state.item);
+  }
+
+
   if (typeof window !== 'undefined') {
     setInterval(() => tick(), 15000);
     ['pointerdown', 'keydown', 'wheel'].forEach((ev) => window.addEventListener(ev, () => activity(), { passive: true }));
@@ -125,5 +223,5 @@
     });
   }
 
-  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey };
+  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey, onChange, practiced, totals, stats, csv, clear, shiftDay };
 })(typeof window !== 'undefined' ? window : globalThis);
