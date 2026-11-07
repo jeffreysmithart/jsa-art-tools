@@ -1133,70 +1133,115 @@
     el.classList.toggle('error', !!isError);
   }
 
+  // a museum that hasn't answered by then is skipped (Cleveland can be very slow on a new search)
+  const SOURCE_TIMEOUT = (VST.config && VST.config.searchTimeoutMs) || 20000;
+
+  /** Runs one museum's search, giving up after SOURCE_TIMEOUT. */
+  function searchWithTimeout(source, q, page, parentSignal) {
+    const c = new AbortController();
+    let timedOut = false;
+    const stop = () => c.abort();
+    parentSignal.addEventListener('abort', stop);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      c.abort();
+    }, SOURCE_TIMEOUT);
+    return source
+      .search(q, page, c.signal, { paintingsOnly: S.paintingsOnly })
+      .catch((e) => {
+        if (timedOut) {
+          const t = new Error('timed out');
+          t.name = 'TimeoutError';
+          throw t;
+        }
+        throw e;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        parentSignal.removeEventListener('abort', stop);
+      });
+  }
+
   async function runSearch(q, more = false) {
     q = q.trim();
     if (!q) return;
     if (search.controller) search.controller.abort();
     const controller = new AbortController();
     search.controller = controller;
+    const isCurrent = () => controller === search.controller && !controller.signal.aborted;
     const sources = activeSources();
     if (!more) {
       search.q = q;
       search.items = [];
+      search.round = 0;
       search.perSource = {};
-      sources.forEach((s) => (search.perSource[s.id] = { page: 0, totalPages: 1, failed: false }));
+      sources.forEach((s) => (search.perSource[s.id] = { page: 0, totalPages: 1, failed: false, slow: false, busy: false }));
       $('#results').innerHTML = '';
     }
-    setSearchMsg('Searching…');
     $('#btn-more').hidden = true;
     const hasMore = (s) => {
       const st = search.perSource[s.id];
       return st && !st.failed && st.page < st.totalPages;
+    };
+    const showProgress = () => {
+      const waiting = sources.filter((s) => search.perSource[s.id].busy).map((s) => s.short);
+      if (!waiting.length) return;
+      const sofar = search.items.length ? `${search.items.length} found so far. ` : '';
+      setSearchMsg(`${sofar}Searching ${waiting.join(', ')}…`);
     };
     let added = 0;
     // keep fetching pages until there is something to show
     for (let tries = 0; tries < 3 && added < 8; tries++) {
       const pending = sources.filter(hasMore);
       if (!pending.length) break;
-      const results = await Promise.allSettled(
-        pending.map((s) => s.search(q, search.perSource[s.id].page + 1, controller.signal, { paintingsOnly: S.paintingsOnly }))
+      const round = search.round++;
+      pending.forEach((s) => (search.perSource[s.id].busy = true));
+      showProgress();
+      // each museum's results appear as soon as it answers
+      await Promise.all(
+        pending.map(async (s) => {
+          const st = search.perSource[s.id];
+          const slot = sources.indexOf(s);
+          try {
+            const res = await searchWithTimeout(s, q, st.page + 1, controller.signal);
+            if (!isCurrent()) return;
+            st.page = res.page;
+            st.totalPages = res.totalPages;
+            const seen = new Set(search.items.map((it) => it.id));
+            res.items.forEach((it, i) => {
+              if (seen.has(it.id)) return;
+              seen.add(it.id);
+              // the CSS order keeps the museums interleaved however fast each one answers
+              it._order = (round * 1000 + i) * sources.length + slot;
+              search.items.push(it);
+              addResultCard(it).style.order = String(it._order);
+              added++;
+            });
+          } catch (e) {
+            if (!isCurrent()) return;
+            st.failed = true;
+            st.slow = e.name === 'TimeoutError';
+          } finally {
+            st.busy = false;
+            if (isCurrent()) showProgress();
+          }
+        })
       );
-      if (controller !== search.controller) return;
-      const lists = [];
-      for (let i = 0; i < results.length; i++) {
-        const st = search.perSource[pending[i].id];
-        const r = results[i];
-        if (r.status === 'fulfilled') {
-          st.page = r.value.page;
-          st.totalPages = r.value.totalPages;
-          lists.push(r.value.items);
-        } else {
-          if (r.reason && r.reason.name === 'AbortError') return;
-          st.failed = true;
-        }
-      }
-      // interleave the museums' results so one doesn't crowd out the others
-      const seen = new Set(search.items.map((it) => it.id));
-      for (let i = 0; lists.some((l) => i < l.length); i++) {
-        lists.forEach((l) => {
-          const it = l[i];
-          if (!it || seen.has(it.id)) return;
-          seen.add(it.id);
-          search.items.push(it);
-          addResultCard(it);
-          added++;
-        });
-      }
+      if (!isCurrent()) return;
     }
-    const failed = sources.filter((s) => search.perSource[s.id] && search.perSource[s.id].failed).map((s) => s.short);
+    search.items.sort((a, b) => a._order - b._order);
+    const failedSources = sources.filter((s) => search.perSource[s.id].failed);
+    const slow = failedSources.filter((s) => search.perSource[s.id].slow).map((s) => s.short);
+    const unreachable = failedSources.filter((s) => !search.perSource[s.id].slow).map((s) => s.short);
     const what = S.paintingsOnly ? 'paintings' : 'works';
-    const answered = sources.filter((s) => !(search.perSource[s.id] && search.perSource[s.id].failed));
+    const answered = sources.filter((s) => !search.perSource[s.id].failed);
     const where = answered.length > 1 ? ` from ${answered.length} museums` : answered.length ? ` from ${answered[0].short}` : '';
     let msg = search.items.length
       ? `${search.items.length} public-domain ${what}${where} for “${q}”.`
       : `No public-domain ${what} found for “${q}”${S.paintingsOnly ? '. Try turning off “Paintings only”.' : '.'}`;
-    if (failed.length) msg += ` Couldn’t reach ${failed.join(' or ')}.`;
-    setSearchMsg(msg, failed.length > 0 && !search.items.length);
+    if (slow.length) msg += ` ${slow.join(' and ')} took too long to answer; try again in a moment.`;
+    if (unreachable.length) msg += ` Couldn’t reach ${unreachable.join(' or ')}.`;
+    setSearchMsg(msg, failedSources.length > 0 && !search.items.length);
     $('#btn-more').hidden = !sources.some(hasMore);
     $('#btn-add-all').hidden = !search.items.length;
   }
@@ -1219,6 +1264,7 @@
     card.querySelector('[data-act="queue"]').addEventListener('click', () => toggleQueued(item));
     $('#results').appendChild(card);
     markQueued(card);
+    return card;
   }
 
   function markQueued(card) {

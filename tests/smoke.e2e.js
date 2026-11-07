@@ -306,7 +306,7 @@ function check(cond, msg) {
   const mp = await mctx.newPage();
   mp.on('pageerror', (e) => errors.push(e.message));
   const relayed = [];
-  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/'};" }));
+  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
   await mp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await mp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await mp.route('https://collectionapi.metmuseum.org/**', (r) => {
@@ -319,9 +319,14 @@ function check(cond, msg) {
     r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(json) });
   });
   await mp.route('https://images.metmuseum.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png })); // thumbnails: no permission header, display only
-  await mp.route('https://openaccess-api.clevelandart.org/**', (r) => {
+  let cmaCalls = 0;
+  await mp.route('https://openaccess-api.clevelandart.org/**', async (r) => {
     const u = new URL(r.request().url());
     check(u.searchParams.get('type') === 'Painting' && u.searchParams.get('cc0') === '1', 'Cleveland is asked for CC0 paintings');
+    check((u.searchParams.get('fields') || '').includes('images'), 'Cleveland is asked only for the fields the app uses');
+    cmaCalls++;
+    if (u.searchParams.get('q') === 'Never') return; // simulate a museum that never answers
+    await new Promise((res) => setTimeout(res, 1500)); // Cleveland is slow
     r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ info: { total: 1 }, data: [{ id: 9, title: 'Cleveland painting', type: 'Painting', creation_date: '1892', url: 'https://clevelandart.org/art/1', creators: [{ description: 'George Inness (American, 1825–1894)' }], images: { web: { url: 'https://openaccess-cdn.clevelandart.org/1/1_web.jpg' } } }] }) });
   });
   await mp.route('https://openaccess-cdn.clevelandart.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png }));
@@ -334,21 +339,32 @@ function check(cond, msg) {
   check(await mp.isHidden('#museum-setup'), 'setup note hides once the relay is set');
   await mp.fill('#search-input', 'Inness');
   await mp.click('#search-form button');
+  await mp.waitForFunction(() => document.querySelectorAll('#results .card').length === 4);
+  check(/Searching Cleveland…/.test(await mp.textContent('#search-msg')), 'faster museums show while Cleveland is still searching');
   await mp.waitForFunction(() => /for “Inness”/.test(document.querySelector('#search-msg').textContent));
-  const labels = await mp.$$eval('#results .card .meta i', (els) => els.map((e) => e.textContent));
+  // on-screen order (CSS order), not arrival order
+  const labels = await mp.$$eval('#results .card', (els) => els.sort((a, b) => +a.style.order - +b.style.order).map((e) => e.querySelector('.meta i').textContent));
   check(JSON.stringify(labels) === JSON.stringify(['Art Institute', 'The Met', 'Cleveland', 'Art Institute', 'The Met']), `results interleave the museums and skip stale Met records (${labels})`);
   check((await mp.textContent('#search-msg')).includes('5 public-domain paintings from 3 museums'), 'message counts results and museums');
-  check((await mp.textContent('.card:nth-child(3) .meta span')) === 'George Inness, 1892', 'Cleveland artist name is tidied up');
-  await mp.click('.card:nth-child(2) [data-act="study"]');
+  check((await mp.textContent('.card[data-id="cma-9"] .meta span')) === 'George Inness, 1892', 'Cleveland artist name is tidied up');
+  await mp.click('.card[data-id="met-1"] [data-act="study"]');
   await mp.waitForFunction(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'met' && window.VST.app.work.w > 0);
   check(relayed.includes('https://images.metmuseum.org/x/1.jpg'), 'Met study image goes through the relay');
   check((await mp.textContent('#credit')).includes('The Metropolitan Museum of Art, CC0'), 'Met credit line shows');
-  await mp.click('.card:nth-child(1) [data-act="study"]');
+  await mp.click('.card[data-id="aic-100"] [data-act="study"]');
   await mp.waitForFunction(() => window.VST.app.img.meta.source === 'aic');
   check(!relayed.some((u) => /artic/.test(u)), 'Art Institute images load directly, not through the relay');
   await mp.selectOption('#museum-filter', 'cma');
   await mp.waitForFunction(() => /from Cleveland/.test(document.querySelector('#search-msg').textContent));
   check((await mp.$$eval('#results .card', (c) => c.length)) === 1, 'filtering to Cleveland shows only Cleveland');
+  check(cmaCalls === 1, 'switching the filter reuses the earlier results instead of searching again');
+  await mp.selectOption('#museum-filter', 'all');
+  await mp.fill('#search-input', 'Never');
+  await mp.click('#search-form button');
+  await mp.waitForFunction(() => /for “Never”/.test(document.querySelector('#search-msg').textContent), null, { timeout: 8000 });
+  const slowMsg = await mp.textContent('#search-msg');
+  check(/from 2 museums/.test(slowMsg) && /Cleveland took too long to answer/.test(slowMsg), `a museum that never answers is skipped after the time limit (${slowMsg})`);
+  await mp.selectOption('#museum-filter', 'cma');
   await mp.reload();
   check(await mp.$eval('#museum-filter', (s) => s.value) === 'cma', 'museum filter is remembered');
   await mctx.close();
