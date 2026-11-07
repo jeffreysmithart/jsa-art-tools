@@ -8,7 +8,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 
 **Two modes**
 - **Reference:** choose, drop or paste an image, or load one from a link.
-- **Master Copy:** search public-domain paintings by artist or subject across the **Art Institute of Chicago**, **The Met** and the **Cleveland Museum of Art**, or pick one museum with the **Museum** filter. Study a painting, or build a timed session from several. The Met and Cleveland need the free image relay; see [Museum image relay](#museum-image-relay).
+- **Master Copy:** search public-domain paintings by artist or subject across six museums (the **Art Institute of Chicago**, **The Met**, the **National Gallery of Art** in Washington, the **Minneapolis Institute of Art (Mia)**, the **Cleveland Museum of Art** and **The National Gallery, London**), or pick one with the **Museum** filter. Study a painting, or build a timed session from several. The Met, Mia and Cleveland need the free image relay; see [Museum image relay](#museum-image-relay).
 
 **Study tools (both modes)**
 - **Color:** Grayscale, Color, or Main colors.
@@ -42,11 +42,13 @@ No install or build step. Either:
 
 - **Loading from a link** only works when the other site allows its images to be used by other pages. Many don't. Saving the image and choosing it, or copying and pasting it, always works.
 - **Museum coverage** depends on what each museum holds and has released as public domain. "Paintings only" hides prints, drawings and photographs; turn it off to see everything.
-- **MFA Boston** isn't included: it doesn't offer a public collection search for apps. Saving an image from its website and choosing it in Reference mode works.
+- **MFA Boston** and the **National Galleries of Scotland** aren't included: neither offers a public collection search for apps. Saving an image from their websites and choosing it in Reference mode works.
+- **The National Gallery, London** shares its images under CC BY-NC-ND 4.0, and public images are at most about 800 px. They're fine for private study, but please don't share altered versions, such as downloaded value studies, of its paintings.
+- **The National Gallery of Art (Washington)** has no live search, so the app searches a built-in index of its 2,926 open-access paintings (`data/nga-paintings.json`). To refresh it from the Gallery's published catalog, run `python3 tools/build_nga_index.py`.
 
 ## Museum image relay
 
-The Met's and Cleveland's image servers don't let web pages read image pixels, which the value tools need, so their images pass through a small relay you run on Cloudflare's free plan. It only relays images from those museums' image servers. Setup takes about 10 minutes: see [relay/README.md](relay/README.md). Then put its address in `js/config.js`. Until then, the app uses only the Art Institute of Chicago, and the other two show "needs setup".
+The Met's, Mia's and Cleveland's image servers don't let web pages read image pixels, which the value tools need, so their images pass through a small relay you run on Cloudflare's free plan. It only relays images from those museums' image servers. Setup takes about 10 minutes: see [relay/README.md](relay/README.md). Then put its address in `js/config.js`. Until then, those three show "needs setup" and the app uses the other museums.
 - **Value numbers** are CIE L\* ÷ 10, close to the Munsell value scale. Marker brands number their grays differently, so use **Custom** to type the values your markers actually have.
 
 ## Tests
@@ -64,7 +66,8 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/process.js`: blur, value bands, main colors
 - `js/crop.js`: crop tool and canvas presets
 - `js/timer.js`: countdown, chime, screen wake lock
-- `js/museum.js`: museum collection search: Art Institute of Chicago, The Met, Cleveland (more sources can be added here)
+- `js/museum.js`: museum collection search for all six museums (more sources can be added here)
+- `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it
 - `js/config.js`: site settings (the image relay address)
 - `relay/`: the Cloudflare image relay and its setup steps (`node tests/relay-dev.mjs` runs it locally)
 - `js/app.js`: the interface

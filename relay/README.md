@@ -1,12 +1,12 @@
 # Image relay (Cloudflare Worker)
 
-The Met and the Cleveland Museum of Art share their public-domain images freely, but their image servers don't include the header that lets a web page read an image's pixels, which the value tools need. This small relay fetches those images and passes them on with that header added.
+The Met, the Minneapolis Institute of Art (Mia) and the Cleveland Museum of Art share their public-domain images freely, but their image servers don't include the header that lets a web page read an image's pixels, which the value tools need. This small relay fetches those images and passes them on with that header added.
 
-- It only relays images from The Met's and Cleveland's image servers, so nobody can use it for anything else.
+- It only relays images from The Met's, Mia's and Cleveland's image servers, so nobody can use it for anything else.
 - Images are cached for a day, so repeat views are fast.
 - It fits easily within Cloudflare's free Workers plan (100,000 requests a day).
 
-The Art Institute of Chicago doesn't need the relay.
+The Art Institute of Chicago, the National Gallery of Art (Washington) and the National Gallery (London) don't need the relay.
 
 ## Current deployment
 

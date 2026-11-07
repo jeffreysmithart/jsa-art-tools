@@ -11,6 +11,7 @@ test('allows museum image URLs', () => {
   assert.ok(t instanceof URL);
   assert.equal(t.hostname, 'images.metmuseum.org');
   assert.ok(ask('https://openaccess-cdn.clevelandart.org/1927.388/1927.388_web.jpg') instanceof URL);
+  assert.ok(ask('https://img.artsmia.org/web_objects_cache/012000/900/30/12936/mia_25108b_full.jpg') instanceof URL);
 });
 
 test('refuses anything else', async () => {

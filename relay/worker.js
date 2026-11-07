@@ -16,6 +16,7 @@
 const ALLOWED_HOSTS = [
   'images.metmuseum.org', // The Metropolitan Museum of Art
   'openaccess-cdn.clevelandart.org', // Cleveland Museum of Art
+  'img.artsmia.org', // Minneapolis Institute of Art (Mia)
 ];
 
 const MAX_BYTES = 25 * 1024 * 1024; // refuse anything larger than 25 MB
