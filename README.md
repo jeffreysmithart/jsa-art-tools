@@ -14,6 +14,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Color:** Grayscale, Color, or Main colors.
 - **Number of values** (Grayscale or Color): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
 - **Main colors:** repaints the image with the 2–8 colors that best summarize it.
+- **Value bar chart:** a bar for each value (or main color) shows how much of the picture it covers, with the largest highlighted, so you can see at a glance which value dominates. It also appears on the side-by-side sheet.
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** even steps, the area's true average, or **custom** values to match your markers (0 = black, 10 = white).
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).

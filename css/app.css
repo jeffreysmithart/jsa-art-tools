@@ -168,10 +168,14 @@ output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.
 .thresholds label { display: grid; grid-template-columns: 92px 1fr 28px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .thresholds output { text-align: right; }
 
+/* Value bar chart: bar height = share of the picture */
 .swatches { display: flex; gap: 4px; margin-top: 14px; }
-.swatch { flex: 1; min-width: 0; text-align: center; font-size: 11.5px; color: var(--muted); }
-.swatch .chip { height: 34px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12); }
-.swatch .v { color: var(--text); font-variant-numeric: tabular-nums; margin-top: 3px; }
+.swatch { flex: 1; min-width: 0; text-align: center; font-size: 11.5px; color: var(--muted); display: flex; flex-direction: column; }
+.swatch .pct { font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.swatch.dominant .pct { color: var(--text); font-weight: 700; }
+.swatch .track { height: 84px; display: flex; align-items: flex-end; background: var(--bg); border-radius: 5px; }
+.swatch .bar { width: 100%; border-radius: 5px; border: 1px solid rgba(255,255,255,0.16); transition: height 0.15s ease-out; }
+.swatch .v { color: var(--text); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .swatch input { width: 100%; padding: 2px; min-height: 26px; font-size: 12px; text-align: center; margin-top: 3px; }
 
 .grid-fields { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 10px; align-items: center; }

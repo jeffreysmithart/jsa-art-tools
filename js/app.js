@@ -504,16 +504,33 @@
     $('#swatch-hint').hidden = !bands;
     if (!bands) return;
     const editable = grouped() && S.levelsMode === 'custom';
+    // bars are scaled to the largest share so differences are easy to see;
+    // the percentage above each bar gives the true share of the picture
+    const maxShare = Math.max(...bands.map((b) => b.share)) || 1;
+    const top = bands.findIndex((b) => b.share === maxShare);
+    box.setAttribute('role', 'img');
+    box.setAttribute(
+      'aria-label',
+      bands.map((b) => `value ${valueLabel(b.L)}: ${Math.round(b.share * 100)}%`).join(', ')
+    );
     bands.forEach((b, i) => {
       const el = document.createElement('div');
-      el.className = 'swatch';
+      el.className = 'swatch' + (i === top ? ' dominant' : '');
       const rgb = b.rgb;
       const g = C.lToGray8(b.L);
-      const chip = document.createElement('div');
-      chip.className = 'chip';
-      chip.style.background = rgb ? `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` : `rgb(${g},${g},${g})`;
-      chip.title = `Value ${valueLabel(b.L)}`;
-      el.appendChild(chip);
+      const pct = document.createElement('div');
+      pct.className = 'pct';
+      pct.textContent = `${Math.round(b.share * 100)}%`;
+      el.appendChild(pct);
+      const track = document.createElement('div');
+      track.className = 'track';
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.height = b.share > 0 ? `max(3px, ${(b.share / maxShare) * 100}%)` : '0';
+      bar.style.background = rgb ? `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` : `rgb(${g},${g},${g})`;
+      bar.title = `Value ${valueLabel(b.L)} · ${Math.round(b.share * 100)}% of the picture`;
+      track.appendChild(bar);
+      el.appendChild(track);
       if (editable) {
         const input = document.createElement('input');
         input.type = 'number';
@@ -535,9 +552,6 @@
         v.textContent = valueLabel(b.L);
         el.appendChild(v);
       }
-      const pct = document.createElement('div');
-      pct.textContent = `${Math.round(b.share * 100)}%`;
-      el.appendChild(pct);
       box.appendChild(el);
     });
   }
@@ -900,7 +914,7 @@
     ctx.fillText(sub, m, m + 90);
 
     const top = m + 150;
-    const swatchH = r.bands ? 210 : 0;
+    const swatchH = r.bands ? 360 : 0;
     const boxW = (W - m * 3) / 2;
     const boxH = H - top - m - swatchH;
     const place = (canvas, x0) => {
@@ -918,21 +932,33 @@
     place(finish(r.study, withGrid), m * 2 + boxW);
 
     if (r.bands) {
-      const y = H - m - swatchH + 50;
-      const sw = Math.min(260, (W - m * 2) / r.bands.length - 20);
-      ctx.font = '34px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      // bar chart of how much of the picture each value covers
+      const barMax = swatchH - 130;
+      const base = H - m - 60; // bottom of the bars
+      const sw = Math.min(200, (W - m * 2) / r.bands.length - 24);
+      const maxShare = Math.max(...r.bands.map((b) => b.share)) || 1;
+      ctx.textAlign = 'center';
       r.bands.forEach((b, i) => {
-        const x = m + i * (sw + 20);
+        const x = m + i * (sw + 24);
         const g = C.lToGray8(b.L);
         const rgb = b.rgb || [g, g, g];
+        const h = b.share > 0 ? Math.max(4, (b.share / maxShare) * barMax) : 0;
         ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-        ctx.fillRect(x, y, sw, 90);
+        ctx.fillRect(x, base - h, sw, h);
         ctx.strokeStyle = '#bbb';
         ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, sw, 90);
-        ctx.fillStyle = '#333';
-        ctx.fillText(`Value ${valueLabel(b.L)} · ${Math.round(b.share * 100)}%`, x, y + 140);
+        ctx.strokeRect(x, base - h, sw, h);
+        ctx.fillStyle = '#222';
+        ctx.font = `${b.share === maxShare ? '700' : '500'} 34px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
+        ctx.fillText(`${Math.round(b.share * 100)}%`, x + sw / 2, base - h - 14);
+        ctx.font = '30px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+        ctx.fillStyle = '#555';
+        ctx.fillText(`Value ${valueLabel(b.L)}`, x + sw / 2, base + 42);
       });
+      // baseline under the bars
+      ctx.fillStyle = '#888';
+      ctx.fillRect(m - 10, base, r.bands.length * (sw + 24) - 4, 3);
+      ctx.textAlign = 'left';
     }
     download(c, `${studyName()}-sheet`);
   }

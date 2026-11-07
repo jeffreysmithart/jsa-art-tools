@@ -50,8 +50,19 @@ function check(cond, msg) {
   await page.waitForFunction(() => window.VST.app.work.w > 0);
   check(await page.$eval('#panels', (e) => !e.classList.contains('is-empty')), 'image loads from file');
   check(await swatchCount(page, 4), 'default study shows 4 value swatches');
-  const shareSum = await page.$$eval('#swatches .swatch div:last-child', (d) => d.reduce((s, e) => s + parseInt(e.textContent), 0));
+  const shareSum = await page.$$eval('#swatches .swatch .pct', (d) => d.reduce((s, e) => s + parseInt(e.textContent), 0));
   check(shareSum >= 98 && shareSum <= 102, `value shares add to ~100% (${shareSum})`);
+  const bars = await page.$$eval('#swatches .swatch', (els) => els.map((el) => ({
+    pct: parseInt(el.querySelector('.pct').textContent),
+    h: el.querySelector('.bar').getBoundingClientRect().height,
+    track: el.querySelector('.track').getBoundingClientRect().height,
+    dominant: el.classList.contains('dominant'),
+  })));
+  const big = bars.reduce((a, b) => (b.pct > a.pct ? b : a));
+  check(big.dominant && Math.abs(big.h - big.track) < 1.5, 'largest value has the full-height, highlighted bar');
+  check(bars.filter((b) => b.dominant).length === 1, 'exactly one value is highlighted as dominant');
+  const ordered = [...bars].sort((a, b) => a.pct - b.pct);
+  check(ordered.every((b, i) => i === 0 || b.h >= ordered[i - 1].h - 0.5), 'bar heights follow the percentages');
 
   // study pixels should only contain 4 grays
   const grays = await page.evaluate(() => {
@@ -74,10 +85,10 @@ function check(cond, msg) {
   await page.keyboard.press('f');
 
   // threshold slider changes the study
-  const before = await page.$eval('#swatches .swatch div:last-child', (d) => d.textContent);
+  const before = await page.$eval('#swatches .swatch .pct', (d) => d.textContent);
   await page.$eval('#thresholds input', (i) => { i.value = 80; i.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(100);
-  const after = await page.$eval('#swatches .swatch div:last-child', (d) => d.textContent);
+  const after = await page.$eval('#swatches .swatch .pct', (d) => d.textContent);
   check(before !== after, `moving a split changes the dark share (${before} -> ${after})`);
   await page.click('#btn-auto');
 
