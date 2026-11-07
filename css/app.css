@@ -333,3 +333,7 @@ body.presenting .timer-status { font-size: 12px; }
   background: rgba(28,28,28,0.82); opacity: 0; pointer-events: none; transition: opacity 0.3s;
 }
 .present-exit.show { opacity: 1; pointer-events: auto; }
+
+/* the museum names are long: let the dropdown take the full row and shrink to fit */
+.grid-fields .museum-field { flex: 1 1 100%; }
+.museum-field select { flex: 1; min-width: 0; width: 100%; }

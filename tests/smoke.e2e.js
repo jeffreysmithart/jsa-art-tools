@@ -231,6 +231,7 @@ function check(cond, msg) {
   await page.route('https://www.artic.edu/iiif/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
 
   await page.click('#tab-master');
+  await page.selectOption('#museum-filter', 'aic');
   await page.fill('#search-input', 'Inness');
   await page.click('#search-form button');
   await page.waitForSelector('#results .card');
@@ -298,7 +299,7 @@ function check(cond, msg) {
 
   // without the image relay, The Met and Cleveland are listed but need setup
   const noRelay = await page.$$eval('#museum-filter option', (o) => o.map((x) => [x.value, x.disabled]));
-  check(JSON.stringify(noRelay) === JSON.stringify([['all', false], ['aic', false], ['met', true], ['cma', true]]), 'without the relay, The Met and Cleveland show as needing setup');
+  check(JSON.stringify(noRelay) === JSON.stringify([['all', false], ['aic', false], ['met', true], ['nga', false], ['mia', true], ['cma', true], ['ngl', false]]), 'without the relay, The Met, Mia and Cleveland show as needing setup');
   check(await page.isVisible('#museum-setup'), 'setup note shows without the relay');
 
   // with the relay: three museums searched together (all responses simulated)
@@ -330,6 +331,23 @@ function check(cond, msg) {
     r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ info: { total: 1 }, data: [{ id: 9, title: 'Cleveland painting', type: 'Painting', creation_date: '1892', url: 'https://clevelandart.org/art/1', creators: [{ description: 'George Inness (American, 1825–1894)' }], images: { web: { url: 'https://openaccess-cdn.clevelandart.org/1/1_web.jpg' } } }] }) });
   });
   await mp.route('https://openaccess-cdn.clevelandart.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png }));
+  await mp.route('**/data/nga-paintings.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify([
+    [30776, 'The Lackawanna Valley', 'George Inness', 'c. 1856', 'aaaa-1111', 5132],
+    [99, 'Watson and the Shark', 'John Singleton Copley', '1778', 'bbbb-2222', 900],
+  ]) }));
+  await mp.route('https://api.nga.gov/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+  await mp.route('https://search.artsmia.org/**', (r) => {
+    const query = decodeURIComponent(new URL(r.request().url()).pathname.slice(1));
+    check(/rights_type:"Public Domain"/.test(query) && /classification:Paintings/.test(query), 'Mia is asked for public-domain paintings');
+    r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ hits: { total: { value: 1 }, hits: [{ _source: { id: 12936, title: 'The Mill Stream, Montclair, New Jersey', artist: 'George Inness', dated: 'c. 1888', classification: 'Paintings', rights_type: 'Public Domain', image: 'valid', image_width: 2802, image_height: 1855, Cache_Location: '012000\\900\\30\\12936', Primary_RenditionNumber: 'mia_25108b.jpg' } }] } }) });
+  });
+  await mp.route('https://img.artsmia.org/**', (r) => r.fulfill({ headers: { 'content-type': 'image/png' }, body: png })); // thumbnails: display only
+  await mp.route('https://data.ng.ac.uk/**', (r) => {
+    const u = new URL(r.request().url());
+    if (u.pathname.startsWith('/iiif/')) return r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png });
+    check(/public_image:true/.test(u.searchParams.get('q')) && u.searchParams.get('default_operator') === 'AND', 'London is asked for works with public images');
+    r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ hits: { total: { value: 1 }, hits: [{ _source: { '@admin': { uid: '0ABC-0001-0000-0000' }, summary: { title: 'The Delaware Water Gap' }, creation: [{ date: [{ value: '1857' }], attribution: [{ value: 'George Inness' }] }], multimedia: [{ '@admin': { uid: '0XYZ-000B-0000-0000' } }] } }] } }) });
+  });
   await mp.route('https://relay.test/**', (r) => {
     relayed.push(new URL(r.request().url()).searchParams.get('url'));
     r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png });
@@ -339,13 +357,23 @@ function check(cond, msg) {
   check(await mp.isHidden('#museum-setup'), 'setup note hides once the relay is set');
   await mp.fill('#search-input', 'Inness');
   await mp.click('#search-form button');
-  await mp.waitForFunction(() => document.querySelectorAll('#results .card').length === 4);
+  await mp.waitForFunction(() => document.querySelectorAll('#results .card').length === 7);
   check(/Searching Cleveland…/.test(await mp.textContent('#search-msg')), 'faster museums show while Cleveland is still searching');
   await mp.waitForFunction(() => /for “Inness”/.test(document.querySelector('#search-msg').textContent));
   // on-screen order (CSS order), not arrival order
   const labels = await mp.$$eval('#results .card', (els) => els.sort((a, b) => +a.style.order - +b.style.order).map((e) => e.querySelector('.meta i').textContent));
-  check(JSON.stringify(labels) === JSON.stringify(['Art Institute', 'The Met', 'Cleveland', 'Art Institute', 'The Met']), `results interleave the museums and skip stale Met records (${labels})`);
-  check((await mp.textContent('#search-msg')).includes('5 public-domain paintings from 3 museums'), 'message counts results and museums');
+  check(JSON.stringify(labels) === JSON.stringify(['Art Institute', 'The Met', 'NGA Washington', 'Mia', 'Cleveland', 'National Gallery London', 'Art Institute', 'The Met']), `results interleave the museums and skip stale Met records (${labels})`);
+  check((await mp.textContent('#search-msg')).includes('8 public-domain paintings from 6 museums'), 'message counts results and museums');
+  // the three newer museums
+  await mp.click('.card[data-id="nga-30776"] [data-act="study"]');
+  await mp.waitForFunction(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'nga' && window.VST.app.work.w > 0);
+  check(!relayed.some((u) => /nga\.gov/.test(u)), 'NGA images load directly (searched from the built-in index)');
+  await mp.click('.card[data-id="mia-12936"] [data-act="study"]');
+  await mp.waitForFunction(() => window.VST.app.img.meta.source === 'mia' && window.VST.app.work.w > 0);
+  check(relayed.includes('https://img.artsmia.org/web_objects_cache/012000/900/30/12936/mia_25108b_full.jpg'), 'Mia study image is built from its record and goes through the relay');
+  await mp.click('.card[data-id="ngl-0ABC-0001-0000-0000"] [data-act="study"]');
+  await mp.waitForFunction(() => window.VST.app.img.meta.source === 'ngl' && window.VST.app.work.w > 0);
+  check((await mp.textContent('#credit')).includes('personal study only'), 'London results carry their license note');
   check((await mp.textContent('.card[data-id="cma-9"] .meta span')) === 'George Inness, 1892', 'Cleveland artist name is tidied up');
   await mp.click('.card[data-id="met-1"] [data-act="study"]');
   await mp.waitForFunction(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'met' && window.VST.app.work.w > 0);
@@ -363,7 +391,7 @@ function check(cond, msg) {
   await mp.click('#search-form button');
   await mp.waitForFunction(() => /for “Never”/.test(document.querySelector('#search-msg').textContent), null, { timeout: 8000 });
   const slowMsg = await mp.textContent('#search-msg');
-  check(/from 2 museums/.test(slowMsg) && /Cleveland took too long to answer/.test(slowMsg), `a museum that never answers is skipped after the time limit (${slowMsg})`);
+  check(/from 5 museums/.test(slowMsg) && /Cleveland took too long to answer/.test(slowMsg), `a museum that never answers is skipped after the time limit (${slowMsg})`);
   await mp.selectOption('#museum-filter', 'cma');
   await mp.reload();
   check(await mp.$eval('#museum-filter', (s) => s.value) === 'cma', 'museum filter is remembered');

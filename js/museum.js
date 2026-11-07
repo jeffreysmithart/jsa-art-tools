@@ -4,11 +4,14 @@
  *     imageFallback, link, credit, needsRelay }
  * and only public-domain (CC0) works are returned.
  *
- *  aic  Art Institute of Chicago  https://api.artic.edu/docs/
- *  met  The Met                   https://metmuseum.github.io/  (search v1.1)
- *  cma  Cleveland Museum of Art   https://openaccess-api.clevelandart.org/
+ *  aic  Art Institute of Chicago   https://api.artic.edu/docs/
+ *  met  The Met                    https://metmuseum.github.io/  (search v1.1)
+ *  nga  National Gallery of Art    prebuilt index (tools/build_nga_index.py)
+ *  mia  Minneapolis Institute of Art  https://search.artsmia.org/
+ *  cma  Cleveland Museum of Art    https://openaccess-api.clevelandart.org/
+ *  ngl  The National Gallery, London  https://data.ng.ac.uk/es/public/
  *
- * The Met's and Cleveland's image servers don't allow web pages to read
+ * The Met's, Mia's and Cleveland's image servers don't allow web pages to read
  * pixels, so their study images go through the image relay (relay/README.md).
  * Thumbnails are only displayed, so they load directly.
  */
@@ -172,7 +175,168 @@
     },
   };
 
-  const all = [aic, met, cma];
+  /* ---------- National Gallery of Art, Washington ---------- */
+  // No live search: the app searches a prebuilt index of its open-access paintings
+  // (data/nga-paintings.json, made by tools/build_nga_index.py). Images need no relay.
+
+  function fold(s) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  let ngaIndex = null;
+  function loadNgaIndex(signal) {
+    if (!ngaIndex) {
+      const url = (VST.config && VST.config.ngaIndexUrl) || 'data/nga-paintings.json';
+      ngaIndex = getJson(url, signal)
+        .then((rows) => rows.map((r) => ({ r, artist: fold(r[2]), text: fold(`${r[1]} ${r[2]} ${r[3]}`) })))
+        .catch((e) => {
+          ngaIndex = null; // try again next time
+          throw e;
+        });
+    }
+    return ngaIndex;
+  }
+
+  const nga = {
+    id: 'nga',
+    name: 'National Gallery of Art, Washington',
+    short: 'NGA Washington',
+    needsRelay: false,
+    async search(q, page, signal) {
+      const index = await loadNgaIndex(signal);
+      const terms = fold(q).split(/\s+/).filter(Boolean);
+      const hits = index.filter((e) => terms.every((t) => e.text.includes(t)));
+      // works by a matching artist first, then titles and dates
+      const byArtist = (e) => (terms.every((t) => e.artist.includes(t)) ? 0 : 1);
+      hits.sort((a, b) => byArtist(a) - byArtist(b));
+      const items = hits.slice((page - 1) * PAGE, page * PAGE).map(({ r }) => {
+        const [id, title, artist, date, uuid, side] = r;
+        const base = `https://api.nga.gov/iiif/${uuid}`;
+        return {
+          id: `nga-${id}`,
+          source: 'nga',
+          museum: 'NGA Washington',
+          title: title || 'Untitled',
+          artist: artist || 'Unknown artist',
+          date: date || '',
+          type: 'Painting',
+          thumb: `${base}/full/!200,200/0/default.jpg`,
+          image: side && side < 1686 ? `${base}/full/max/0/default.jpg` : `${base}/full/!1686,1686/0/default.jpg`,
+          imageFallback: `${base}/full/!843,843/0/default.jpg`,
+          link: `https://www.nga.gov/collection/art-object-page.${id}.html`,
+          credit: 'National Gallery of Art, Washington, open access (CC0)',
+          needsRelay: false,
+        };
+      });
+      return { items, page, totalPages: Math.min(Math.ceil(hits.length / PAGE), 25) };
+    },
+  };
+
+  /* ---------- Minneapolis Institute of Art (Mia) ---------- */
+  // Search: search.artsmia.org (Elasticsearch). Images: img.artsmia.org, through the relay.
+
+  const mia = {
+    id: 'mia',
+    name: 'Minneapolis Institute of Art (Mia)',
+    short: 'Mia',
+    needsRelay: true,
+    async search(q, page, signal, { paintingsOnly }) {
+      // keep only words: Mia's search reads ":" "(" etc. as query syntax
+      const words = q.replace(/[:"()[\]{}^~*?\\/!<>=&|+-]/g, ' ').trim();
+      let query = `${words} rights_type:"Public Domain" image:valid`;
+      if (paintingsOnly) query += ' classification:Paintings';
+      const json = await getJson(`https://search.artsmia.org/${encodeURIComponent(query)}?size=${PAGE}&from=${(page - 1) * PAGE}`, signal);
+      const hits = (json.hits && json.hits.hits) || [];
+      const items = hits
+        .map((h) => h._source || {})
+        .filter((s) => s.id && s.rights_type === 'Public Domain' && s.image === 'valid' && s.Cache_Location && s.Primary_RenditionNumber)
+        .map((s) => {
+          const folder = String(s.Cache_Location).replace(/\\/g, '/');
+          const file = String(s.Primary_RenditionNumber).replace(/\.jpe?g$/i, '');
+          const base = `https://img.artsmia.org/web_objects_cache/${folder}/${file}`;
+          const side = Math.max(+s.image_width || 0, +s.image_height || 0);
+          return {
+            id: `mia-${s.id}`,
+            source: 'mia',
+            museum: 'Mia',
+            title: s.title || 'Untitled',
+            artist: s.artist || s.culture || 'Unknown artist',
+            date: s.dated || '',
+            type: s.classification || '',
+            thumb: `${base}_400.jpg`,
+            // full size unless it is huge (some are 7 MB); 800 px otherwise
+            image: side && side <= 4000 ? `${base}_full.jpg` : `${base}_800.jpg`,
+            imageFallback: `${base}_800.jpg`,
+            link: `https://collections.artsmia.org/art/${s.id}`,
+            credit: 'Minneapolis Institute of Art, public domain',
+            needsRelay: true,
+          };
+        });
+      const total = json.hits && json.hits.total;
+      const count = typeof total === 'number' ? total : (total && total.value) || items.length;
+      return { items, page, totalPages: Math.min(Math.ceil(count / PAGE), 25) };
+    },
+  };
+
+  /* ---------- The National Gallery, London ---------- */
+  // Search: data.ng.ac.uk Elasticsearch. Images: its IIIF server (public images are
+  // at most about 800 px). Images are CC BY-NC-ND 4.0: fine for private study, but
+  // altered versions (like a value study) shouldn't be shared.
+
+  const NGL_FIELDS = '@admin.uid,summary.title,creation.date.value,creation.attribution.value,multimedia.@admin.uid';
+  function luceneWords(q) {
+    return q.replace(/[+\-=&|><!(){}[\]^"~*?:\\/@]/g, ' ').trim();
+  }
+  const ngl = {
+    id: 'ngl',
+    name: 'The National Gallery, London',
+    short: 'National Gallery London',
+    needsRelay: false,
+    async search(q, page, signal, { paintingsOnly }) {
+      let query = `(${luceneWords(q) || '*'}) AND \\@datatype.base:object AND access.media.public_image:true`;
+      if (paintingsOnly) query += ' AND classification.value:Picture';
+      const params = new URLSearchParams({
+        q: query,
+        default_operator: 'AND',
+        size: String(PAGE),
+        from: String((page - 1) * PAGE),
+        _source: NGL_FIELDS,
+      });
+      const json = await getJson(`https://data.ng.ac.uk/es/public/_search?${params}`, signal);
+      const hits = (json.hits && json.hits.hits) || [];
+      const items = hits
+        .map((h) => h._source || {})
+        .filter((s) => s.multimedia && s.multimedia[0] && s.multimedia[0]['@admin'] && s.multimedia[0]['@admin'].uid)
+        .map((s) => {
+          const pid = s.multimedia[0]['@admin'].uid;
+          const c = (s.creation && s.creation[0]) || {};
+          const uid = (s['@admin'] && s['@admin'].uid) || pid;
+          return {
+            id: `ngl-${uid}`,
+            source: 'ngl',
+            museum: 'National Gallery London',
+            title: (s.summary && s.summary.title) || 'Untitled',
+            artist: (c.attribution && c.attribution[0] && c.attribution[0].value) || 'Unknown artist',
+            date: (c.date && c.date[0] && c.date[0].value) || '',
+            type: 'Painting',
+            thumb: `https://data.ng.ac.uk/iiif/3/${pid}/full/200,/0/default.jpg`,
+            image: `https://data.ng.ac.uk/iiif/3/${pid}/full/max/0/default.jpg`,
+            imageFallback: '',
+            link: `https://data.ng.ac.uk/${uid}`,
+            credit: 'The National Gallery, London, CC BY-NC-ND 4.0 (personal study only; please don’t share altered versions)',
+            needsRelay: false,
+          };
+        });
+      const total = json.hits && json.hits.total;
+      const count = typeof total === 'number' ? total : (total && total.value) || items.length;
+      return { items, page, totalPages: Math.min(Math.ceil(count / PAGE), 25) };
+    },
+  };
+
+  const all = [aic, met, nga, mia, cma, ngl];
 
   /* Remember recent results so repeating a search or switching the filter is instant. */
   const results = new Map();
@@ -207,5 +371,5 @@
     'Portrait',
   ];
 
-  VST.museum = { sources: { aic, met, cma }, all, available, imageUrl, relayBase, suggestions };
+  VST.museum = { sources: { aic, met, nga, mia, cma, ngl }, all, available, imageUrl, relayBase, suggestions };
 })(typeof window !== 'undefined' ? window : globalThis);
