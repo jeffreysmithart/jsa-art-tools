@@ -126,6 +126,7 @@ function check(cond, msg) {
   await page.uncheck('#space-unused');
   await page.screenshot({ path: path.join(OUT, '2c-color-space.png') });
   // tap to open it large: turn, zoom, slice by value, tap a dot to read it
+  await page.uncheck('#pal-range'); // just the picture's own colors for these checks
   await page.click('#space-open');
   check(await page.isVisible('#space-modal'), 'tapping the color space opens it large');
   await settle(page);
@@ -153,6 +154,46 @@ function check(cond, msg) {
   await page.click('#space-reset');
   await page.keyboard.press('Escape');
   check(!(await page.isVisible('#space-modal')), 'Esc closes the large view');
+
+  // limited palette: what it can mix, what it can't, and a Palette study
+  await page.check('#pal-range');
+  await page.waitForFunction(() => document.querySelectorAll('#pal-stats .stat').length === 2);
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'pov' && (await page.$$('#pal-paints .pal-chip')).length === 5, 'the default palette is Prussian blue, yellow ochre, vermilion, black and white');
+  const reachOf = async () => parseInt(await page.$eval('#pal-stats .stat b', (e) => e.textContent), 10);
+  const povReach = await reachOf();
+  check(povReach > 0 && povReach <= 100, `it reports how much of the picture it can mix (${povReach}%)`);
+  await page.selectOption('#pal-preset', 'zorn');
+  await page.waitForFunction((r) => parseInt(document.querySelector('#pal-stats .stat b').textContent, 10) !== r, povReach, { timeout: 3000 }).catch(() => {});
+  const zornReach = await reachOf();
+  const outName = await page.$eval('#pal-stats .stat:nth-child(2) b', (e) => e.textContent);
+  check(zornReach < povReach && /green/i.test(outName) && /blue/i.test(outName), `without a blue, Zorn reaches less of this landscape, missing its ${outName.toLowerCase()} (${zornReach}%)`);
+  await page.selectOption('#pal-add', 'ultramarine');
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'custom' && (await reachOf()) > zornReach, 'adding ultramarine to Zorn makes it my palette and reaches more');
+  await page.click('#pal-paints .pal-chip:nth-child(1) .pal-remove');
+  check((await page.$$('#pal-paints .pal-chip')).length === 4, 'a paint can be removed');
+  await page.selectOption('#pal-preset', 'pov');
+  await page.click('#pal-study');
+  await settle(page);
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'study'), 'Paint the study with this palette switches the study to Palette');
+  check(/Palette · Prussian blue/.test(await page.textContent('#study-caption')) && await page.isVisible('#palette-ctl') && !(await page.isVisible('#values-ctl')), `the caption names the palette (${await page.textContent('#study-caption')})`);
+  check((await page.$$('#swatches .swatch')).length >= 2, 'swatches show the mixes the study uses most');
+  await page.selectOption('#pal-preset', 'zorn').catch(() => {});
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.selectOption('#pal-preset', 'zorn');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await settle(page);
+  const striped = await studyColors(page);
+  await page.uncheck('#pal-mark');
+  await settle(page);
+  const plain = await studyColors(page);
+  check(striped.count > plain.count, `Zorn stripes the blue sky it can't mix (${striped.count} colors with stripes, ${plain.count} without)`);
+  await page.check('#pal-mark');
+  await page.screenshot({ path: path.join(OUT, '2e-palette-study.png') });
+  await page.keyboard.press('k');
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'gray'), 'K goes from Palette back to grayscale');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.selectOption('#pal-preset', 'pov');
+
 
   // composition guides: rule of thirds, golden section, diagonals, crossings
   const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });

@@ -231,6 +231,12 @@
 
       // everything to draw, back to front
       const items = [];
+      // what the palette can mix, as a ghost (a little stronger than the screen solid)
+      for (const p of data.palette) {
+        if (!inSlice(p.L)) continue;
+        const [sx, sy, z] = P(p.L, p.a, p.b);
+        items.push({ z, sx, sy, ghost: true, rgb: p.rgb, alpha: 0.32 });
+      }
       if (showUnused) {
         for (const p of data.shell) {
           if (!inSlice(p.L)) continue;
@@ -249,7 +255,7 @@
       drawn = [];
       for (const it of items) {
         if (it.ghost) {
-          ctx.globalAlpha = 0.22;
+          ctx.globalAlpha = it.alpha || 0.22;
           ctx.fillStyle = `rgb(${it.rgb[0]},${it.rgb[1]},${it.rgb[2]})`;
           ctx.beginPath();
           ctx.arc(it.sx, it.sy, 2.6 * dpr * zoomR, 0, Math.PI * 2);
@@ -264,6 +270,14 @@
         ctx.beginPath();
         ctx.arc(it.sx, it.sy, rad, 0, Math.PI * 2);
         ctx.fill();
+        if (data.out && data.out.has(c)) {
+          // a color the palette can't mix: ringed
+          ctx.lineWidth = 1.5 * dpr;
+          ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+          ctx.beginPath();
+          ctx.arc(it.sx, it.sy, rad + 2 * dpr, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         drawn.push({ x: it.sx, y: it.sy, rad, cell: c });
       }
       for (const m of data.marks) {
@@ -388,7 +402,14 @@
 
     return {
       setData(d) {
-        data = { cells: d.cells || [], shell: d.shell || [], marks: d.marks || [], fitChroma: d.stats ? d.stats.strongChroma : 0 };
+        data = {
+          cells: d.cells || [],
+          shell: d.shell || [],
+          marks: d.marks || [],
+          palette: d.palette || [],
+          out: d.out || null,
+          fitChroma: d.stats ? d.stats.strongChroma : 0,
+        };
         if (picked && !data.cells.includes(picked)) pick(null);
         request();
       },
