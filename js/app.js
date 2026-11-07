@@ -9,6 +9,7 @@
   const C = VST.color;
   const T = VST.timer;
   const CO = VST.compose;
+  const G = VST.gamut;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -70,6 +71,7 @@
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
+    gamutHull: true, // color wheel: outline the range of colors used
     settingsVersion: 3,
   };
 
@@ -413,6 +415,7 @@
     renderMine();
     drawHistogram();
     renderPresetSelect();
+    if (S.panel === 'color') renderGamut();
     save();
   }
 
@@ -1104,7 +1107,7 @@
 
   /* ================= Sidebar tabs: Images / Study / Canvas ================= */
 
-  const PANELS = ['images', 'study', 'canvas', 'log'];
+  const PANELS = ['images', 'study', 'color', 'canvas', 'log'];
 
   function setPanel(name) {
     if (!PANELS.includes(name)) name = 'images';
@@ -1117,6 +1120,7 @@
       tab.tabIndex = on ? 0 : -1;
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
+    if (name === 'color') renderGamut();
     if (name === 'log') {
       LG.tick();
       LG.flush();
@@ -1158,6 +1162,55 @@
   }
   ['#crop-modal', '#square-modal', '#tryon-modal'].forEach((sel) => manageFocus($(sel)));
 
+
+  /* ================= Color tab: the color wheel ================= */
+
+  const gamutCache = { lab: null, data: null };
+  const toRgb = (L, a, b) => C.labToRgb8(L, a, b, [0, 0, 0]);
+
+  /** The picture's colors on a wheel (with squint applied), and a few plain figures. */
+  function renderGamut() {
+    const cv = $('#gamut');
+    const box = $('#gamut-stats');
+    const css = cv.clientWidth;
+    if (!css) return; // hidden
+    const dpr = window.devicePixelRatio || 1;
+    const size = Math.round(css * dpr);
+    if (cv.width !== size) cv.width = cv.height = size;
+    if (!work.lab) {
+      G.draw(cv.getContext('2d'), { cells: [], hull: [] }, size, toRgb, { dpr });
+      box.innerHTML = '';
+      $('#gamut-empty').hidden = false;
+      return;
+    }
+    $('#gamut-empty').hidden = true;
+    if (gamutCache.lab !== work.lab) {
+      gamutCache.data = G.analyze(work.lab);
+      gamutCache.lab = work.lab;
+    }
+    const data = gamutCache.data;
+    const marks = S.tone === 'poster' && work.centroids ? work.centroids.map((c) => ({ L: c[0], a: c[1], b: c[2] })) : [];
+    G.draw(cv.getContext('2d'), data, size, toRgb, { hull: S.gamutHull, marks, dpr });
+    const st = data.stats;
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    box.innerHTML =
+      stat(st.hueName ? cap(st.hueName) : 'Gray', 'main hue') +
+      stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ${st.strongChroma}`) +
+      stat(`${Math.round(st.neutralShare * 100)}%`, 'near gray') +
+      stat(`${Math.max(st.area > 0 ? 1 : 0, Math.round(st.area * 100))}%`, 'of the wheel used');
+    cv.setAttribute(
+      'aria-label',
+      `Color wheel. Main hue ${st.hueName || 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray.` +
+        (marks.length ? ` ${marks.length} main colors marked.` : '')
+    );
+    $('#gamut-marks-hint').hidden = !marks.length;
+  }
+  $('#gamut-hull').addEventListener('change', (e) => {
+    S.gamutHull = e.target.checked;
+    renderGamut();
+    save();
+  });
 
   /* ================= Log tab ================= */
 
@@ -2896,7 +2949,11 @@
   setMode(S.mode);
   setPanel(S.panel);
   syncMineUi();
-  window.addEventListener('resize', () => drawHistogram());
+  window.addEventListener('resize', () => {
+    drawHistogram();
+    if (S.panel === 'color') renderGamut();
+  });
+  $('#gamut-hull').checked = S.gamutHull;
 
   // exposed for automated tests
   VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem, setPanel };

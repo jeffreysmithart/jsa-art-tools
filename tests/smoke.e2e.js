@@ -111,6 +111,20 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
+  // Color tab: the picture's colors on a wheel
+  await page.click('#ptab-color');
+  await page.waitForFunction(() => document.querySelectorAll('#gamut-stats .stat').length === 4);
+  const wheel = await page.$eval('#gamut', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3]) n++; return { w: c.width, h: c.height, ink: n / (c.width * c.height) }; });
+  check(wheel.w === wheel.h && wheel.ink > 0.6, `the color wheel draws (${wheel.w}px, ${Math.round(wheel.ink * 100)}% covered)`);
+  const gs = await page.$$eval('#gamut-stats .stat', (els) => els.map((e) => e.textContent));
+  check(/main hue/.test(gs[0]) && /near gray/.test(gs[2]), `the wheel's figures show (${gs.join(' | ')})`);
+  const wheelSum = () => page.$eval('#gamut', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0; for (let i = 0; i < d.length; i++) s = (s * 31 + d[i]) >>> 0; return s; });
+  const withHull = await wheelSum();
+  await page.uncheck('#gamut-hull');
+  check((await wheelSum()) !== withHull, 'the gamut outline can be turned off');
+  await page.check('#gamut-hull');
+  await page.screenshot({ path: path.join(OUT, '2c-color-wheel.png') });
+
   // composition guides: rule of thirds, golden section, diagonals, crossings
   const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
   const gridInk = await inkOn(page);
@@ -844,7 +858,7 @@ function check(cond, msg) {
   check(studyTop < 200, `study settings are at the top of the sidebar, no scrolling (${Math.round(studyTop)}px)`);
   await tp.click('#ptab-canvas');
   check(await tp.isVisible('#grid-on') && !(await tp.isVisible('#bands-seg')), 'Canvas holds the grid and downloads');
-  await tp.focus('#ptab-canvas');
+  await tp.focus('#ptab-color');
   await tp.keyboard.press('ArrowLeft');
   check(await panelOn('study') && await tp.evaluate(() => document.activeElement.id === 'ptab-study'), 'arrow keys move between sidebar tabs');
   await tp.reload();

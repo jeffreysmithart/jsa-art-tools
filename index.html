@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-07c">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-07d">
 </head>
 <body>
   <header class="topbar">
@@ -26,6 +26,7 @@
       <div class="side-tabs" role="tablist" aria-label="Sidebar">
         <button role="tab" id="ptab-images" data-panel="images" aria-controls="panel-images" aria-selected="true">Images</button>
         <button role="tab" id="ptab-study" data-panel="study" aria-controls="panel-study" aria-selected="false">Study</button>
+        <button role="tab" id="ptab-color" data-panel="color" aria-controls="panel-color" aria-selected="false">Color</button>
         <button role="tab" id="ptab-canvas" data-panel="canvas" aria-controls="panel-canvas" aria-selected="false">Canvas</button>
         <button role="tab" id="ptab-log" data-panel="log" aria-controls="panel-log" aria-selected="false">Log</button>
       </div>
@@ -218,6 +219,19 @@
             <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
           </div>
         </div>
+      </section>
+      </div>
+
+      <!-- Color: the picture's colors on a wheel -->
+      <div class="side-panel" id="panel-color" data-panel="color" role="tabpanel" aria-labelledby="ptab-color" hidden>
+      <section class="group" id="sec-gamut">
+        <h2>Color wheel</h2>
+        <canvas id="gamut" class="gamut" role="img" aria-label="Color wheel"></canvas>
+        <p class="hint" id="gamut-empty">Load an image to see its colors on the wheel.</p>
+        <div class="log-stats gamut-stats" id="gamut-stats"></div>
+        <label class="check"><input type="checkbox" id="gamut-hull" checked> Outline the gamut</label>
+        <p class="hint">Each dot is a color in the picture: hue goes around the wheel, and colors get stronger toward the rim, with gray in the middle. Bigger dots cover more of the picture. The dashed outline is the <b>gamut</b>, the range of colors the picture uses. <b>Squint</b> (in Study) smooths out noise.</p>
+        <p class="hint" id="gamut-marks-hint" hidden>The ringed dots are the main colors.</p>
       </section>
       </div>
 
@@ -507,18 +521,19 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-07c"></script>
-  <script src="js/process.js?v=2026-11-07c"></script>
-  <script src="js/config.js?v=2026-11-07c"></script>
-  <script src="js/museum.js?v=2026-11-07c"></script>
-  <script src="js/library.js?v=2026-11-07c"></script>
-  <script src="js/presets.js?v=2026-11-07c"></script>
-  <script src="js/log.js?v=2026-11-07c"></script>
-  <script src="js/timer.js?v=2026-11-07c"></script>
-  <script src="js/compose.js?v=2026-11-07c"></script>
-  <script src="js/crop.js?v=2026-11-07c"></script>
-  <script src="js/warp.js?v=2026-11-07c"></script>
-  <script src="js/squareup.js?v=2026-11-07c"></script>
-  <script src="js/app.js?v=2026-11-07c"></script>
+  <script src="js/color.js?v=2026-11-07d"></script>
+  <script src="js/process.js?v=2026-11-07d"></script>
+  <script src="js/config.js?v=2026-11-07d"></script>
+  <script src="js/museum.js?v=2026-11-07d"></script>
+  <script src="js/library.js?v=2026-11-07d"></script>
+  <script src="js/presets.js?v=2026-11-07d"></script>
+  <script src="js/log.js?v=2026-11-07d"></script>
+  <script src="js/timer.js?v=2026-11-07d"></script>
+  <script src="js/compose.js?v=2026-11-07d"></script>
+  <script src="js/gamut.js?v=2026-11-07d"></script>
+  <script src="js/crop.js?v=2026-11-07d"></script>
+  <script src="js/warp.js?v=2026-11-07d"></script>
+  <script src="js/squareup.js?v=2026-11-07d"></script>
+  <script src="js/app.js?v=2026-11-07d"></script>
 </body>
 </html>
