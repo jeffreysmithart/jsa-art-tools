@@ -29,6 +29,8 @@ function check(cond, msg) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // the main page runs without the image relay (Art Institute only), like a fresh setup
+  await page.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
 
   // a painted "landscape" test image, made in the browser
   await page.goto(BASE);

@@ -8,6 +8,10 @@ The Met and the Cleveland Museum of Art share their public-domain images freely,
 
 The Art Institute of Chicago doesn't need the relay.
 
+## Current deployment
+
+The relay runs at `https://value-study-relay.jeffrey-63e.workers.dev`, and that address is set in `js/config.js`. To change the relay (for example, to allow another museum's image server), edit `worker.js`, then paste it into the Worker's code editor in the Cloudflare dashboard and deploy, or ask Claude to redeploy it.
+
 ## Set it up (about 10 minutes)
 
 1. Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com/).

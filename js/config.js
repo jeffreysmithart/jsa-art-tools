@@ -12,6 +12,6 @@
      * The Met and Cleveland need it; leave empty to use only the
      * Art Institute of Chicago.
      */
-    imageRelay: '',
+    imageRelay: 'https://value-study-relay.jeffrey-63e.workers.dev',
   };
 })(typeof window !== 'undefined' ? window : globalThis);
