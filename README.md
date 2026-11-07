@@ -11,9 +11,9 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Master Copy:** search the Art Institute of Chicago's public-domain collection by artist or subject, study a painting, or build a timed session from several.
 
 **Study tools (both modes)**
-- **Grayscale or Color:** every study option works in either.
-- **Simplify by Value:** **All** (the full range) or 2–6 values (2 is notan). In color, the hues stay and only the values are flattened, for a color poster study.
-- **Simplify by Main colors:** the 2–8 colors that best summarize the image, shown in color or as their values.
+- **Color:** Grayscale, Color, or Main colors.
+- **Number of values** (Grayscale or Color): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
+- **Main colors:** repaints the image with the 2–8 colors that best summarize it.
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** even steps, the area's true average, or **custom** values to match your markers (0 = black, 10 = white).
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).
@@ -24,7 +24,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - 30 seconds to 60 minutes, 1–5 rounds of the same image, and a break between rounds or paintings to turn the page.
 - In a Master Copy session it moves through the queue automatically. A chime plays at the end of each round, and the screen stays awake while the timer runs.
 
-Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` grayscale/color, `0` all values, `2`–`6` number of values, `Space` start/pause.
+Keyboard: `G` grid, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
 Settings and the session queue are remembered in your browser.
 

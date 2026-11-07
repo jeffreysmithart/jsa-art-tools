@@ -98,30 +98,36 @@ function check(cond, msg) {
   check(await swatchCount(page, 0) && !(await page.isVisible('#split-ctl')), 'All values hides the splits');
   sc = await studyColors(page);
   check(!sc.allGray && sc.count > 50, `color + all values shows the full image (${sc.count} colors)`);
-  await page.keyboard.press('k');
+  await page.click('[data-tone="gray"]');
   await settle(page);
   sc = await studyColors(page);
-  check(sc.allGray && sc.count > 20, `K switches to full grayscale (${sc.count} grays)`);
+  check(sc.allGray && sc.count > 20, `grayscale + all values shows the full range (${sc.count} grays)`);
   await page.keyboard.press('3');
   await settle(page);
   sc = await studyColors(page);
   check(sc.allGray && sc.count === 3, `then 3 values in grayscale (${sc.count})`);
   check((await page.textContent('#study-caption')) === 'Grayscale · 3 values', 'caption names tone and values');
 
-  // main colors, in color and in gray
-  await page.click('[data-tone="color"]');
-  await page.click('[data-method="poster"]');
+  // main colors is the third color choice, with its own count
+  await page.click('[data-tone="poster"]');
   await page.click('[data-k="5"]');
   check(await swatchCount(page, 5), 'main colors shows 5 swatches');
-  await page.screenshot({ path: path.join(OUT, '3-main-colors.png') });
-  await page.click('[data-tone="gray"]');
+  check(await page.isVisible('#k-seg') && !(await page.isVisible('#bands-seg')), 'main colors shows number of colors instead of values');
   await settle(page);
   sc = await studyColors(page);
-  check(sc.allGray && sc.count <= 5, `main colors in grayscale paints their values (${sc.count})`);
-  await page.click('[data-tone="color"]');
+  check(!sc.allGray && sc.count === 5, `main colors paints exactly 5 colors (${sc.count})`);
+  check((await page.textContent('#study-caption')) === '5 main colors', 'caption names main colors');
+  await page.screenshot({ path: path.join(OUT, '3-main-colors.png') });
+  // K cycles grayscale -> color -> main colors
+  await page.keyboard.press('k');
+  check(await page.evaluate(() => window.VST.app.settings.tone) === 'gray', 'K goes from main colors to grayscale');
+  await page.keyboard.press('k');
+  check(await page.evaluate(() => window.VST.app.settings.tone) === 'color', 'K goes from grayscale to color');
+  await page.click('[data-tone="poster"]');
+  await page.keyboard.press('4');
+  check(await page.evaluate(() => window.VST.app.settings.tone) === 'color' && await swatchCount(page, 4), 'pressing 4 in main colors switches to color with 4 values');
 
   // custom levels
-  await page.click('[data-method="values"]');
   await page.click('[data-n="4"]');
   await page.selectOption('#levels-mode', 'custom');
   check(await page.waitForFunction(() => document.querySelectorAll('#swatches input').length === 4).then(() => true, () => false), 'custom mode shows editable values');
@@ -217,7 +223,7 @@ function check(cond, msg) {
   // settings saved by the first version (single "style" choice) carry over
   await page.evaluate(() => {
     const st = JSON.parse(localStorage.getItem('value-study:settings'));
-    delete st.tone; delete st.method;
+    delete st.tone;
     Object.assign(st, { style: 'values', valuesColor: true, bands: 5 });
     localStorage.setItem('value-study:settings', JSON.stringify(st));
   });
@@ -226,7 +232,13 @@ function check(cond, msg) {
   const p2 = await ctx2.newPage();
   await p2.goto(BASE);
   const mig = await p2.evaluate(() => { const s = window.VST.app.settings; return { tone: s.tone, method: s.method, bands: s.bands, style: s.style }; });
-  check(mig.tone === 'color' && mig.method === 'values' && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
+  check(mig.tone === 'color' && mig.method === undefined && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
+  const ctx3 = await browser.newContext();
+  await ctx3.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', method: 'poster', posterK: 6 })));
+  const p3 = await ctx3.newPage();
+  await p3.goto(BASE);
+  check(await p3.evaluate(() => window.VST.app.settings.tone) === 'poster', 'second-version main colors setting converts');
+  await ctx3.close();
   await ctx2.close();
 
   // phone layout
