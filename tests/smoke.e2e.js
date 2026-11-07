@@ -111,6 +111,49 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
+  // Color tab: the picture's colors in a 3D color space
+  await page.click('#ptab-color');
+  await page.waitForFunction(() => document.querySelectorAll('#gamut-stats .stat').length === 4);
+  const canvasSum = (sel) => page.$eval(sel, (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0, ink = 0; for (let i = 0; i < d.length; i++) { s = (s * 31 + d[i]) >>> 0; if (i % 4 === 3 && d[i]) ink++; } return { s, ink }; });
+  await settle(page);
+  const small = await canvasSum('#space-small');
+  check(small.ink > 1000, `the color space draws in the sidebar (${small.ink} px)`);
+  const gs = await page.$$eval('#gamut-stats .stat', (els) => els.map((e) => e.textContent));
+  check(/main hue/.test(gs[0]) && /value range/.test(gs[3]), `the color figures show (${gs.join(' | ')})`);
+  await page.check('#space-unused');
+  await settle(page);
+  check((await canvasSum('#space-small')).ink > small.ink * 1.5, 'Show colors not in the picture adds the rest of the color space');
+  await page.uncheck('#space-unused');
+  await page.screenshot({ path: path.join(OUT, '2c-color-space.png') });
+  // tap to open it large: turn, zoom, slice by value, tap a dot to read it
+  await page.click('#space-open');
+  check(await page.isVisible('#space-modal'), 'tapping the color space opens it large');
+  await settle(page);
+  const bigView = await canvasSum('#space-big');
+  const box = await page.$eval('#space-big', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.w / 2 + 120, box.y + box.h / 2 + 20, { steps: 5 });
+  await page.mouse.up();
+  await settle(page);
+  check((await canvasSum('#space-big')).s !== bigView.s, 'dragging turns it');
+  await page.selectOption('#space-slice', '7');
+  await settle(page);
+  check((await canvasSum('#space-big')).ink < bigView.ink, 'choosing a value shows one level');
+  // tap the biggest dot to read it
+  const dot = await page.evaluate(() => {
+    const c = document.getElementById('space-big'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const dpr = window.devicePixelRatio || 1;
+    for (let y = 0; y < c.height; y += 2) for (let x = 0; x < c.width; x += 2) { const i = (y * c.width + x) * 4; const r = d[i], g = d[i + 1], b = d[i + 2]; if (d[i + 3] && Math.max(r, g, b) - Math.min(r, g, b) > 40) return { x: x / dpr, y: y / dpr }; }
+    return null;
+  });
+  if (dot) await page.mouse.click(box.x + dot.x, box.y + dot.y);
+  check(dot && (await page.isVisible('#space-readout')) && /Value [\d.]+/.test(await page.textContent('#space-readout')), `tapping a dot reads its value, chroma and hue (${dot ? (await page.textContent('#space-readout')).trim() : 'no dot'})`);
+  await page.screenshot({ path: path.join(OUT, '2d-color-space-large.png') });
+  await page.click('#space-reset');
+  await page.keyboard.press('Escape');
+  check(!(await page.isVisible('#space-modal')), 'Esc closes the large view');
+
   // composition guides: rule of thirds, golden section, diagonals, crossings
   const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
   const gridInk = await inkOn(page);
@@ -844,7 +887,7 @@ function check(cond, msg) {
   check(studyTop < 200, `study settings are at the top of the sidebar, no scrolling (${Math.round(studyTop)}px)`);
   await tp.click('#ptab-canvas');
   check(await tp.isVisible('#grid-on') && !(await tp.isVisible('#bands-seg')), 'Canvas holds the grid and downloads');
-  await tp.focus('#ptab-canvas');
+  await tp.focus('#ptab-color');
   await tp.keyboard.press('ArrowLeft');
   check(await panelOn('study') && await tp.evaluate(() => document.activeElement.id === 'ptab-study'), 'arrow keys move between sidebar tabs');
   await tp.reload();

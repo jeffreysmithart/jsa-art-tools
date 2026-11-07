@@ -9,6 +9,7 @@
   const C = VST.color;
   const T = VST.timer;
   const CO = VST.compose;
+  const G = VST.gamut;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -70,6 +71,7 @@
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
+    spaceUnused: false, // color space: also show the colors the picture doesn't use
     settingsVersion: 3,
   };
 
@@ -413,6 +415,7 @@
     renderMine();
     drawHistogram();
     renderPresetSelect();
+    if (S.panel === 'color') renderGamut();
     save();
   }
 
@@ -1104,7 +1107,7 @@
 
   /* ================= Sidebar tabs: Images / Study / Canvas ================= */
 
-  const PANELS = ['images', 'study', 'canvas', 'log'];
+  const PANELS = ['images', 'study', 'color', 'canvas', 'log'];
 
   function setPanel(name) {
     if (!PANELS.includes(name)) name = 'images';
@@ -1117,6 +1120,7 @@
       tab.tabIndex = on ? 0 : -1;
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
+    if (name === 'color') renderGamut();
     if (name === 'log') {
       LG.tick();
       LG.flush();
@@ -1156,8 +1160,138 @@
       }
     }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
   }
-  ['#crop-modal', '#square-modal', '#tryon-modal'].forEach((sel) => manageFocus($(sel)));
+  ['#crop-modal', '#square-modal', '#tryon-modal', '#space-modal'].forEach((sel) => manageFocus($(sel)));
 
+
+  /* ================= Color tab: the color space ================= */
+
+  /*
+   * The picture's colors in a Munsell-style 3D space (value up the middle,
+   * hue around, chroma outward), small in the sidebar and large in a
+   * full-screen view you can turn, zoom, slice by value and tap to read.
+   */
+  const CS = VST.colorspace;
+  const toRgb = (L, a, b) => C.labToRgb8(L, a, b, [0, 0, 0]);
+  const colorCache = { lab: null, stats: null, cells: null };
+  let shell = null; // the rest of the color space, made once when first shown
+  const spaceSmall = CS.createView($('#space-small'), { toRgb });
+  const spaceBig = CS.createView($('#space-big'), { toRgb, interactive: true, onPick: showReading });
+
+  function colorData() {
+    if (!work.lab) return null;
+    if (colorCache.lab !== work.lab) {
+      colorCache.lab = work.lab;
+      colorCache.stats = G.analyze(work.lab).stats;
+      colorCache.cells = CS.sample(work.lab);
+    }
+    const marks = S.tone === 'poster' && work.centroids ? work.centroids.map((c) => ({ L: c[0], a: c[1], b: c[2] })) : [];
+    if (S.spaceUnused && !shell) shell = CS.solidShell((r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]));
+    return { cells: colorCache.cells, shell: S.spaceUnused ? shell : [], marks, stats: colorCache.stats };
+  }
+
+  function renderGamut() {
+    if (!$('#space-small').clientWidth) return; // hidden
+    const d = colorData();
+    $('#gamut-empty').hidden = !!d;
+    spaceSmall.setShowUnused(S.spaceUnused);
+    spaceSmall.setData(d || {});
+    const box = $('#gamut-stats');
+    if (!d) {
+      box.innerHTML = '';
+      return;
+    }
+    const st = d.stats;
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    // the main hue in the same Munsell terms as the 3D view
+    const t = st.hue == null ? null : (st.hue * Math.PI) / 180;
+    const mh = t == null ? null : CS.munsell(50, 20 * Math.cos(t), 20 * Math.sin(t));
+    box.innerHTML =
+      stat(mh ? `${cap(mh.hueName)} (${mh.hue})` : 'Gray', 'main hue') +
+      stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ≈ ${Math.round(st.strongChroma / 5)}`) +
+      stat(`${Math.round(st.neutralShare * 100)}%`, 'near gray') +
+      stat(`${st.valueLow}–${st.valueHigh}`, 'value range');
+    $('#space-open').setAttribute(
+      'aria-label',
+      `Open the color space larger. Main hue ${mh ? mh.hueName : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
+    );
+    $('#gamut-marks-hint').hidden = !d.marks.length;
+    if (!$('#space-modal').hidden) spaceBig.setData(d);
+  }
+
+  function setSpaceUnused(on) {
+    S.spaceUnused = on;
+    $('#space-unused').checked = on;
+    $('#space-unused-big').checked = on;
+    const d = colorData();
+    spaceSmall.setShowUnused(on);
+    spaceBig.setShowUnused(on);
+    if (d) {
+      spaceSmall.setData(d);
+      spaceBig.setData(d);
+    }
+    save();
+  }
+  $('#space-unused').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
+  $('#space-unused-big').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
+
+  /** What the tapped color is, in Munsell-style terms. */
+  function showReading(cell) {
+    const box = $('#space-readout');
+    box.hidden = !cell;
+    if (!cell) return;
+    const m = CS.munsell(cell.L, cell.a, cell.b);
+    const [r, g, b] = toRgb(cell.L, cell.a, cell.b);
+    box.querySelector('.sw').style.background = `rgb(${r},${g},${b})`;
+    box.querySelector('b').textContent = m.hue === 'N' ? `Value ${m.value} · neutral gray` : `Value ${m.value} · chroma ≈ ${m.chroma} · hue ≈ ${m.hue} (${m.hueName})`;
+    const pct = cell.share * 100;
+    box.querySelector('span:not(.sw)').textContent = pct < 0.1 ? 'under 0.1% of the picture' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}% of the picture`;
+  }
+
+  function openSpace() {
+    const d = colorData();
+    if (!d) return toast('Load an image first.');
+    $('#space-modal').hidden = false;
+    $('#space-unused-big').checked = S.spaceUnused;
+    spaceBig.setShowUnused(S.spaceUnused);
+    spaceBig.setData(d);
+    spaceBig.pick(null);
+    requestAnimationFrame(() => spaceBig.render());
+  }
+  function closeSpace() {
+    $('#space-modal').hidden = true;
+  }
+  $('#space-open').addEventListener('click', openSpace);
+  $('#space-close').addEventListener('click', closeSpace);
+  $('#space-top').addEventListener('click', () => spaceBig.view('top'));
+  $('#space-side').addEventListener('click', () => spaceBig.view('side'));
+  $('#space-reset').addEventListener('click', () => {
+    $('#space-slice').value = '';
+    spaceBig.setSlice(null);
+    spaceBig.view('default');
+  });
+  $('#space-slice').addEventListener('change', (e) => {
+    spaceBig.setSlice(e.target.value);
+    // one value at a time reads best from above, like a page of a Munsell book
+    if (e.target.value !== '') spaceBig.view('top');
+  });
+  window.addEventListener('resize', () => {
+    if (!$('#space-modal').hidden) spaceBig.request();
+  });
+  window.addEventListener('keydown', (e) => {
+    if ($('#space-modal').hidden) return;
+    const k = e.key;
+    if (k === 'Escape') closeSpace();
+    else if (e.target.tagName === 'SELECT') return;
+    else if (k === 'ArrowLeft') spaceBig.turn(-10, 0);
+    else if (k === 'ArrowRight') spaceBig.turn(10, 0);
+    else if (k === 'ArrowUp') spaceBig.turn(0, 8);
+    else if (k === 'ArrowDown') spaceBig.turn(0, -8);
+    else if (k === '+' || k === '=') spaceBig.zoomBy(1.2);
+    else if (k === '-') spaceBig.zoomBy(1 / 1.2);
+    else return;
+    e.preventDefault();
+  });
 
   /* ================= Log tab ================= */
 
@@ -2847,7 +2981,7 @@
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
-    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || !$('#space-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     // changing the study by hand ends a staged reveal (and gives back your settings) first
     if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
@@ -2896,7 +3030,11 @@
   setMode(S.mode);
   setPanel(S.panel);
   syncMineUi();
-  window.addEventListener('resize', () => drawHistogram());
+  window.addEventListener('resize', () => {
+    drawHistogram();
+    if (S.panel === 'color') renderGamut();
+  });
+  $('#space-unused').checked = S.spaceUnused;
 
   // exposed for automated tests
   VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem, setPanel };
