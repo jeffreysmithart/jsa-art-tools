@@ -21,21 +21,20 @@ We admire both and build on their *ideas*, not their design, layout, wording or 
 
 ## Where things stand
 
-v1 is complete, and most of v2 is too (12 merged pull requests, plus memory mode). The sidebar has four tabs:
+v1 is complete, and most of v2 is too (15 merged pull requests: memory mode and composition guides came after the first 12, and staged reveal is in progress). The sidebar has four tabs:
 
 - **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; and a **history** of everything studied.
 - **Study:** **presets** (built-in and your own); Grayscale / Color / Main colors; 2–6 values with adjustable splits (fit to image, even, or dragged); how values are painted (area average by default, even steps, or custom marker values); squint; and **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
 - **Canvas:** composition guides (rule of thirds, golden section, diagonals with their reciprocals, and lines through the crossings), also shown in Crop for framing reference photos; grid (any columns × rows, square cells, diagonals); and downloads (study, cropped original, side-by-side or comparison sheet).
 - **Log:** practice time this week, streaks, a month calendar shaded by time, and per-day detail of what was studied. Downloads as CSV.
 
-Also: crop with canvas presets and custom sizes, flip, a timer with rounds, breaks and timed sessions through a list or a set, **memory mode** (look, then draw with the image hidden; logged separately), **Present** mode, **Try presets** across a whole set, keyboard shortcuts, and touch sizing for iPad.
+Also: crop with canvas presets and custom sizes, flip, a timer with rounds, breaks and timed sessions through a list or a set, **memory mode** (look, then draw with the image hidden; logged separately), **staged reveal** (2 values, then 3, then the full image, by tap or over a timed round), **Present** mode, **Try presets** across a whole set, keyboard shortcuts, and touch sizing for iPad.
 
 ## What's next
 
 Remaining from v2:
 
-1. **Staged reveal:** show 2 values, then 3, then the full image, so you commit to the big masses first. Could run on the timer or step on tap. The timer's phase flow (`armRound` / `startRound` / `onPhaseEnd` in `js/app.js`, which memory mode added a look phase to) is the place to hook it in.
-2. **Decreasing-time rounds:** the same image at 10, then 5, then 2 minutes. Today's rounds all have the same length.
+1. **Decreasing-time rounds:** the same image at 10, then 5, then 2 minutes. Today's rounds all have the same length. The timer's phase flow (`armRound` / `startRound` / `onPhaseEnd` in `js/app.js`) is the place to hook it in; `drawSeconds()` would take the round number.
 
 v3, a larger project to scope on its own:
 

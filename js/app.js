@@ -58,6 +58,8 @@
     breakSec: 10,
     memorySec: 0, // memory mode: look this long, then draw with the image hidden (0 = off)
     memoryLast: 30, // the look time M turns back on
+    revealSeq: '', // staged reveal during timed rounds, e.g. '2,3,full' ('' = off)
+    revealLast: '2,3,full', // the stages the Reveal button and R use
     chime: true,
     paintingsOnly: true,
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
@@ -103,10 +105,16 @@
   const S = loadSettings();
   if (S.view === 'compare') S.view = 'both'; // the study photo isn't kept between visits
   let saveTimer = 0;
+  /*
+   * Staged reveal: the study steps through a few values (2, then 3, …) and
+   * ends on the original. It borrows the view, tone and number of values,
+   * so `snapshot` holds the painter's own, which are what get saved.
+   */
+  const reveal = { active: false, stages: [], index: -1, snapshot: null, timed: false, skipRound: false };
   function flushSave() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    store.set('settings', S);
+    store.set('settings', reveal.snapshot ? { ...S, ...reveal.snapshot } : S);
   }
   function save() {
     clearTimeout(saveTimer);
@@ -2401,6 +2409,7 @@
       $('#timer-clock').classList.toggle('look', flow.phase === 'look');
       $('#timerbar').classList.toggle('ending', flow.phase === 'draw' && running && ms <= 10000);
       $('#t-play').textContent = running ? 'Pause' : ms < countdown.duration * 1000 && ms > 0 ? 'Resume' : 'Start';
+      timedReveal(ms, running);
     },
     onEnd: onPhaseEnd,
   });
@@ -2427,7 +2436,9 @@
       if (S.rounds > 1) parts.push(`Round ${flow.round} of ${S.rounds}`);
       if (flow.phase === 'look') parts.push(countdown.running ? 'Look and remember' : fresh ? 'Ready · look first, then draw from memory' : 'Paused · looking');
       else if (memoryHiding()) parts.push(countdown.running ? 'Drawing from memory' : 'Paused');
+      else if (flow.reveal && fresh && !countdown.running) parts.push('Ready · reveals in stages');
       else parts.push(countdown.running ? 'Drawing' : fresh ? 'Ready' : 'Paused');
+      if (reveal.active && flow.phase === 'draw') parts.push(stageLabel(reveal.stages[reveal.index]));
     }
     if (flow.session) parts.unshift(`Painting ${flow.index + 1} of ${queue.length}`);
     $('#timer-status').textContent = parts.join(' · ');
@@ -2445,6 +2456,8 @@
     flow.peeked = false;
     flow.pending = null;
     flow.phase = flow.memory ? 'look' : 'draw';
+    flow.reveal = !!S.revealSeq && !flow.memory;
+    reveal.skipRound = false;
     countdown.set(flow.memory ? S.memorySec : drawSeconds());
   }
 
@@ -2472,6 +2485,7 @@
       return;
     }
     if (natural && flow.phase === 'draw') VST.log.round(countdown.duration, { memory: flow.memory && !flow.peeked });
+    if (flow.phase === 'draw') endReveal(); // the break (or the end) shows your usual view to compare
     if (flow.phase === 'break') {
       if (flow.pending === 'round') flow.round++;
       startRound();
@@ -2507,6 +2521,7 @@
   function finishFlow() {
     const wasSession = flow.session;
     const wasMemory = flow.memory;
+    endReveal();
     Object.assign(flow, { session: false, index: 0, round: 1, phase: 'draw', pending: null });
     armRound();
     T.keepAwake(presenting);
@@ -2550,6 +2565,7 @@
   $('#t-play').addEventListener('click', playPause);
   $('#t-restart').addEventListener('click', () => {
     countdown.restart();
+    if (reveal.active && reveal.timed && flow.phase === 'draw') showStage(0);
     updateTimerUi();
   });
   $('#t-skip').addEventListener('click', () => {
@@ -2568,6 +2584,10 @@
     S.memorySec = sec;
     if (sec) S.memoryLast = sec;
     $('#t-memory').value = String(sec);
+    if (sec && S.revealSeq) {
+      S.revealSeq = ''; // a hidden image can't also be revealed in stages
+      $('#t-reveal').value = '';
+    }
     // a round that hasn't started yet picks up the change
     if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
     updateTimerUi();
@@ -2588,6 +2608,7 @@
     $('#t-rounds').value = String(S.rounds);
     $('#t-break').value = String(S.breakSec);
     $('#t-memory').value = String(S.memorySec);
+    $('#t-reveal').value = S.revealSeq;
     $('#t-chime').checked = S.chime;
   }
   $('#t-minutes').addEventListener('change', (e) => {
@@ -2613,6 +2634,129 @@
     }
     save();
   });
+
+  /* ================= Staged reveal ================= */
+
+  /*
+   * Commit to the big masses first: the study shows 2 values, then 3 (and
+   * so on), and finally the original. Step through by hand (Reveal button,
+   * R, or tapping the image), or set Reveal in the timer to spread the
+   * stages evenly over each drawing round.
+   */
+  const parseStages = (seq) => String(seq || '2,3,full').split(',').map((x) => (x === 'full' ? 'full' : +x));
+  const stageLabel = (st) => (st === 'full' ? 'Full image' : `${st} values`);
+
+  function beginReveal(timed) {
+    if (reveal.active || !img.el) return false;
+    reveal.stages = parseStages(timed ? S.revealSeq : S.revealSeq || S.revealLast);
+    reveal.snapshot = { view: S.view, bands: S.bands, tone: S.tone };
+    reveal.active = true;
+    reveal.timed = !!timed;
+    reveal.index = -1;
+    showStage(0);
+    return true;
+  }
+
+  function showStage(i) {
+    i = Math.max(0, Math.min(reveal.stages.length - 1, i));
+    if (!reveal.active || i === reveal.index) return;
+    reveal.index = i;
+    const st = reveal.stages[i];
+    if (st === 'full') {
+      setView('original');
+    } else {
+      const tone = reveal.snapshot.tone;
+      S.tone = tone === 'poster' ? 'gray' : tone; // main colors has no values to step through
+      S.bands = st;
+      if (S.splitSource[st] === 'auto') work.refit = true;
+      syncStudyControls();
+      requestStudy();
+      if (S.view !== 'study') setView('study');
+    }
+    updateRevealUi();
+  }
+
+  /** Back to your own view and settings. */
+  function endReveal() {
+    if (!reveal.active) return;
+    const s = reveal.snapshot;
+    reveal.active = false;
+    reveal.snapshot = null;
+    reveal.index = -1;
+    S.tone = s.tone;
+    S.bands = s.bands;
+    if (S.tone !== 'poster' && S.splitSource[S.bands] === 'auto') work.refit = true;
+    syncStudyControls();
+    requestStudy();
+    setView(s.view);
+    updateRevealUi();
+  }
+
+  /** Ended by hand: a timed round doesn't start it again. */
+  function stopReveal() {
+    if (reveal.timed) reveal.skipRound = true;
+    endReveal();
+  }
+
+  /** Reveal button, R, or a tap on the image: start, step, then finish. */
+  function nextStage() {
+    if (!reveal.active) {
+      if (!img.el) return toast('Load an image first.');
+      beginReveal(false);
+      return;
+    }
+    if (reveal.index < reveal.stages.length - 1) showStage(reveal.index + 1);
+    else if (!reveal.timed) endReveal();
+  }
+
+  /** In a timed round, the stage follows the clock (tapping can still move ahead). */
+  function timedReveal(ms, running) {
+    if (flow.phase !== 'draw' || !flow.reveal || reveal.skipRound || !img.el) return;
+    const total = countdown.duration * 1000;
+    if (!running && ms >= total) return; // not started yet
+    if (!reveal.active) beginReveal(true);
+    else reveal.timed = true; // a reveal you started by hand joins the clock
+    const n = reveal.stages.length;
+    const due = Math.min(n - 1, Math.floor((1 - ms / total) * n));
+    if (due > reveal.index) {
+      showStage(due);
+      if (S.chime && running) T.chime('soft');
+      updateTimerUi();
+    }
+  }
+
+  function updateRevealUi() {
+    const chip = $('#reveal-chip');
+    chip.hidden = !reveal.active;
+    $('#btn-reveal').setAttribute('aria-pressed', String(reveal.active));
+    if (!reveal.active) return;
+    const n = reveal.stages.length;
+    const last = reveal.index === n - 1;
+    $('#reveal-stage').textContent = `${stageLabel(reveal.stages[reveal.index])} · ${reveal.index + 1} of ${n}`;
+    $('#reveal-hint').textContent = reveal.timed ? (last ? '' : 'Tap to move ahead') : last ? 'Tap to finish' : 'Tap for the next stage';
+  }
+
+  $('#btn-reveal').addEventListener('click', nextStage);
+  $('#reveal-end').addEventListener('click', (e) => {
+    e.stopPropagation();
+    stopReveal();
+  });
+  $('#panels').addEventListener('click', (e) => {
+    if (!reveal.active || e.target.closest('button, a, input, label')) return;
+    nextStage();
+  });
+
+  /** Reveal during timed rounds: a list of stages, or '' for off. */
+  function setReveal(seq) {
+    S.revealSeq = seq;
+    if (seq) S.revealLast = seq;
+    $('#t-reveal').value = seq;
+    if (seq && S.memorySec) setMemory(0);
+    if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
+    updateTimerUi();
+    save();
+  }
+  $('#t-reveal').addEventListener('change', (e) => setReveal(e.target.value));
 
   /* ================= Present mode ================= */
 
@@ -2681,7 +2825,11 @@
   document.addEventListener('keydown', (e) => {
     if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    // changing the study by hand ends a staged reveal (and gives back your settings) first
+    if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
     if (k === 'escape' && presenting) setPresenting(false);
+    else if (k === 'escape') return;
+    else if (k === 'r') nextStage();
     else if (k === 'p') setPresenting(!presenting);
     else if (k === 'g') toggleGrid();
     else if (k === 'l') toggleCompose();

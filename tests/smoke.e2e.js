@@ -298,6 +298,44 @@ function check(cond, msg) {
   await page.keyboard.press('m');
   await page.click('#t-stop');
 
+  // staged reveal by hand: 2 values, 3 values, the original, then back to your own settings
+  const st = () => page.evaluate(() => ({ view: window.VST.app.settings.view, bands: window.VST.app.settings.bands, tone: window.VST.app.settings.tone }));
+  const own = await st();
+  const chip = () => page.isVisible('#reveal-chip');
+  await page.keyboard.press('r');
+  let rs = await st();
+  check(await chip() && rs.bands === 2 && rs.view === 'study' && (await page.textContent('#reveal-stage')).startsWith('2 values · 1 of 3'), `R starts the reveal at 2 values (${JSON.stringify(rs)})`);
+  await page.waitForTimeout(400);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('value-study:settings')));
+  check(saved.bands === own.bands && saved.view === own.view, 'the reveal never saves over your own settings');
+  await page.click('#panels', { position: { x: 300, y: 300 } });
+  check((await st()).bands === 3, 'tapping the image steps to 3 values');
+  await page.click('#btn-reveal');
+  rs = await st();
+  check(rs.view === 'original' && (await page.textContent('#reveal-hint')) === 'Tap to finish', 'then the full image');
+  await page.keyboard.press('r');
+  rs = await st();
+  check(!(await chip()) && rs.bands === own.bands && rs.view === own.view && rs.tone === own.tone, 'one more step gives back your own view and settings');
+  await page.keyboard.press('r');
+  await page.click('#reveal-end');
+  check(!(await chip()) && (await st()).bands === own.bands, 'End stops a reveal part way');
+
+  // staged reveal on the timer: stages follow the clock through a round
+  await page.selectOption('#t-reveal', '2,3,full');
+  check((await page.textContent('#timer-status')).includes('reveals in stages'), 'Reveal in the timer arms a staged round');
+  await page.click('#t-play');
+  check(await chip() && (await st()).bands === 2, 'the round starts at 2 values');
+  await page.evaluate(() => { window.VST.app.countdown.endAt -= 12000; });
+  await page.waitForFunction(() => window.VST.app.settings.bands === 3, null, { timeout: 2000 });
+  check((await page.textContent('#timer-status')).includes('3 values'), 'a third of the way in, it shows 3 values');
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  rs = await st();
+  check(!(await chip()) && rs.bands === own.bands && rs.view === own.view, 'when the round ends, your own view comes back to compare');
+  await page.selectOption('#t-memory', '30');
+  check((await page.$eval('#t-reveal', (e) => e.value)) === '', 'memory mode and reveal are one or the other');
+  await page.selectOption('#t-memory', '0');
+  await page.click('#t-stop');
+
   // ---- Master Copy mode with stand-in museum ----
   const items = Array.from({ length: 6 }, (_, i) => ({ id: 100 + i, title: `Landscape ${i + 1}`, artist_title: 'George Inness', date_display: '1880', image_id: `img${i}`, artwork_type_title: i === 5 ? 'Print' : 'Painting', is_public_domain: true }));
   await page.route('https://api.artic.edu/**', (route) => {

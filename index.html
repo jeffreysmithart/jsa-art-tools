@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-07a">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-07b">
 </head>
 <body>
   <header class="topbar">
@@ -312,7 +312,7 @@
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
         <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>L</kbd> guides, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>Space</kbd> timer.</p>
+        Keys: <kbd>G</kbd> grid, <kbd>L</kbd> guides, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>R</kbd> reveal, <kbd>Space</kbd> timer.</p>
       </div>
     </aside>
 
@@ -329,6 +329,7 @@
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
           <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
           <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
+          <button class="btn" id="btn-reveal" aria-pressed="false" title="Show 2 values, then 3, then the full image: tap to step through (R)">Reveal</button>
           <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
         </div>
       </div>
@@ -356,6 +357,11 @@
           </div>
         </div>
         <div class="busy" id="busy" hidden>Loading…</div>
+        <div class="reveal-chip" id="reveal-chip" hidden role="status" aria-live="polite">
+          <b id="reveal-stage"></b>
+          <span id="reveal-hint"></span>
+          <button class="btn tiny" id="reveal-end" type="button" title="Back to your usual view (Esc)">End</button>
+        </div>
         <div class="memory-cover" id="memory-cover" hidden>
           <div class="memory-box">
             <p class="empty-title">Draw from memory</p>
@@ -423,6 +429,14 @@
               <option value="90">Look 90 sec</option>
             </select>
           </label>
+          <label title="Show 2 values, then 3, then the full image, spread over each drawing round">Reveal
+            <select id="t-reveal">
+              <option value="">Off</option>
+              <option value="2,3,full">2 → 3 → full</option>
+              <option value="2,3,4,full">2 → 3 → 4 → full</option>
+              <option value="2,4,6,full">2 → 4 → 6 → full</option>
+            </select>
+          </label>
           <label class="check"><input type="checkbox" id="t-chime" checked> Chime</label>
         </div>
       </div>
@@ -487,18 +501,18 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-07a"></script>
-  <script src="js/process.js?v=2026-11-07a"></script>
-  <script src="js/config.js?v=2026-11-07a"></script>
-  <script src="js/museum.js?v=2026-11-07a"></script>
-  <script src="js/library.js?v=2026-11-07a"></script>
-  <script src="js/presets.js?v=2026-11-07a"></script>
-  <script src="js/log.js?v=2026-11-07a"></script>
-  <script src="js/timer.js?v=2026-11-07a"></script>
-  <script src="js/compose.js?v=2026-11-07a"></script>
-  <script src="js/crop.js?v=2026-11-07a"></script>
-  <script src="js/warp.js?v=2026-11-07a"></script>
-  <script src="js/squareup.js?v=2026-11-07a"></script>
-  <script src="js/app.js?v=2026-11-07a"></script>
+  <script src="js/color.js?v=2026-11-07b"></script>
+  <script src="js/process.js?v=2026-11-07b"></script>
+  <script src="js/config.js?v=2026-11-07b"></script>
+  <script src="js/museum.js?v=2026-11-07b"></script>
+  <script src="js/library.js?v=2026-11-07b"></script>
+  <script src="js/presets.js?v=2026-11-07b"></script>
+  <script src="js/log.js?v=2026-11-07b"></script>
+  <script src="js/timer.js?v=2026-11-07b"></script>
+  <script src="js/compose.js?v=2026-11-07b"></script>
+  <script src="js/crop.js?v=2026-11-07b"></script>
+  <script src="js/warp.js?v=2026-11-07b"></script>
+  <script src="js/squareup.js?v=2026-11-07b"></script>
+  <script src="js/app.js?v=2026-11-07b"></script>
 </body>
 </html>
