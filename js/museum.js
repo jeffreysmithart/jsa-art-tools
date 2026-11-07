@@ -84,6 +84,15 @@
   /* ---------- The Met ---------- */
 
   const MET_API = 'https://collectionapi.metmuseum.org/public/collection';
+  const metRecords = new Map(); // object ID -> record, so repeat searches skip refetching
+
+  function metRecord(id, signal) {
+    if (metRecords.has(id)) return Promise.resolve(metRecords.get(id));
+    return getJson(`${MET_API}/v1/objects/${id}`, signal).then((o) => {
+      if (o && o.objectID) metRecords.set(id, o);
+      return o;
+    });
+  }
   const met = {
     id: 'met',
     name: 'The Metropolitan Museum of Art',
@@ -96,7 +105,7 @@
       const ids = found.objectIDs || [];
       // the search returns only ID numbers; fetch each record (some IDs are stale, so failures are skipped)
       const records = await Promise.all(
-        ids.map((id) => getJson(`${MET_API}/v1/objects/${id}`, signal).catch((e) => (e.name === 'AbortError' ? Promise.reject(e) : null)))
+        ids.map((id) => metRecord(id, signal).catch((e) => (e.name === 'AbortError' ? Promise.reject(e) : null)))
       );
       const items = records
         .filter((o) => o && o.objectID && o.isPublicDomain && o.primaryImage)
@@ -127,7 +136,14 @@
     short: 'Cleveland',
     needsRelay: true,
     async search(q, page, signal, { paintingsOnly }) {
-      const params = new URLSearchParams({ q, cc0: '1', has_image: '1', limit: String(PAGE), skip: String((page - 1) * PAGE) });
+      const params = new URLSearchParams({
+        q,
+        cc0: '1',
+        has_image: '1',
+        limit: String(PAGE),
+        skip: String((page - 1) * PAGE),
+        fields: 'id,title,creators,creation_date,type,url,images,culture,accession_number',
+      });
       if (paintingsOnly) params.set('type', 'Painting');
       const json = await getJson(`https://openaccess-api.clevelandart.org/api/artworks/?${params}`, signal);
       const items = (json.data || [])
@@ -157,6 +173,20 @@
   };
 
   const all = [aic, met, cma];
+
+  /* Remember recent results so repeating a search or switching the filter is instant. */
+  const results = new Map();
+  all.forEach((source) => {
+    const search = source.search.bind(source);
+    source.search = async (q, page, signal, opts = {}) => {
+      const key = [source.id, q.trim().toLowerCase(), page, !!opts.paintingsOnly].join('|');
+      if (results.has(key)) return results.get(key);
+      const r = await search(q, page, signal, opts);
+      results.set(key, r);
+      if (results.size > 200) results.delete(results.keys().next().value);
+      return r;
+    };
+  });
 
   /** Sources that can be used right now (the relay ones need it configured). */
   function available() {
