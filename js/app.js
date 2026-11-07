@@ -42,7 +42,7 @@
     tone: 'gray', // 'gray' | 'color' | 'poster' (main colors)
     bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
-    levelsMode: 'even',
+    levelsMode: 'average', // true to the image's light key
     customLevels: {}, // per number of values, L* 0..100
     posterK: 5,
     blur: 0,
@@ -55,6 +55,7 @@
     breakSec: 10,
     chime: true,
     paintingsOnly: true,
+    settingsVersion: 3,
   };
 
   function loadSettings() {
@@ -75,6 +76,9 @@
     // the second version kept "main colors" as a separate method
     if (saved.method === 'poster') s.tone = 'poster';
     if (!['gray', 'color', 'poster'].includes(s.tone)) s.tone = 'gray';
+    // earlier versions defaulted to even steps; the default is now the image's average
+    if ((saved.settingsVersion || 1) < 3 && s.levelsMode === 'even') s.levelsMode = 'average';
+    s.settingsVersion = DEFAULTS.settingsVersion;
     delete s.style;
     delete s.valuesColor;
     delete s.posterColor;
@@ -319,7 +323,17 @@
   }
 
   function currentLevels(hist) {
-    return P.bandLevels(S.levelsMode, S.bands, currentThresholds(), hist, S.customLevels[S.bands]);
+    const t = currentThresholds();
+    if (S.levelsMode === 'custom') {
+      const c = S.customLevels[S.bands];
+      if (!(Array.isArray(c) && c.length === S.bands)) S.customLevels[S.bands] = averageLevels(t, hist);
+    }
+    return P.bandLevels(S.levelsMode, S.bands, t, hist, S.customLevels[S.bands]);
+  }
+
+  /** This image's average value per group, rounded to half steps (a starting point for Custom). */
+  function averageLevels(thresholds, hist) {
+    return P.bandLevels('average', S.bands, thresholds, hist).map((L) => Math.round(L / 5) * 5);
   }
 
   function ensureCentroids() {
@@ -651,9 +665,8 @@
   });
   $('#levels-mode').addEventListener('change', (e) => {
     const mode = e.target.value;
-    if (mode === 'custom' && !(S.customLevels[S.bands] && S.customLevels[S.bands].length === S.bands)) {
-      S.customLevels[S.bands] = currentLevels(work.hist).map((L) => Math.round(L / 5) * 5);
-    }
+    // Custom starts from this image's averages, then you adjust from there
+    if (mode === 'custom') S.customLevels[S.bands] = averageLevels(currentThresholds(), work.hist);
     S.levelsMode = mode;
     requestStudy();
   });

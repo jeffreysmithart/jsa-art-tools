@@ -70,6 +70,9 @@ function check(cond, msg) {
     const set = new Set(); for (let i = 0; i < d.length; i += 4) { set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return set.size;
   });
   check(grays === 4, `study uses exactly 4 grays (${grays})`);
+  check(await page.$eval('#levels-mode', (s) => s.value) === 'average', 'values are painted as each area\'s average by default');
+  const shown = await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent).join(','));
+  check(shown !== '0.5,3.5,6.5,9.5', `default values follow the image, not even steps (${shown})`);
   await page.screenshot({ path: path.join(OUT, '1-reference-values.png') });
 
   // 2 values (notan) via keyboard, grid, flip
@@ -140,8 +143,17 @@ function check(cond, msg) {
 
   // custom levels
   await page.click('[data-n="4"]');
+  await page.selectOption('#levels-mode', 'average');
+  await settle(page);
+  const averages = await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent));
   await page.selectOption('#levels-mode', 'custom');
   check(await page.waitForFunction(() => document.querySelectorAll('#swatches input').length === 4).then(() => true, () => false), 'custom mode shows editable values');
+  const startVals = await page.$$eval('#swatches input', (els) => els.map((e) => e.value));
+  check(startVals.join(',') === averages.join(','), `custom starts from the averages (${startVals} = ${averages})`);
+  await page.selectOption('#levels-mode', 'even');
+  await settle(page);
+  check((await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent))).join(',') === '0.5,3.5,6.5,9.5', 'even steps still available');
+  await page.selectOption('#levels-mode', 'custom');
 
   // blur
   await page.$eval('#blur', (i) => { i.value = 60; i.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -268,6 +280,12 @@ function check(cond, msg) {
   await p2.goto(BASE);
   const mig = await p2.evaluate(() => { const s = window.VST.app.settings; return { tone: s.tone, method: s.method, bands: s.bands, style: s.style }; });
   check(mig.tone === 'color' && mig.method === undefined && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
+  const ctx4 = await browser.newContext();
+  await ctx4.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', levelsMode: 'even' })));
+  const p4 = await ctx4.newPage();
+  await p4.goto(BASE);
+  check(await p4.evaluate(() => window.VST.app.settings.levelsMode) === 'average', 'earlier even-steps default switches to average');
+  await ctx4.close();
   const ctx3 = await browser.newContext();
   await ctx3.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', method: 'poster', posterK: 6 })));
   const p3 = await ctx3.newPage();
