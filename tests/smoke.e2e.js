@@ -70,6 +70,9 @@ function check(cond, msg) {
     const set = new Set(); for (let i = 0; i < d.length; i += 4) { set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return set.size;
   });
   check(grays === 4, `study uses exactly 4 grays (${grays})`);
+  check(await page.$eval('#levels-mode', (s) => s.value) === 'average', 'values are painted as each area\'s average by default');
+  const shown = await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent).join(','));
+  check(shown !== '0.5,3.5,6.5,9.5', `default values follow the image, not even steps (${shown})`);
   await page.screenshot({ path: path.join(OUT, '1-reference-values.png') });
 
   // 2 values (notan) via keyboard, grid, flip
@@ -140,8 +143,17 @@ function check(cond, msg) {
 
   // custom levels
   await page.click('[data-n="4"]');
+  await page.selectOption('#levels-mode', 'average');
+  await settle(page);
+  const averages = await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent));
   await page.selectOption('#levels-mode', 'custom');
   check(await page.waitForFunction(() => document.querySelectorAll('#swatches input').length === 4).then(() => true, () => false), 'custom mode shows editable values');
+  const startVals = await page.$$eval('#swatches input', (els) => els.map((e) => e.value));
+  check(startVals.join(',') === averages.join(','), `custom starts from the averages (${startVals} = ${averages})`);
+  await page.selectOption('#levels-mode', 'even');
+  await settle(page);
+  check((await page.$$eval('#swatches .swatch .v', (els) => els.map((e) => e.textContent))).join(',') === '0.5,3.5,6.5,9.5', 'even steps still available');
+  await page.selectOption('#levels-mode', 'custom');
 
   // blur
   await page.$eval('#blur', (i) => { i.value = 60; i.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -157,7 +169,34 @@ function check(cond, msg) {
   await page.click('#crop-orient');
   info = await page.textContent('#crop-info');
   check(/480 × 600 px/.test(info), `orientation switches to portrait 8x10 (${info})`);
+
+  // custom canvas size, e.g. an 18 x 36 in canvas
+  check(!(await page.isVisible('#crop-custom')), 'size boxes stay hidden for presets');
+  await page.selectOption('#crop-preset', 'custom');
+  check(await page.isVisible('#crop-custom'), 'Custom size shows width and height boxes');
+  check(await page.inputValue('#crop-cw') === '18' && await page.inputValue('#crop-ch') === '36', 'custom starts at 18 x 36');
+  info = await page.textContent('#crop-info');
+  check(/300 × 600 px · 18 × 36 proportions/.test(info), `18 x 36 crop fits the image (${info})`);
+  await page.click('#crop-orient');
+  info = await page.textContent('#crop-info');
+  check(await page.inputValue('#crop-cw') === '36' && /900 × 450 px · 36 × 18 proportions/.test(info), `Landscape swaps to 36 x 18 (${info})`);
+  await page.fill('#crop-cw', '7.5');
+  await page.fill('#crop-ch', '10');
+  info = await page.textContent('#crop-info');
+  check(/450 × 600 px · 7.5 × 10 proportions/.test(info), `decimals work: 7.5 x 10 (${info})`);
+  await page.fill('#crop-ch', '');
+  check(/7.5 × 10 proportions/.test(await page.textContent('#crop-info')) && await page.$eval('#crop-ch', (e) => e.classList.contains('invalid')), 'a blank box keeps the last size and is flagged');
+  await page.fill('#crop-ch', '10');
+  await page.screenshot({ path: path.join(OUT, '4b-crop-custom.png') });
+
+  await page.selectOption('#crop-preset', '8x10');
   await page.screenshot({ path: path.join(OUT, '4-crop.png') });
+  await page.click('#crop-apply');
+  await page.keyboard.press('c');
+  await page.selectOption('#crop-preset', 'custom');
+  check(await page.inputValue('#crop-cw') === '7.5' && await page.inputValue('#crop-ch') === '10', 'custom size is remembered for next time');
+  check(await page.evaluate(() => window.VST.app.settings.cropCustom.w === 7.5), 'custom size is saved with the settings');
+  await page.selectOption('#crop-preset', '8x10');
   await page.click('#crop-apply');
   const wh = await page.evaluate(() => [window.VST.app.work.w, window.VST.app.work.h]);
   check(Math.abs(wh[0] / wh[1] - 0.8) < 0.01, `cropped study is 4:5 (${wh})`);
@@ -268,6 +307,12 @@ function check(cond, msg) {
   await p2.goto(BASE);
   const mig = await p2.evaluate(() => { const s = window.VST.app.settings; return { tone: s.tone, method: s.method, bands: s.bands, style: s.style }; });
   check(mig.tone === 'color' && mig.method === undefined && mig.bands === 5 && mig.style === undefined, 'old saved settings convert to the new controls ' + JSON.stringify(mig));
+  const ctx4 = await browser.newContext();
+  await ctx4.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', levelsMode: 'even' })));
+  const p4 = await ctx4.newPage();
+  await p4.goto(BASE);
+  check(await p4.evaluate(() => window.VST.app.settings.levelsMode) === 'average', 'earlier even-steps default switches to average');
+  await ctx4.close();
   const ctx3 = await browser.newContext();
   await ctx3.addInitScript(() => localStorage.setItem('value-study:settings', JSON.stringify({ tone: 'gray', method: 'poster', posterK: 6 })));
   const p3 = await ctx3.newPage();
