@@ -58,6 +58,7 @@
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
     cropCustom: { w: 18, h: 36 }, // last custom canvas size in the crop tool
     currentSet: null, // the study set shown in the sidebar
+    splitSource: {}, // per number of values: 'auto' (fit to image), 'even' or 'fixed' (dragged)
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
@@ -307,7 +308,7 @@
     }
     cvStudy.width = w;
     cvStudy.height = h;
-    Object.assign(work, { w, h, rgba, lab0: P.computeLab(rgba, w * h), lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null });
+    Object.assign(work, { w, h, rgba, lab0: P.computeLab(rgba, w * h), lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, refit: true });
     $('#panels').classList.remove('is-empty');
     layout();
     renderStudy();
@@ -379,6 +380,14 @@
   function renderStudy() {
     if (!work.rgba) return;
     ensureLab();
+    // splits set with "Fit to image" (or a preset that fits) follow each new image
+    if (work.refit) {
+      work.refit = false;
+      if (grouped() && S.splitSource[S.bands] === 'auto') {
+        S.thresholds[S.bands] = P.autoThresholds(work.hist, S.bands);
+        buildThresholdSliders();
+      }
+    }
     if (S.tone === 'poster') ensureCentroids();
     const imageData = ctxStudy.createImageData(work.w, work.h);
     const bands = produceStudy(work.lab, work.hist, imageData.data);
@@ -386,6 +395,7 @@
     renderSwatches(bands);
     renderMine();
     drawHistogram();
+    renderPresetSelect();
     save();
   }
 
@@ -526,6 +536,7 @@
     const max = i === t.length - 1 ? 99 : t[i + 1] - 1;
     t[i] = Math.min(max, Math.max(min, Math.round(v)));
     S.thresholds[S.bands] = t;
+    S.splitSource[S.bands] = 'fixed';
     const row = $('#thresholds').children[i];
     if (row) {
       row.querySelector('input').value = t[i];
@@ -664,6 +675,7 @@
   function setBands(n) {
     S.bands = n;
     if (S.tone === 'poster') S.tone = 'color'; // values apply to grayscale or color
+    if (S.splitSource[n] === 'auto') work.refit = true;
     syncStudyControls();
     requestStudy();
   }
@@ -677,11 +689,13 @@
   $('#btn-auto').addEventListener('click', () => {
     if (!work.hist) return toast('Load an image first.');
     S.thresholds[S.bands] = P.autoThresholds(work.hist, S.bands);
+    S.splitSource[S.bands] = 'auto';
     buildThresholdSliders();
     requestStudy();
   });
   $('#btn-even').addEventListener('click', () => {
     S.thresholds[S.bands] = P.evenThresholds(S.bands);
+    S.splitSource[S.bands] = 'even';
     buildThresholdSliders();
     requestStudy();
   });
@@ -1696,6 +1710,7 @@
     const set = currentSet();
     ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).disabled = !set));
     $('#set-session').disabled = !set || !set.items.length;
+    $('#set-tryon').disabled = !set || !set.items.length;
     const box = $('#set-items');
     box.innerHTML = '';
     if (set) {
@@ -1830,6 +1845,254 @@
     if (!confirm('Clear your study history? Images in your sets are kept.')) return;
     L.clearHistory();
     renderLibrary();
+  });
+
+
+  /* ================= Presets ================= */
+
+  const PR = VST.presets;
+
+  /** The current study settings as a preset. */
+  function currentPreset(name) {
+    const p = { name, tone: S.tone, posterK: S.posterK, blur: S.blur, bands: S.tone === 'poster' ? 0 : S.bands };
+    if (S.tone !== 'poster' && S.bands >= 2) {
+      p.splits = S.splitSource[S.bands] || 'fixed';
+      p.thresholds = currentThresholds().slice();
+      p.levelsMode = S.levelsMode;
+      if (S.levelsMode === 'custom') p.customLevels = (S.customLevels[S.bands] || []).slice();
+    }
+    return p;
+  }
+
+  /** True when the current settings are exactly this preset. */
+  function presetMatches(p) {
+    if (p.tone !== S.tone || (p.blur || 0) !== S.blur) return false;
+    if (p.tone === 'poster') return (p.posterK || 5) === S.posterK;
+    if ((p.bands || 0) !== (S.bands >= 2 ? S.bands : 0)) return false;
+    if (!(p.bands >= 2)) return true;
+    if ((p.levelsMode || 'average') !== S.levelsMode) return false;
+    const src = S.splitSource[S.bands] || 'fixed';
+    if ((p.splits || 'fixed') !== src) return false;
+    if (src === 'fixed' && String(P.sanitizeThresholds(p.thresholds, p.bands)) !== String(currentThresholds())) return false;
+    if (S.levelsMode === 'custom' && String(p.customLevels || []) !== String(S.customLevels[S.bands] || [])) return false;
+    return true;
+  }
+
+  function applyPreset(p) {
+    S.tone = p.tone || 'gray';
+    S.blur = p.blur || 0;
+    if (p.posterK) S.posterK = p.posterK;
+    if (S.tone !== 'poster') {
+      S.bands = p.bands >= 2 ? p.bands : 0;
+      if (S.bands >= 2) {
+        S.levelsMode = p.levelsMode || 'average';
+        S.splitSource[S.bands] = p.splits || 'fixed';
+        if (p.splits === 'even') S.thresholds[S.bands] = P.evenThresholds(S.bands);
+        else if (p.splits === 'fixed') S.thresholds[S.bands] = P.sanitizeThresholds(p.thresholds, S.bands);
+        else work.refit = true; // fit to this image once the squint is applied
+        if (S.levelsMode === 'custom' && Array.isArray(p.customLevels)) S.customLevels[S.bands] = p.customLevels.slice();
+      }
+    }
+    syncStudyControls();
+    requestStudy();
+  }
+
+  function renderPresetSelect() {
+    const sel = $('#preset-select');
+    const all = PR.all();
+    const match = all.find(presetMatches);
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Custom settings';
+    sel.appendChild(ph);
+    const group = (label, list) => {
+      if (!list.length) return;
+      const g = document.createElement('optgroup');
+      g.label = label;
+      list.forEach((p) => {
+        const o = document.createElement('option');
+        o.value = p.id;
+        o.textContent = p.name;
+        g.appendChild(o);
+      });
+      sel.appendChild(g);
+    };
+    group('Built-in', all.filter((p) => p.builtin));
+    group('My presets', all.filter((p) => !p.builtin));
+    sel.value = match ? match.id : '';
+    $('#preset-delete').disabled = !match || match.builtin;
+    $('#preset-desc').textContent = match ? PR.describe(match) : '';
+  }
+
+  $('#preset-select').addEventListener('change', (e) => {
+    const p = PR.get(e.target.value);
+    if (p) applyPreset(p);
+    else renderPresetSelect();
+  });
+  $('#preset-save').addEventListener('click', () => {
+    const name = prompt('Name this preset:', '');
+    if (name == null) return;
+    const p = PR.save(currentPreset(name));
+    renderPresetSelect();
+    toast(`Saved preset “${p.name}”.`);
+  });
+  $('#preset-delete').addEventListener('click', () => {
+    const p = PR.get($('#preset-select').value);
+    if (!p || p.builtin || !confirm(`Delete the preset “${p.name}”?`)) return;
+    PR.remove(p.id);
+    renderPresetSelect();
+  });
+
+  /* ---------- try presets on a set ---------- */
+
+  const TRY_MAX = 520; // contact-sheet images are processed at this size
+  const tryon = { set: null, preset: null, entries: new Map(), token: 0 };
+  const ORIGINAL = { id: 'original', name: 'Original' };
+
+  /** Loads a saved item as an image without making it the current study. */
+  async function loadItemImage(item) {
+    if (item.source === 'upload') {
+      const url = URL.createObjectURL(await L.loadUpload(item));
+      try {
+        return await loadImageElement(url, { cors: false });
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+    }
+    // the smaller museum size is plenty here (and much lighter than the full image)
+    const raw = item.source === 'link' ? item.image : item.imageFallback || item.image;
+    const url = item.source === 'link' ? raw : M.imageUrl(item, raw);
+    if (!url) throw new Error('relay');
+    return loadImageElement(url, { cors: true });
+  }
+
+  async function tryonEntry(item) {
+    if (tryon.entries.has(item.id)) return tryon.entries.get(item.id);
+    const pending = (async () => {
+      const el = await loadItemImage(item);
+      const s = Math.min(1, TRY_MAX / Math.max(el.naturalWidth, el.naturalHeight));
+      const w = Math.max(1, Math.round(el.naturalWidth * s));
+      const h = Math.max(1, Math.round(el.naturalHeight * s));
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(el, 0, 0, w, h);
+      return { w, h, lab0: P.computeLab(x.getImageData(0, 0, w, h).data, w * h), cache: {} };
+    })();
+    tryon.entries.set(item.id, pending);
+    pending.catch(() => tryon.entries.delete(item.id));
+    return pending;
+  }
+
+  function renderTryonChips() {
+    const box = $('#tryon-presets');
+    box.innerHTML = '';
+    [ORIGINAL, ...PR.all()].forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.dataset.id = p.id;
+      b.textContent = p.name;
+      b.setAttribute('aria-checked', String(tryon.preset && tryon.preset.id === p.id));
+      b.addEventListener('click', () => {
+        tryon.preset = p;
+        renderTryonChips();
+        renderTryonGrid();
+      });
+      box.appendChild(b);
+    });
+    $('#tryon-desc').textContent = tryon.preset && tryon.preset.id !== 'original' ? PR.describe(tryon.preset) : 'The images as they are.';
+  }
+
+  function valueBar(bands) {
+    const bar = document.createElement('div');
+    bar.className = 'tt-bar';
+    bar.setAttribute('role', 'img');
+    bar.setAttribute('aria-label', bands.map((b) => `value ${valueLabel(b.L)}: ${Math.round(b.share * 100)}%`).join(', '));
+    bands.forEach((b) => {
+      const seg = document.createElement('span');
+      const g = C.lToGray8(b.L);
+      const rgb = b.rgb || [g, g, g];
+      seg.style.width = `${b.share * 100}%`;
+      seg.style.background = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+      seg.title = `Value ${valueLabel(b.L)} · ${Math.round(b.share * 100)}%`;
+      bar.appendChild(seg);
+    });
+    return bar;
+  }
+
+  function renderTryonGrid() {
+    const grid = $('#tryon-grid');
+    const token = ++tryon.token;
+    const preset = tryon.preset;
+    grid.innerHTML = '';
+    const tiles = tryon.set.items.map((item) => {
+      const fig = document.createElement('figure');
+      fig.className = 'tryon-tile';
+      fig.tabIndex = 0;
+      fig.dataset.id = item.id;
+      fig.innerHTML = '<div class="tt-img"><span class="tt-msg">Loading…</span></div><figcaption></figcaption>';
+      fig.querySelector('figcaption').textContent = [item.title, item.artist].filter(Boolean).join(', ');
+      const open = async () => {
+        closeTryon();
+        const ok = await openItem(item);
+        if (ok && preset.id !== 'original') applyPreset(preset);
+      };
+      fig.addEventListener('click', open);
+      fig.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()));
+      grid.appendChild(fig);
+      return { item, fig };
+    });
+    // a few at a time, so the first images appear quickly
+    let next = 0;
+    const worker = async () => {
+      while (next < tiles.length) {
+        const { item, fig } = tiles[next++];
+        try {
+          const entry = await tryonEntry(item);
+          if (token !== tryon.token) return;
+          const c = document.createElement('canvas');
+          c.width = entry.w;
+          c.height = entry.h;
+          const data = c.getContext('2d').createImageData(entry.w, entry.h);
+          const bands = PR.render(preset, entry, data.data);
+          c.getContext('2d').putImageData(data, 0, 0);
+          const box = fig.querySelector('.tt-img');
+          box.innerHTML = '';
+          box.appendChild(c);
+          if (bands) fig.appendChild(valueBar(bands));
+          fig.classList.add('ready');
+        } catch (e) {
+          if (token !== tryon.token) return;
+          fig.querySelector('.tt-msg').textContent = e.message === 'relay' ? 'Needs the image relay' : 'Couldn’t load this image';
+        }
+      }
+    };
+    for (let i = 0; i < 4; i++) worker();
+  }
+
+  function openTryon() {
+    const set = currentSet();
+    if (!set || !set.items.length) return toast('Add some images to this set first.');
+    tryon.set = set;
+    const match = PR.all().find(presetMatches);
+    tryon.preset = match || PR.get('b-3');
+    $('#tryon-title').textContent = `Try presets on “${set.name}”`;
+    $('#tryon-modal').hidden = false;
+    renderTryonChips();
+    renderTryonGrid();
+  }
+  function closeTryon() {
+    $('#tryon-modal').hidden = true;
+    tryon.token++;
+  }
+  $('#set-tryon').addEventListener('click', openTryon);
+  $('#tryon-close').addEventListener('click', closeTryon);
+  window.addEventListener('keydown', (e) => {
+    if (!$('#tryon-modal').hidden && e.key === 'Escape') closeTryon();
   });
 
   /* ================= Timer and sessions ================= */
@@ -2059,7 +2322,7 @@
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
-    if (cropper.isOpen() || squarer.isOpen() || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === 'escape' && presenting) setPresenting(false);
     else if (k === 'p') setPresenting(!presenting);
@@ -2092,6 +2355,7 @@
   $('#paintings-only').checked = S.paintingsOnly;
   buildMuseumFilter();
   renderLibrary();
+  renderPresetSelect();
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');

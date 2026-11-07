@@ -84,6 +84,7 @@
         <div class="row tight" id="set-actions">
           <button class="btn tiny" id="set-add-current" type="button" title="Add the image you're studying to this set">+ Add current image</button>
           <button class="btn tiny" id="set-session" type="button" title="Run a timed session through this set">Timed session</button>
+          <button class="btn tiny" id="set-tryon" type="button" title="See every image in this set with different presets">Try presets</button>
           <button class="btn tiny" id="set-rename" type="button">Rename</button>
           <button class="btn tiny" id="set-delete" type="button">Delete</button>
         </div>
@@ -128,6 +129,15 @@
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
         <h2>Study</h2>
+        <div class="field preset-field">
+          <span class="label">Preset</span>
+          <div class="inline-form preset-row">
+            <select id="preset-select" aria-label="Preset"></select>
+            <button class="btn" id="preset-save" type="button" title="Save the current settings as a preset">Save…</button>
+            <button class="btn" id="preset-delete" type="button" title="Delete this preset">Delete</button>
+          </div>
+          <p class="hint" id="preset-desc"></p>
+        </div>
         <span class="label">Color</span>
         <div class="seg" id="tone-seg" role="radiogroup" aria-label="Color">
           <button data-tone="gray" role="radio" title="Values only (K cycles)">Grayscale</button>
@@ -383,6 +393,18 @@
     <p class="modal-hint" id="square-info">Drag the dots onto the corners of your drawing.</p>
   </div>
 
+  <div class="modal" id="tryon-modal" hidden role="dialog" aria-modal="true" aria-label="Try presets on a set">
+    <div class="modal-bar">
+      <strong id="tryon-title">Try presets</strong>
+      <span class="spacer"></span>
+      <button class="btn" id="tryon-close" type="button">Close</button>
+    </div>
+    <div class="tryon-presets" id="tryon-presets" role="radiogroup" aria-label="Preset"></div>
+    <p class="tryon-desc" id="tryon-desc"></p>
+    <div class="tryon-grid" id="tryon-grid"></div>
+    <p class="modal-hint">Tap an image to study it with this preset.</p>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/color.js"></script>
@@ -390,6 +412,7 @@
   <script src="js/config.js"></script>
   <script src="js/museum.js"></script>
   <script src="js/library.js"></script>
+  <script src="js/presets.js"></script>
   <script src="js/timer.js"></script>
   <script src="js/crop.js"></script>
   <script src="js/warp.js"></script>

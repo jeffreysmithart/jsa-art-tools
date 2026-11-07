@@ -20,6 +20,8 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 - **Squint (blur)**, **Flip**, and a **grid** (any columns × rows, square cells, diagonals, black/white/red).
 - **Crop** with canvas-size presets (5×7 to 36×48, panoramic 12×24 and 18×36, square, original), portrait or landscape, or **Custom size**: type your canvas's width × height (any unit, decimals allowed) and the crop locks to those proportions. Your last custom size is remembered.
 - **Study sets:** named collections that mix museum paintings and your own photos. Add the image you're studying with **+ Set** in the toolbar (or `S`). Open any image with a tap, or run a **Timed session** through a set. Rename, delete, and **Export / Import** a set as a file, with photos included, to back it up or move it to another device.
+- **Presets:** one-tap study settings, like Lightroom presets. The built-in ones are Notan, 3 values, 4 values with even steps, 5 values, Squint with 3 values, Color poster with 4 values, 5 main colors, and Grayscale. **Save…** stores your current settings as your own preset. A preset remembers how its splits were set: **Fit to image** splits refit to each new image, while **Even** or hand-dragged splits stay put. The menu shows the matching preset, or "Custom settings".
+- **Try presets on a set:** a contact sheet of every image in a study set rendered with one preset, each with a value-balance bar. Tap through the presets to compare, or tap an image to study it with that preset.
 - **History:** every image you study is listed (up to 60, newest first), even after a refresh. Tap to reopen, or **+** to add it to the current set.
 - **Compare my study:** photograph your sketch (on a phone or iPad, the picker offers the camera), then **square it up** by dragging four dots onto its corners, with a magnifier for precision. **Rotate 90°** fixes a sideways shot, and the result fits the reference's shape (or keeps the drawing's own with **As drawn**). **Compare** view shows the reference's value study beside yours through the *same* settings, with a second bar chart of your value balance. **Overlay** (`O`) lays your study on the reference at adjustable strength. **Correct paper to white** (on by default) undoes the gray cast phone photos give paper. In Compare view, the side-by-side sheet becomes a comparison sheet.
 - **Present:** hides every control so only the image or images show, as large as the screen allows, for painting from the screen. It goes full screen where the browser allows and keeps the screen awake. Shortcuts still work; press `Esc` or `P`, or tap and choose **Exit presentation**, to bring the controls back.
@@ -70,6 +72,7 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/crop.js`: crop tool and canvas presets
 - `js/warp.js`, `js/squareup.js`: perspective correction and the square-up screen for study photos
 - `js/timer.js`: countdown, chime, screen wake lock
+- `js/presets.js`: built-in and saved presets, and rendering an image with a preset
 - `js/library.js`: study sets and history (localStorage, with uploaded photos in IndexedDB)
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it

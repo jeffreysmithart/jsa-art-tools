@@ -366,3 +366,32 @@ body.presenting .timer-status { font-size: 12px; }
 .history { margin-top: 14px; }
 .history summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 0; }
 .history .btn { margin-top: 8px; }
+
+/* ---------- Presets ---------- */
+.preset-field { margin-top: 0; margin-bottom: 14px; }
+.preset-row { margin-top: 0; }
+.preset-row select { flex: 1; min-width: 0; }
+#preset-desc { margin: 6px 0 0; }
+#preset-desc:empty { display: none; }
+
+/* try presets on a set */
+#tryon-modal { overflow: hidden; }
+.tryon-presets { display: flex; gap: 6px; padding: 10px 16px 0; overflow-x: auto; flex: none; -webkit-overflow-scrolling: touch; }
+.tryon-presets button {
+  flex: none; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+  border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; white-space: nowrap;
+}
+.tryon-presets button[aria-checked="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.tryon-desc { margin: 0; padding: 6px 16px 0; color: var(--muted); font-size: 12.5px; flex: none; }
+.tryon-grid {
+  flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 14px; padding: 14px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); align-content: start; background: var(--stage);
+}
+.tryon-tile { margin: 0; cursor: pointer; background: rgba(0,0,0,0.12); border-radius: 8px; padding: 8px; border: 1px solid transparent; }
+.tryon-tile:hover, .tryon-tile:focus-visible { border-color: var(--accent); }
+.tryon-tile .tt-img { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
+.tryon-tile canvas { max-width: 100%; max-height: 100%; display: block; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+.tryon-tile .tt-msg { color: #ddd; font-size: 12.5px; text-align: center; }
+.tryon-tile figcaption { padding: 6px 2px 0; height: auto; color: #e6e6e6; font-size: 12px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; margin-top: 6px; border: 1px solid rgba(255,255,255,0.15); }
+.tt-bar span { display: block; height: 100%; }
