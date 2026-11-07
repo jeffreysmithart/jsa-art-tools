@@ -25,7 +25,7 @@ v1 and v2 are complete (17 merged pull requests), and v3 has started with the co
 
 - **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; and a **history** of everything studied.
 - **Study:** **presets** (built-in and your own); Grayscale / Color / Main colors; 2–6 values with adjustable splits (fit to image, even, or dragged); how values are painted (area average by default, even steps, or custom marker values); squint; and **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
-- **Color:** a color wheel of the picture's colors (CIE Lab a\*b\*, yellow at the top), with the gamut outlined, the main colors ringed in Main colors mode, and plain figures: main hue, strongest colors, share near gray, share of the wheel used.
+- **Color:** the picture's colors in a Munsell-style 3D color space (value up the middle, hue around, chroma outward; positions are CIE Lab, so close to Munsell, not exact). Optional ghost of the colors not in the picture, main colors ringed, and a large view to turn, zoom, slice by value and tap a color to read it. Figures: main hue, strongest colors, share near gray, value range.
 - **Canvas:** composition guides (rule of thirds, golden section, diagonals with their reciprocals, and lines through the crossings), also shown in Crop for framing reference photos; grid (any columns × rows, square cells, diagonals); and downloads (study, cropped original, side-by-side or comparison sheet).
 - **Log:** practice time this week, streaks, a month calendar shaded by time, and per-day detail of what was studied. Downloads as CSV.
 
@@ -37,7 +37,7 @@ v2 is complete: decreasing-time rounds ("Shorter each round" in the timer's Time
 
 v3, a larger project to scope on its own:
 
-- **Color gamut view:** done (the Color tab). Ideas for later: tap a spot on the wheel to highlight where those colors are in the picture; draw a gamut mask on the wheel.
+- **Color gamut view:** done (the Color tab, as a 3D color space). Ideas for later: tap a color to highlight where it is in the picture; true Munsell notation from the Munsell renotation data instead of the Lab approximation; a gamut mask.
 - **Limited-palette recolor:** for example Prussian blue, yellow ocher, vermillion, black and white, using pigment-mixing simulation (check the license of any mixing library), and flag colors the palette can't reach.
 
 Composition, next step:

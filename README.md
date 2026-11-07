@@ -9,7 +9,7 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 **Layout:** the sidebar has five tabs:
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
-- **Color** shows the picture's colors on a **color wheel**: hue goes around (yellow at the top, red to the right, blue at the bottom, green to the left) and colors get stronger toward the rim, with gray in the middle. Bigger dots cover more of the picture, a dashed outline marks the **gamut** (the range of colors used, ignoring stray pixels), and in Main colors the main colors are ringed. Below it: the main hue, how strong the strongest colors are, how much is near gray, and how much of the wheel the gamut covers. Squint smooths out noise first.
+- **Color** shows the picture's colors in a 3D **color space** laid out like the Munsell color solid: **value** runs up the middle from black (0) to white (10), **hue** goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and **chroma** gets stronger away from the gray center. Each dot is a color in the picture, bigger where it covers more; in Main colors the main colors are ringed. **Show colors not in the picture** adds the rest of the colors a screen can show as a faint ghost, so you can see what the picture leaves out. Tap the view to open it large: drag to turn it, scroll or pinch to zoom (arrow keys and +/− work too), **Top** and **Side** views, a **Value** menu to see one level at a time like a page of a Munsell book, and tap a dot to read its value, chroma, hue and share of the picture. Below the view: the main hue, how strong the strongest colors are, how much is near gray, and the value range. Positions are CIE Lab (value = L\* ÷ 10, chroma ≈ Lab chroma ÷ 5), so hue and chroma are close to Munsell, not exact. Squint smooths out noise first.
 - **Canvas** holds the composition guides, the grid and downloads.
 - **Log** shows your practice: time this week, current and best streak, days this month, and all-time totals; a month calendar with practiced days shaded by time; and, for any day, what you studied, for how long, and how many timed rounds (and memory rounds) you drew (tap an image to reopen it). **Download log** saves it as a spreadsheet (CSV).
 
@@ -84,7 +84,8 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/process.js`: blur, value bands, main colors
 - `js/crop.js`: crop tool and canvas presets
 - `js/compose.js`: composition guides (thirds, golden section, diagonals and their crossings)
-- `js/gamut.js`: the color wheel (colors counted into cells, the gamut outline, and its figures)
+- `js/colorspace.js`: the 3D color space (colors counted into cells, the screen's color solid, Munsell-style readings, and the turnable view)
+- `js/gamut.js`: the Color tab's figures (main hue, strongest colors, near gray, value range)
 - `js/warp.js`, `js/squareup.js`: perspective correction and the square-up screen for study photos
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset

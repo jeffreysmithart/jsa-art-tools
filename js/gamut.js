@@ -1,5 +1,7 @@
 /*
- * Color gamut view: where a picture's colors sit on a color wheel.
+ * Color figures for the Color tab: the main hue, how strong the strongest
+ * colors are, how much is near gray, the value range, and the gamut (the
+ * range of hue and chroma used). The 3D view itself is js/colorspace.js.
  *
  * The wheel is the CIE Lab a*b* plane seen from above: hue goes around
  * (yellow at the top, red to the right, blue at the bottom, green to the
@@ -34,6 +36,7 @@
     const clampCell = (v) => Math.min(n - 1, Math.max(0, Math.floor((v + scale) / size)));
     // the chroma of every pixel, for the "most saturated" figure
     const chromaHist = new Float64Array(201);
+    const valueHist = new Float64Array(101);
     let neutral = 0;
     let hx = 0;
     let hy = 0;
@@ -47,6 +50,7 @@
       sumB[k] += b;
       const c = Math.hypot(a, b);
       chromaHist[Math.min(200, Math.round(c))]++;
+      valueHist[Math.min(100, Math.max(0, Math.round(lab.L[i])))]++;
       if (c < NEUTRAL) neutral++;
       else {
         // hue average weighted by chroma, so strong colors count for more
@@ -70,6 +74,17 @@
         break;
       }
     }
+    // values from the darkest 2% to the lightest 2%, in half steps of 0–10
+    const pct = (hist, q) => {
+      let s = 0;
+      for (let v = 0; v < hist.length; v++) {
+        s += hist[v];
+        if (s >= len * q) return v;
+      }
+      return hist.length - 1;
+    };
+    const valueLow = Math.round(pct(valueHist, 0.02) / 5) / 2;
+    const valueHigh = Math.round(pct(valueHist, 0.98) / 5) / 2;
     const colored = len - neutral;
     const hue = colored > 0 && Math.hypot(hx, hy) > 1e-6 ? ((Math.atan2(hy, hx) * 180) / Math.PI + 360) % 360 : null;
     return {
@@ -81,6 +96,8 @@
         hue,
         hueName: hue == null ? null : hueName(hue),
         area: polygonArea(hull) / (Math.PI * scale * scale), // share of the wheel the gamut covers
+        valueLow,
+        valueHigh,
       },
     };
   }
@@ -141,90 +158,5 @@
     return 'strong';
   }
 
-  /**
-   * Draws the wheel. `toRgb(L, a, b)` returns [r, g, b] 0–255.
-   * Options: hull (outline the gamut), marks (main colors as { L, a, b }).
-   */
-  function draw(ctx, data, sizePx, toRgb, { scale = SCALE, hull = true, marks = [], dpr = 1 } = {}) {
-    const ring = 10 * dpr; // the hue ring around the edge
-    const cx = sizePx / 2;
-    const cy = sizePx / 2;
-    const R = sizePx / 2 - ring - 3 * dpr;
-    const at = (a, b) => [cx + (a / scale) * R, cy - (b / scale) * R];
-    ctx.clearRect(0, 0, sizePx, sizePx);
-    // hue ring: each hue at a middle value and full strength
-    for (let d = 0; d < 360; d += 2) {
-      const t0 = (-(d - 1) * Math.PI) / 180;
-      const t1 = (-(d + 1.5) * Math.PI) / 180;
-      const h = (d * Math.PI) / 180;
-      const [r, g, b] = toRgb(65, Math.cos(h) * 70, Math.sin(h) * 70);
-      ctx.beginPath();
-      ctx.arc(cx, cy, R + ring, t0, t1, true);
-      ctx.arc(cx, cy, R + 1 * dpr, t1, t0, false);
-      ctx.closePath();
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fill();
-    }
-    // neutral middle-gray disc, so both dark and light colors show
-    const [gr] = toRgb(50, 0, 0);
-    ctx.fillStyle = `rgb(${gr},${gr},${gr})`;
-    ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.fill();
-    // chroma rings at a quarter, half and three quarters of the way out
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = 1 * dpr;
-    for (const c of [0.25, 0.5, 0.75].map((f) => f * scale)) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, (c / scale) * R, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // colors: bigger dots for colors that cover more of the picture
-    const maxShare = data.cells.reduce((m, c) => Math.max(m, c.share), 0) || 1;
-    const cellPx = (2 * R) / CELLS;
-    const sorted = data.cells.slice().sort((p, q) => p.share - q.share);
-    for (const c of sorted) {
-      const [x, y] = at(c.a, c.b);
-      const k = Math.sqrt(c.share / maxShare);
-      const r = Math.max(1.2 * dpr, cellPx * (0.6 + 2.6 * k));
-      const [cr, cg, cb] = toRgb(c.L, c.a, c.b);
-      ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (hull && data.hull.length >= 3) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.setLineDash([5 * dpr, 4 * dpr]);
-      ctx.beginPath();
-      data.hull.forEach(([a, b], i) => {
-        const [x, y] = at(a, b);
-        if (i) ctx.lineTo(x, y);
-        else ctx.moveTo(x, y);
-      });
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
-    }
-    for (const m of marks) {
-      const [x, y] = at(m.a, m.b);
-      const [mr, mg, mb] = toRgb(m.L, m.a, m.b);
-      ctx.beginPath();
-      ctx.arc(x, y, 7 * dpr, 0, Math.PI * 2);
-      ctx.fillStyle = `rgb(${mr},${mg},${mb})`;
-      ctx.fill();
-      ctx.lineWidth = 2 * dpr;
-      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-      ctx.stroke();
-      ctx.lineWidth = 1 * dpr;
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.beginPath();
-      ctx.arc(x, y, 8.5 * dpr, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
-
-  VST.gamut = { analyze, convexHull, polygonArea, hueName, strength, draw, SCALE, NEUTRAL };
+  VST.gamut = { analyze, convexHull, polygonArea, hueName, strength, SCALE, NEUTRAL };
 })(typeof window !== 'undefined' ? window : globalThis);

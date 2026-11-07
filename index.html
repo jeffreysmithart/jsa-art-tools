@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-07d">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-07e">
 </head>
 <body>
   <header class="topbar">
@@ -225,12 +225,15 @@
       <!-- Color: the picture's colors on a wheel -->
       <div class="side-panel" id="panel-color" data-panel="color" role="tabpanel" aria-labelledby="ptab-color" hidden>
       <section class="group" id="sec-gamut">
-        <h2>Color wheel</h2>
-        <canvas id="gamut" class="gamut" role="img" aria-label="Color wheel"></canvas>
-        <p class="hint" id="gamut-empty">Load an image to see its colors on the wheel.</p>
+        <h2>Color space</h2>
+        <button class="space-open" id="space-open" type="button" aria-label="Open the color space larger">
+          <canvas id="space-small" class="space-small" aria-hidden="true"></canvas>
+          <span class="space-open-tag" aria-hidden="true">Tap to open larger</span>
+        </button>
+        <p class="hint" id="gamut-empty">Load an image to see its colors in the color space.</p>
         <div class="log-stats gamut-stats" id="gamut-stats"></div>
-        <label class="check"><input type="checkbox" id="gamut-hull" checked> Outline the gamut</label>
-        <p class="hint">Each dot is a color in the picture: hue goes around the wheel, and colors get stronger toward the rim, with gray in the middle. Bigger dots cover more of the picture. The dashed outline is the <b>gamut</b>, the range of colors the picture uses. <b>Squint</b> (in Study) smooths out noise.</p>
+        <label class="check"><input type="checkbox" id="space-unused"> Show colors not in the picture</label>
+        <p class="hint">Laid out like the Munsell color solid: <b>value</b> runs up the middle from black to white, <b>hue</b> goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and <b>chroma</b> gets stronger away from the gray center. Each dot is a color in the picture, bigger where it covers more. Positions are CIE Lab, so hue and chroma are close to Munsell, not exact. <b>Squint</b> (in Study) smooths out noise.</p>
         <p class="hint" id="gamut-marks-hint" hidden>The ringed dots are the main colors.</p>
       </section>
       </div>
@@ -519,21 +522,53 @@
     <p class="modal-hint">Tap an image to study it with this preset.</p>
   </div>
 
+  <div class="modal" id="space-modal" hidden role="dialog" aria-modal="true" aria-label="Color space">
+    <div class="modal-bar">
+      <strong>Color space</strong>
+      <label class="check"><input type="checkbox" id="space-unused-big"> Show colors not in the picture</label>
+      <label>Value
+        <select id="space-slice">
+          <option value="">All values</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+        </select>
+      </label>
+      <button class="btn" id="space-top" type="button" title="Look down on the hue circle">Top</button>
+      <button class="btn" id="space-side" type="button" title="Look from the side: value goes up">Side</button>
+      <button class="btn" id="space-reset" type="button">Reset</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="space-close" type="button">Close</button>
+    </div>
+    <div class="crop-area space-area">
+      <canvas id="space-big" class="space-big" aria-label="The picture's colors in 3D. Drag to turn, scroll or pinch to zoom, tap a dot to read it. Arrow keys turn, plus and minus zoom."></canvas>
+      <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><b></b><span></span></div>
+    </div>
+    <p class="modal-hint">Drag to turn · scroll or pinch to zoom · tap a dot to read its value, chroma and hue · pick a value to see one level at a time.</p>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-07d"></script>
-  <script src="js/process.js?v=2026-11-07d"></script>
-  <script src="js/config.js?v=2026-11-07d"></script>
-  <script src="js/museum.js?v=2026-11-07d"></script>
-  <script src="js/library.js?v=2026-11-07d"></script>
-  <script src="js/presets.js?v=2026-11-07d"></script>
-  <script src="js/log.js?v=2026-11-07d"></script>
-  <script src="js/timer.js?v=2026-11-07d"></script>
-  <script src="js/compose.js?v=2026-11-07d"></script>
-  <script src="js/gamut.js?v=2026-11-07d"></script>
-  <script src="js/crop.js?v=2026-11-07d"></script>
-  <script src="js/warp.js?v=2026-11-07d"></script>
-  <script src="js/squareup.js?v=2026-11-07d"></script>
-  <script src="js/app.js?v=2026-11-07d"></script>
+  <script src="js/color.js?v=2026-11-07e"></script>
+  <script src="js/process.js?v=2026-11-07e"></script>
+  <script src="js/config.js?v=2026-11-07e"></script>
+  <script src="js/museum.js?v=2026-11-07e"></script>
+  <script src="js/library.js?v=2026-11-07e"></script>
+  <script src="js/presets.js?v=2026-11-07e"></script>
+  <script src="js/log.js?v=2026-11-07e"></script>
+  <script src="js/timer.js?v=2026-11-07e"></script>
+  <script src="js/compose.js?v=2026-11-07e"></script>
+  <script src="js/colorspace.js?v=2026-11-07e"></script>
+  <script src="js/gamut.js?v=2026-11-07e"></script>
+  <script src="js/crop.js?v=2026-11-07e"></script>
+  <script src="js/warp.js?v=2026-11-07e"></script>
+  <script src="js/squareup.js?v=2026-11-07e"></script>
+  <script src="js/app.js?v=2026-11-07e"></script>
 </body>
 </html>

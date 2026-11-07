@@ -64,3 +64,9 @@ test('hue names go around the wheel', () => {
   assert.equal(G.hueName(250), 'blue');
   assert.equal(G.hueName(350), 'red-violet');
 });
+
+test('the value range runs from the darkest to the lightest few percent', () => {
+  const r = G.analyze(image([[20, 0, 0, 500], [85, 0, 0, 500], [99, 0, 0, 5]]));
+  assert.equal(r.stats.valueLow, 2);
+  assert.equal(r.stats.valueHigh, 8.5);
+});
