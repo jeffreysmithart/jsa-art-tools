@@ -2,6 +2,15 @@
 
 A browser-based practice tool for painters. It turns any reference image into simplified value and color studies, and runs timed master-copy sessions from public-domain museum collections. It is built for deliberate practice: big shapes and the light key first, before you can overthink it.
 
+## Inspiration
+
+This project was sparked by two tools that are genuinely useful and interesting:
+
+- **[Proko's value tool](https://www.proko.com/values)**: simplifying a reference into a few clear values.
+- **The Massa Art drawing timer**: structured, timed drawing sessions.
+
+We admire both and are building on their *ideas*, not copying their design, layout, wording or branding. This tool should have its own look and feel.
+
 ## Goals
 
 - Practice seeing values quickly (gesture drawing, but for landscapes, portraits and florals).
