@@ -65,6 +65,7 @@ Sets, presets, the practice log and uploaded photos live in each browser's own s
 - **Devices:** iPad, Mac, sometimes iPhone.
 - **Sign-in:** a **sync code**, no accounts yet.
 - **Photos:** a fast follow, right after the rest works.
+- **QR codes** for joining a device: a fast follow too. The first version shares the code by copy or AirDrop.
 - **Accounts later:** probably Supabase (see below). WordPress isn't needed: there's no existing site to join.
 
 ### What syncs
@@ -85,7 +86,7 @@ Merge rules live in their own module (`js/sync-merge.js`) as plain functions, wi
 
 ### The sync code
 
-- **Turning it on:** "Turn on sync" on the first device makes a random code (128 bits, shown as five groups of letters and digits, e.g. `K7QM-…`). It can be copied, or shared with AirDrop through the browser's share sheet. A QR code can come later; it would need a small vendored library, so it's skipped for now.
+- **Turning it on:** "Turn on sync" on the first device makes a random code (128 bits, shown as five groups of letters and digits, e.g. `K7QM-…`). It can be copied, or shared with AirDrop through the browser's share sheet. **QR code (fast follow):** the first device shows the code as a QR code, and the other scans it with the camera. Showing one needs a small QR library, vendored like spectral.js (check its license first, and ask before adding outside code). Scanning can use the phone's camera app, by putting the code in a link that opens the site and fills it in, so no scanning library is needed.
 - **Joining:** "Join with a code" on another device takes the code, and from then on the devices stay in step.
 - **Keys:** from the code, the device derives a storage id, a write token, and an encryption key, with Web Crypto (HKDF over SHA-256).
 - **Encryption:** everything is encrypted on the device (AES-GCM) before it's sent, so the server, and anyone who gets into the Cloudflare account, sees only scrambled data.
@@ -145,7 +146,7 @@ Moving from the sync code to an account would be one step: sign in on a synced d
    - `sync/worker.js` with tests against an in-memory R2 stand-in, like `tests/relay-dev.mjs`.
    - Deploying it is outward-facing: ask the owner first.
 3. **The client:** sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
-4. **Photos.**
+4. **Photos and QR codes** (fast follows).
 5. **Accounts, later:** a Supabase adapter.
 
 ## Notes for a new session
