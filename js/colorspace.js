@@ -13,9 +13,14 @@
 
   /* ---------- data ---------- */
 
+  /** The cell a color falls in (L in `lStep`, a and b in `abStep`), as one number. */
+  function cellKey(L, a, b, lStep = 5, abStep = 5) {
+    return (Math.round(L / lStep) * 1000 + Math.round(a / abStep) + 500) * 1000 + Math.round(b / abStep) + 500;
+  }
+
   /**
    * The picture's colors counted into small 3D cells (L in `lStep`,
-   * a and b in `abStep`), each with its average color and share.
+   * a and b in `abStep`), each with its average color, share and key.
    */
   function sample(lab, { lStep = 5, abStep = 5 } = {}) {
     const n = lab.L.length;
@@ -24,7 +29,7 @@
       const L = lab.L[i];
       const a = lab.A[i];
       const b = lab.B[i];
-      const key = (Math.round(L / lStep) * 1000 + Math.round(a / abStep) + 500) * 1000 + Math.round(b / abStep) + 500;
+      const key = cellKey(L, a, b, lStep, abStep);
       let c = map.get(key);
       if (!c) map.set(key, (c = { n: 0, L: 0, a: 0, b: 0 }));
       c.n++;
@@ -33,8 +38,104 @@
       c.b += b;
     }
     const cells = [];
-    for (const c of map.values()) cells.push({ L: c.L / c.n, a: c.a / c.n, b: c.b / c.n, share: c.n / n });
+    for (const [key, c] of map) cells.push({ L: c.L / c.n, a: c.a / c.n, b: c.b / c.n, share: c.n / n, key });
     return cells;
+  }
+
+  /* ---------- where a color is in the picture ---------- */
+
+  /**
+   * Which pixels match a color from the space. `within` 0 matches the
+   * cell's own pixels (the share its dot shows); otherwise every pixel
+   * within that color difference (ΔE, CIE76) of the cell's average color.
+   * Returns { mask (1 = match), share }.
+   */
+  function matchMask(lab, cell, within = 0) {
+    const n = lab.L.length;
+    const mask = new Uint8Array(n);
+    let hits = 0;
+    if (!within) {
+      for (let i = 0; i < n; i++) {
+        if (cellKey(lab.L[i], lab.A[i], lab.B[i]) === cell.key) {
+          mask[i] = 1;
+          hits++;
+        }
+      }
+    } else {
+      const r2 = within * within;
+      for (let i = 0; i < n; i++) {
+        const dL = lab.L[i] - cell.L;
+        const da = lab.A[i] - cell.a;
+        const db = lab.B[i] - cell.b;
+        if (dL * dL + da * da + db * db <= r2) {
+          mask[i] = 1;
+          hits++;
+        }
+      }
+    }
+    return { mask, share: n ? hits / n : 0 };
+  }
+
+  /**
+   * Paints the picture with the matching pixels in their own color and the
+   * rest as faded neutral gray (chroma 0, values pulled toward the middle),
+   * so the match stands out without the gray tinting how it reads. With
+   * `width` (picture pixels, the width of the image), a white edge `edge`
+   * pixels wide rings each match, so tiny or near-gray matches still show.
+   * `out` is RGBA bytes; `toRgb(L, a, b)` returns [r, g, b].
+   */
+  function paintMatch(lab, mask, out, toRgb, { width = 0, edge = 0 } = {}) {
+    const gray = new Uint8ClampedArray(101);
+    for (let v = 0; v <= 100; v++) gray[v] = toRgb(28 + v * 0.36, 0, 0)[0];
+    const ring = width && edge ? near(mask, width, edge) : null;
+    for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+      if (mask[i]) {
+        const [r, g, b] = toRgb(lab.L[i], lab.A[i], lab.B[i]);
+        out[j] = r;
+        out[j + 1] = g;
+        out[j + 2] = b;
+      } else if (ring && ring[i]) {
+        out[j] = out[j + 1] = out[j + 2] = 255;
+      } else {
+        const v = gray[Math.max(0, Math.min(100, Math.round(lab.L[i])))];
+        out[j] = out[j + 1] = out[j + 2] = v;
+      }
+      out[j + 3] = 255;
+    }
+    return out;
+  }
+
+  /** Pixels within `r` of a set pixel (a square reach), by two box passes. */
+  function near(mask, w, r) {
+    const h = mask.length / w;
+    const rows = new Uint8Array(mask.length);
+    for (let y = 0; y < h; y++) {
+      let last = -Infinity;
+      const o = y * w;
+      for (let x = 0; x < w; x++) {
+        if (mask[o + x]) last = x;
+        if (x - last <= r) rows[o + x] = 1;
+      }
+      last = Infinity;
+      for (let x = w - 1; x >= 0; x--) {
+        if (mask[o + x]) last = x;
+        if (last - x <= r) rows[o + x] = 1;
+      }
+    }
+    const res = new Uint8Array(mask.length);
+    for (let x = 0; x < w; x++) {
+      let last = -Infinity;
+      for (let y = 0; y < h; y++) {
+        if (rows[y * w + x]) last = y;
+        if (y - last <= r) res[y * w + x] = 1;
+      }
+      last = Infinity;
+      for (let y = h - 1; y >= 0; y--) {
+        if (rows[y * w + x]) last = y;
+        if (last - y <= r) res[y * w + x] = 1;
+      }
+    }
+    return res;
   }
 
   /**
@@ -439,5 +540,5 @@
     };
   }
 
-  VST.colorspace = { sample, solidShell, munsell, projector, createView, HUES, VIEWS };
+  VST.colorspace = { sample, cellKey, matchMask, paintMatch, solidShell, munsell, projector, createView, HUES, VIEWS };
 })(typeof window !== 'undefined' ? window : globalThis);

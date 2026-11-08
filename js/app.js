@@ -76,6 +76,7 @@
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
     palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
+    spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
 
@@ -1297,10 +1298,11 @@
   $('#space-unused').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
   $('#space-unused-big').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
 
-  /** What the tapped color is, in Munsell-style terms. */
+  /** What the tapped color is, in Munsell-style terms, and where it is in the picture. */
   function showReading(cell) {
     const box = $('#space-readout');
     box.hidden = !cell;
+    showWhere(cell);
     if (!cell) return;
     const m = CS.munsell(cell.L, cell.a, cell.b);
     const [r, g, b] = toRgb(cell.L, cell.a, cell.b);
@@ -1317,6 +1319,60 @@
     const pct = cell.share * 100;
     box.querySelector('.share').textContent = pct < 0.1 ? 'under 0.1% of the picture' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}% of the picture`;
   }
+
+  /*
+   * Where the tapped color is: a copy of the picture beside the space with
+   * the matching pixels in color and the rest in faded gray. Tapping the
+   * picture finds that pixel's color in the space.
+   */
+  const MATCHES = [0, 6, 12, 20];
+  let whereCell = null;
+  function showWhere(cell) {
+    whereCell = cell;
+    const panel = $('#space-pic');
+    const was = !panel.hidden;
+    panel.hidden = !cell || !work.lab;
+    if (was !== !panel.hidden) spaceBig.request(); // the space's room changed
+    if (panel.hidden) return;
+    const cv = $('#space-pic-canvas');
+    if (cv.width !== work.w || cv.height !== work.h) {
+      cv.width = work.w;
+      cv.height = work.h;
+    }
+    cv.classList.toggle('flipped', S.flip);
+    const within = MATCHES.includes(S.spaceMatch) ? S.spaceMatch : 0;
+    $('#space-match').value = String(within);
+    const { mask, share } = CS.matchMask(work.lab, cell, within);
+    const ctx = cv.getContext('2d');
+    const out = ctx.createImageData(work.w, work.h);
+    // the white edge is about 1.5 screen pixels wide however large the picture is shown
+    const shownW = cv.getBoundingClientRect().width || 400;
+    CS.paintMatch(work.lab, mask, out.data, toRgb, { width: work.w, edge: Math.max(1, Math.round((1.5 * work.w) / shownW)) });
+    ctx.putImageData(out, 0, 0);
+    const pct = share * 100;
+    $('#space-pic-share').textContent = !share
+      ? 'Not in the picture at these settings.'
+      : `${pct < 0.1 ? 'Under 0.1%' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}%`} of the picture${within ? `, within ${within} ΔE of this color` : ''}.`;
+  }
+  $('#space-match').addEventListener('change', (e) => {
+    S.spaceMatch = +e.target.value;
+    save();
+    if (whereCell) showWhere(whereCell);
+  });
+  $('#space-pic-clear').addEventListener('click', () => spaceBig.pick(null));
+  $('#space-pic-canvas').addEventListener('click', (e) => {
+    const cv = e.currentTarget;
+    const r = cv.getBoundingClientRect();
+    if (!work.lab || !r.width || !r.height) return;
+    let x = Math.floor(((e.clientX - r.left) / r.width) * cv.width);
+    const y = Math.floor(((e.clientY - r.top) / r.height) * cv.height);
+    if (S.flip) x = cv.width - 1 - x; // shown mirrored, like the study
+    if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) return;
+    const i = y * cv.width + x;
+    const key = CS.cellKey(work.lab.L[i], work.lab.A[i], work.lab.B[i]);
+    const cell = (colorCache.cells || []).find((c) => c.key === key);
+    if (cell) spaceBig.pick(cell);
+  });
 
   function openSpace() {
     const d = colorData();
