@@ -333,7 +333,13 @@
         state.error = '';
         lastLocal = localHash(); // what's here now is synced: no need for another pass
       } catch (e) {
-        state.error = e && e.status === 403 ? 'This sync code doesn’t match the one stored for it.' : e && e.message && !/fetch|network/i.test(e.message) ? e.message : 'Couldn’t reach the sync service; will try again.';
+        // browsers word a failed connection differently (Safari: "Load failed"; Chrome: "Failed to fetch")
+        const offline = !e || e instanceof TypeError || /fetch|network|load failed/i.test(e.message || '');
+        state.error = offline
+          ? 'Couldn’t reach the sync service; will try again.'
+          : e.status === 403
+            ? 'The sync service refused this device’s sync code.'
+            : e.message;
       }
       saveState(state);
       running = null;

@@ -26,6 +26,11 @@ test('only the site (and local testing) can use it', async () => {
   assert.match(ok.headers.get('access-control-allow-headers'), /If-Match/);
   const other = await call(env, 'GET', `/v1/${ID}`, { origin: 'https://evil.example' });
   assert.equal(other.status, 403);
+  for (const site of ['https://jeffreysmithdesigner.com', 'https://www.jeffreysmithdesigner.com']) {
+    const own = await call(env, 'OPTIONS', `/v1/${ID}`, { origin: site });
+    assert.equal(own.status, 204, `the app's own domain: ${site}`);
+    assert.equal(own.headers.get('access-control-allow-origin'), site);
+  }
   const local = await call(env, 'GET', `/v1/${ID}`, { origin: 'http://localhost:8000' });
   assert.equal(local.status, 200);
   const custom = await call({ ...env, ALLOWED_ORIGINS: 'https://mine.example' }, 'GET', `/v1/${ID}`, { origin: 'https://mine.example' });
