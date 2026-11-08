@@ -151,7 +151,35 @@ function check(cond, msg) {
   });
   if (dot) await page.mouse.click(box.x + dot.x, box.y + dot.y);
   check(dot && (await page.isVisible('#space-readout')) && /Value [\d.]+/.test(await page.textContent('#space-readout')), `tapping a dot reads its value, chroma and hue (${dot ? (await page.textContent('#space-readout')).trim() : 'no dot'})`);
+  // …and see where it is in the picture: matches in color, the rest in gray
+  await settle(page);
+  check(await page.isVisible('#space-pic'), 'tapping a dot shows where it is in the picture');
+  const colored = () => page.$eval('#space-pic-canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2]) n++; return { n, total: d.length / 4 }; });
+  const exact = await colored();
+  const readShare = (await page.textContent('#space-readout .share')).match(/[\d.]+%/);
+  const picShare = (await page.textContent('#space-pic-share')).match(/[\d.]+%/);
+  check(exact.n > 0 && exact.n < exact.total, `only the matching pixels keep their color (${exact.n} of ${exact.total})`);
+  check(readShare && picShare && readShare[0] === picShare[0], `the picture's match is the share the dot reads (${readShare && readShare[0]} = ${picShare && picShare[0]})`);
   await page.screenshot({ path: path.join(OUT, '2d-color-space-large.png') });
+  await page.selectOption('#space-match', '20');
+  await settle(page);
+  const broad = await colored();
+  check(broad.n > exact.n, `a broader match takes in more of the picture (${exact.n} → ${broad.n})`);
+  check(/within 20 ΔE/.test(await page.textContent('#space-pic-share')), 'and says how wide it is');
+  await page.selectOption('#space-match', '0');
+  // tap the picture to find that pixel's color in the space
+  const readBefore = await page.textContent('#space-readout b');
+  const spaceBefore = await canvasSum('#space-big');
+  const pic = await page.$eval('#space-pic-canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  let found = false;
+  for (const [fx, fy] of [[0.1, 0.1], [0.9, 0.9], [0.5, 0.2], [0.2, 0.8], [0.8, 0.3]]) {
+    await page.mouse.click(pic.x + pic.w * fx, pic.y + pic.h * fy);
+    await settle(page);
+    if ((await page.textContent('#space-readout b')) !== readBefore) { found = true; break; }
+  }
+  check(found && (await canvasSum('#space-big')).s !== spaceBefore.s, 'tapping the picture finds that color in the space');
+  await page.click('#space-pic-clear');
+  check(!(await page.isVisible('#space-pic')) && !(await page.isVisible('#space-readout')), 'Clear puts the space back on its own');
   await page.click('#space-reset');
   await page.keyboard.press('Escape');
   check(!(await page.isVisible('#space-modal')), 'Esc closes the large view');

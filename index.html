@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08i">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08j">
 </head>
 <body>
   <header class="topbar">
@@ -637,33 +637,51 @@
       <button class="btn primary" id="space-close" type="button">Close</button>
     </div>
     <div class="crop-area space-area">
-      <canvas id="space-big" class="space-big" aria-label="The picture's colors in 3D. Drag to turn, scroll or pinch to zoom, tap a dot to read it. Arrow keys turn, plus and minus zoom."></canvas>
-      <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><div class="rd"><b></b><span class="share"></span><span class="pal" id="space-palette"></span></div></div>
+      <div class="space-stage">
+        <div class="space-view"><canvas id="space-big" class="space-big" aria-label="The picture's colors in 3D. Drag to turn, scroll or pinch to zoom, tap a dot to read it and see where it is in the picture. Arrow keys turn, plus and minus zoom."></canvas></div>
+        <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><div class="rd"><b></b><span class="share"></span><span class="pal" id="space-palette"></span></div></div>
+      </div>
+      <aside class="space-pic" id="space-pic" hidden aria-label="Where this color is in the picture">
+        <div class="space-pic-bar">
+          <label>Match
+            <select id="space-match" title="How close a color has to be to count">
+              <option value="0">This color</option>
+              <option value="6">Close colors</option>
+              <option value="12">Similar colors</option>
+              <option value="20">Broad range</option>
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button class="btn" id="space-pic-clear" type="button">Clear</button>
+        </div>
+        <div class="space-pic-frame"><canvas id="space-pic-canvas" aria-label="The picture with the chosen color in full and the rest in gray. Tap it to find another color in the space."></canvas></div>
+        <p class="space-pic-share" id="space-pic-share"></p>
+      </aside>
     </div>
-    <p class="modal-hint">Drag to turn · scroll or pinch to zoom · tap a dot to read its value, chroma and hue · pick a value to see one level at a time.</p>
+    <p class="modal-hint">Drag to turn · scroll or pinch to zoom · tap a dot to read it and see where it is in the picture · tap the picture to find a color · pick a value to see one level at a time.</p>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08i"></script>
-  <script src="js/process.js?v=2026-11-08i"></script>
-  <script src="js/config.js?v=2026-11-08i"></script>
-  <script src="js/museum.js?v=2026-11-08i"></script>
-  <script src="js/sync-merge.js?v=2026-11-08i"></script>
-  <script src="js/library.js?v=2026-11-08i"></script>
-  <script src="js/presets.js?v=2026-11-08i"></script>
-  <script src="js/log.js?v=2026-11-08i"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-08i"></script>
-  <script src="js/sync.js?v=2026-11-08i"></script>
-  <script src="js/timer.js?v=2026-11-08i"></script>
-  <script src="js/compose.js?v=2026-11-08i"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08i"></script>
-  <script src="js/palette.js?v=2026-11-08i"></script>
-  <script src="js/colorspace.js?v=2026-11-08i"></script>
-  <script src="js/gamut.js?v=2026-11-08i"></script>
-  <script src="js/crop.js?v=2026-11-08i"></script>
-  <script src="js/warp.js?v=2026-11-08i"></script>
-  <script src="js/squareup.js?v=2026-11-08i"></script>
-  <script src="js/app.js?v=2026-11-08i"></script>
+  <script src="js/color.js?v=2026-11-08j"></script>
+  <script src="js/process.js?v=2026-11-08j"></script>
+  <script src="js/config.js?v=2026-11-08j"></script>
+  <script src="js/museum.js?v=2026-11-08j"></script>
+  <script src="js/sync-merge.js?v=2026-11-08j"></script>
+  <script src="js/library.js?v=2026-11-08j"></script>
+  <script src="js/presets.js?v=2026-11-08j"></script>
+  <script src="js/log.js?v=2026-11-08j"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-08j"></script>
+  <script src="js/sync.js?v=2026-11-08j"></script>
+  <script src="js/timer.js?v=2026-11-08j"></script>
+  <script src="js/compose.js?v=2026-11-08j"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08j"></script>
+  <script src="js/palette.js?v=2026-11-08j"></script>
+  <script src="js/colorspace.js?v=2026-11-08j"></script>
+  <script src="js/gamut.js?v=2026-11-08j"></script>
+  <script src="js/crop.js?v=2026-11-08j"></script>
+  <script src="js/warp.js?v=2026-11-08j"></script>
+  <script src="js/squareup.js?v=2026-11-08j"></script>
+  <script src="js/app.js?v=2026-11-08j"></script>
 </body>
 </html>
