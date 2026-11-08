@@ -562,6 +562,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .space-readout .rd { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .space-readout b { font-weight: 600; }
 .space-readout .share { color: var(--muted); }
+.space-readout .mun { color: var(--muted); }
+.space-readout .mun:empty { display: none; }
 .space-readout .pal { color: var(--muted); }
 .space-readout .pal:empty { display: none; }
 .pal-paints { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }

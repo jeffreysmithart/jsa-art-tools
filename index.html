@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08j">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08k">
 </head>
 <body>
   <header class="topbar">
@@ -291,7 +291,7 @@
         <details class="howto">
           <summary>How to read this</summary>
           <p>It’s laid out like the Munsell color solid: <b>value</b> runs up the middle from black to white, <b>hue</b> goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and <b>chroma</b> gets stronger away from the gray center. Tap the view to open it large, turn it, and see one value at a time.</p>
-          <p>Positions come from CIE Lab, so hue and chroma are close to Munsell, not exact. <b>Squint</b> (in Study) smooths out photo noise first.</p>
+          <p>Positions come from CIE Lab, so the layout is close to Munsell, not exact. Tapping a color reads it in true Munsell notation (for example 7.5R 5/14), from the Munsell renotation data. <b>Squint</b> (in Study) smooths out photo noise first.</p>
         </details>
         <p class="hint" id="gamut-marks-hint" hidden>The ringed dots are the main colors.</p>
       </section>
@@ -639,7 +639,7 @@
     <div class="crop-area space-area">
       <div class="space-stage">
         <div class="space-view"><canvas id="space-big" class="space-big" aria-label="The picture's colors in 3D. Drag to turn, scroll or pinch to zoom, tap a dot to read it and see where it is in the picture. Arrow keys turn, plus and minus zoom."></canvas></div>
-        <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><div class="rd"><b></b><span class="share"></span><span class="pal" id="space-palette"></span></div></div>
+        <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><div class="rd"><b></b><span class="mun"></span><span class="share"></span><span class="pal" id="space-palette"></span></div></div>
       </div>
       <aside class="space-pic" id="space-pic" hidden aria-label="Where this color is in the picture">
         <div class="space-pic-bar">
@@ -663,25 +663,27 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08j"></script>
-  <script src="js/process.js?v=2026-11-08j"></script>
-  <script src="js/config.js?v=2026-11-08j"></script>
-  <script src="js/museum.js?v=2026-11-08j"></script>
-  <script src="js/sync-merge.js?v=2026-11-08j"></script>
-  <script src="js/library.js?v=2026-11-08j"></script>
-  <script src="js/presets.js?v=2026-11-08j"></script>
-  <script src="js/log.js?v=2026-11-08j"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-08j"></script>
-  <script src="js/sync.js?v=2026-11-08j"></script>
-  <script src="js/timer.js?v=2026-11-08j"></script>
-  <script src="js/compose.js?v=2026-11-08j"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08j"></script>
-  <script src="js/palette.js?v=2026-11-08j"></script>
-  <script src="js/colorspace.js?v=2026-11-08j"></script>
-  <script src="js/gamut.js?v=2026-11-08j"></script>
-  <script src="js/crop.js?v=2026-11-08j"></script>
-  <script src="js/warp.js?v=2026-11-08j"></script>
-  <script src="js/squareup.js?v=2026-11-08j"></script>
-  <script src="js/app.js?v=2026-11-08j"></script>
+  <script src="js/color.js?v=2026-11-08k"></script>
+  <script src="js/process.js?v=2026-11-08k"></script>
+  <script src="js/config.js?v=2026-11-08k"></script>
+  <script src="js/museum.js?v=2026-11-08k"></script>
+  <script src="js/sync-merge.js?v=2026-11-08k"></script>
+  <script src="js/library.js?v=2026-11-08k"></script>
+  <script src="js/presets.js?v=2026-11-08k"></script>
+  <script src="js/log.js?v=2026-11-08k"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-08k"></script>
+  <script src="js/sync.js?v=2026-11-08k"></script>
+  <script src="js/timer.js?v=2026-11-08k"></script>
+  <script src="js/compose.js?v=2026-11-08k"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08k"></script>
+  <script src="js/palette.js?v=2026-11-08k"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-08k"></script>
+  <script src="js/munsell.js?v=2026-11-08k"></script>
+  <script src="js/colorspace.js?v=2026-11-08k"></script>
+  <script src="js/gamut.js?v=2026-11-08k"></script>
+  <script src="js/crop.js?v=2026-11-08k"></script>
+  <script src="js/warp.js?v=2026-11-08k"></script>
+  <script src="js/squareup.js?v=2026-11-08k"></script>
+  <script src="js/app.js?v=2026-11-08k"></script>
 </body>
 </html>

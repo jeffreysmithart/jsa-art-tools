@@ -46,11 +46,12 @@ Nothing is in progress. The owner picks what's next; these are the ideas so far,
 1. **Real accounts** for sync (the last step of the sync plan): probably Supabase, through the same adapter in `js/sync.js`. See [Real accounts, later](#real-accounts-later).
 2. **Diagonal construction grid** (below), once the composition guides have been tried on real photos.
 3. **Palette follow-ups:** match a paint's color or strength to a brand, named palettes, recipes for the study's swatches, a mixing chart.
-4. **Color space follow-ups:** exact Munsell notation from the Munsell renotation data (needs the owner's OK for the outside data, after a license check); a gamut mask.
+4. **Color space follow-ups:** a gamut mask.
 
 Done, for reference:
 
-- **Color gamut view:** done (the Color tab, as a 3D color space). Tap a color to see where it is in the picture: done. Ideas for later: true Munsell notation from the Munsell renotation data instead of the Lab approximation; a gamut mask.
+- **Color gamut view:** done (the Color tab, as a 3D color space). Tap a color to see where it is in the picture: done. Exact Munsell notation: done (below). Idea for later: a gamut mask.
+- **Munsell notation:** readings use the Munsell renotation data (Newhall, Nickerson & Judd, JOSA 33(7), 1943; `real.dat` from RIT's Munsell Color Science Laboratory), built into `data/munsell-renotation.js` by `tools/build_munsell.py`. No license is stated on the data. It's a table of measured values from a 1943 scientific report, and it's redistributed freely (colour-science, BSD; the R `munsell` package, MIT), so the owner OK'd using it with a credit line. Don't confuse it with the 2021 "re-renotation" on IEEE DataPort, which is CC BY-NC-SA. `js/munsell.js` is written for this app: Lab is adapted from D65 to Illuminant C (Bradford), value comes from Y by ASTM D1535 (so the file's 1/0.975 Y scaling doesn't matter), and hue and chroma are found by searching the data's x, y loci. Values under 1 or over 9, and chroma past the data, are extended, so they're less exact. The 3D layout itself stays CIE Lab.
 - **Limited-palette recolor:** done. Mixing uses spectral.js 3.0.0 (MIT), vendored unchanged in `js/vendor/`. Each paint is a typical masstone color with a tinting strength tuned by eye so its tints behave roughly like the real paint (in `js/palette.js`). Ideas for later: let a painter adjust a paint's color or strength to match their brand; save palettes by name; show recipes for the study's swatches; a mixing chart of the palette.
 
 Composition, next step:

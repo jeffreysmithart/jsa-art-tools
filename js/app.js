@@ -1224,6 +1224,30 @@
    * full-screen view you can turn, zoom, slice by value and tap to read.
    */
   const CS = VST.colorspace;
+  const MX = VST.munsellExact;
+
+  /**
+   * A color in Munsell terms: from the renotation data when it's loaded
+   * (exact notation, e.g. 7.8R 5.2/20), else the Lab approximation.
+   */
+  function munsellOf(L, a, b) {
+    const m = MX && MX.fromLab(L, a, b);
+    if (!m) {
+      const r = CS.munsell(L, a, b);
+      return { exact: false, neutral: r.hue === 'N', code: r.hue, name: r.hueName, value: r.value, chroma: r.chroma };
+    }
+    const f = m.hue == null ? null : MX.family(m.hue);
+    return {
+      exact: true,
+      neutral: !f,
+      code: f ? f.code : 'N',
+      name: f ? f.name : 'neutral gray',
+      hue: f ? MX.notation(m).split(' ')[0] : null, // e.g. 7.8R
+      value: Math.round(m.value * 10) / 10,
+      chroma: Math.round(m.chroma),
+      notation: MX.notation(m),
+    };
+  }
   const toRgb = (L, a, b) => C.labToRgb8(L, a, b, [0, 0, 0]);
   const colorCache = { lab: null, stats: null, cells: null };
   let shell = null; // the rest of the color space, made once when first shown
@@ -1250,6 +1274,13 @@
     };
   }
 
+  /** The strongest colors' chroma in Munsell steps, at the main hue and a middle value. */
+  function strongMunsell(st) {
+    const t = ((st.hue == null ? 0 : st.hue) * Math.PI) / 180;
+    const m = munsellOf(50, st.strongChroma * Math.cos(t), st.strongChroma * Math.sin(t));
+    return m.exact ? m.chroma : Math.round(st.strongChroma / 5);
+  }
+
   function renderGamut() {
     if (!$('#space-small').clientWidth) return; // hidden
     renderPaletteUi();
@@ -1267,15 +1298,15 @@
     const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
     // the main hue in the same Munsell terms as the 3D view
     const t = st.hue == null ? null : (st.hue * Math.PI) / 180;
-    const mh = t == null ? null : CS.munsell(50, 20 * Math.cos(t), 20 * Math.sin(t));
+    const mh = t == null ? null : munsellOf(50, 20 * Math.cos(t), 20 * Math.sin(t));
     box.innerHTML =
-      stat(mh ? `${cap(mh.hueName)} (${mh.hue})` : 'Gray', 'main hue') +
-      stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ≈ ${Math.round(st.strongChroma / 5)}`) +
+      stat(mh && !mh.neutral ? `${cap(mh.name)} (${mh.exact ? mh.hue : mh.code})` : 'Gray', 'main hue') +
+      stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ≈ ${strongMunsell(st)}`) +
       stat(`${Math.round(st.neutralShare * 100)}%`, 'near gray') +
       stat(`${st.valueLow}–${st.valueHigh}`, 'value range');
     $('#space-open').setAttribute(
       'aria-label',
-      `Open the color space larger. Main hue ${mh ? mh.hueName : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
+      `Open the color space larger. Main hue ${mh && !mh.neutral ? mh.name : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
     );
     $('#gamut-marks-hint').hidden = !d.marks.length;
     $('#pal-out-hint').hidden = !(d.out && d.out.size);
@@ -1304,10 +1335,16 @@
     box.hidden = !cell;
     showWhere(cell);
     if (!cell) return;
-    const m = CS.munsell(cell.L, cell.a, cell.b);
+    const m = munsellOf(cell.L, cell.a, cell.b);
     const [r, g, b] = toRgb(cell.L, cell.a, cell.b);
     box.querySelector('.sw').style.background = `rgb(${r},${g},${b})`;
-    box.querySelector('b').textContent = m.hue === 'N' ? `Value ${m.value} · neutral gray` : `Value ${m.value} · chroma ≈ ${m.chroma} · hue ≈ ${m.hue} (${m.hueName})`;
+    if (m.exact) {
+      box.querySelector('b').textContent = `${m.notation} · ${m.name}`;
+      box.querySelector('.mun').textContent = m.neutral ? `Munsell value ${m.value}, no chroma` : `Munsell hue ${m.hue}, value ${m.value}, chroma ${m.chroma}`;
+    } else {
+      box.querySelector('b').textContent = m.neutral ? `Value ${m.value} · neutral gray` : `Value ${m.value} · chroma ≈ ${m.chroma} · hue ≈ ${m.code} (${m.name})`;
+      box.querySelector('.mun').textContent = '';
+    }
     const model = ensurePalette();
     const hit = model && PAL.nearest(model, cell.L, cell.a, cell.b);
     const near = hit && model.mixes[hit.i];

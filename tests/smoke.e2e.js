@@ -120,6 +120,7 @@ function check(cond, msg) {
   check(small.ink > 1000, `the color space draws in the sidebar (${small.ink} px)`);
   const gs = await page.$$eval('#gamut-stats .stat', (els) => els.map((e) => e.textContent));
   check(/main hue/.test(gs[0]) && /value range/.test(gs[3]), `the color figures show (${gs.join(' | ')})`);
+  check(/\([\d.]+(R|YR|Y|GY|G|BG|B|PB|P|RP)\)|Gray/.test(gs[0]), `the main hue is a Munsell hue from the renotation data (${gs[0]})`);
   await page.check('#space-unused');
   await settle(page);
   check((await canvasSum('#space-small')).ink > small.ink * 1.5, 'Show colors not in the picture adds the rest of the color space');
@@ -150,7 +151,8 @@ function check(cond, msg) {
     return null;
   });
   if (dot) await page.mouse.click(box.x + dot.x, box.y + dot.y);
-  check(dot && (await page.isVisible('#space-readout')) && /Value [\d.]+/.test(await page.textContent('#space-readout')), `tapping a dot reads its value, chroma and hue (${dot ? (await page.textContent('#space-readout')).trim() : 'no dot'})`);
+  check(dot && (await page.isVisible('#space-readout')) && /^([\d.]+(R|YR|Y|GY|G|BG|B|PB|P|RP) [\d.]+\/[\d.]+|N [\d.]+\/) · /.test(await page.textContent('#space-readout b')), `tapping a dot reads it in Munsell notation (${dot ? (await page.textContent('#space-readout')).trim() : 'no dot'})`);
+  check(/^Munsell (hue [\d.]+[A-Z]+, value [\d.]+, chroma \d+|value [\d.]+, no chroma)$/.test(await page.textContent('#space-readout .mun')), 'and spells the notation out');
   // …and see where it is in the picture: matches in color, the rest in gray
   await settle(page);
   check(await page.isVisible('#space-pic'), 'tapping a dot shows where it is in the picture');
