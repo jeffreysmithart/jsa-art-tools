@@ -171,7 +171,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .check { display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 
-.field { margin-top: 12px; }
+.field { margin-top: 16px; }
 .label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
 .label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .label-row .label { margin: 0; }
@@ -197,8 +197,12 @@ output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.
 .swatch .pct { font-variant-numeric: tabular-nums; margin-bottom: 4px; }
 .swatch .pct { font-weight: 600; }
 .swatch.dominant .pct { color: var(--accent-text); }
-.swatch .track { height: 84px; display: flex; align-items: flex-end; background: var(--bg); border-radius: 5px; }
-.swatch .bar { width: 100%; border-radius: 5px; border: 1px solid var(--hairline); }
+.swatch .track {
+  height: 76px; display: flex; align-items: flex-end;
+  border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.swatch .bar { width: 100%; border-radius: 5px; box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.22); }
+.swatch .chip { height: 12px; margin-top: 4px; border-radius: 3px; box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.22); }
 .swatch .v { color: var(--text); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .swatch input { width: 100%; padding: 2px; min-height: 26px; font-size: 12px; text-align: center; margin-top: 3px; }
 
@@ -416,9 +420,9 @@ body.presenting .timer-status { font-size: 12px; }
 .history .btn { margin-top: 8px; }
 
 /* ---------- Presets ---------- */
-.preset-field { margin-top: 0; margin-bottom: 14px; }
-#preset-select { width: 100%; }
-.preset-actions { margin-top: 6px; }
+/* presets: one compact row (they're picked now and then, not every minute) */
+.preset-bar { display: flex; gap: 6px; align-items: center; }
+#preset-select { flex: 1; min-width: 0; }
 #preset-desc { margin: 6px 0 0; }
 #preset-desc:empty { display: none; }
 
@@ -595,3 +599,63 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (pointer: coarse) {
   .cal button { min-height: 40px; }
 }
+
+/* ---------- UI refinement pass ---------- */
+
+/* Color options fit on one line: each takes the width its label needs */
+.tone-seg button { flex: 1 1 auto; white-space: nowrap; padding-inline: 8px; }
+
+/* Palette mode: the paints as dots beside the palette's name */
+.palette-summary { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.palette-summary b { font-weight: 600; min-width: 0; }
+.palette-dots { display: inline-flex; flex: none; }
+.palette-dots i {
+  width: 14px; height: 14px; border-radius: 50%; margin-left: -4px;
+  box-shadow: 0 0 0 2px var(--panel), inset 0 0 0 1px var(--hairline);
+}
+.palette-dots i:first-child { margin-left: 0; }
+.palette-ctl .check { margin-top: 8px; }
+
+/* "How to read this": the detail is there when you want it */
+.howto { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.howto summary { cursor: pointer; color: var(--text); font-weight: 550; width: fit-content; }
+.howto summary:hover { color: var(--accent-text); }
+.howto p { margin: 8px 0 0; text-wrap: pretty; }
+.howto a { color: inherit; }
+
+/* toolbar: view switcher, tools, then Present at the end */
+.toolbar .tools { margin-left: auto; }
+
+/* timer: one row on a laptop */
+.timer-settings { gap: 10px 14px; }
+
+@media (pointer: coarse) {
+  .howto summary { min-height: 44px; display: flex; align-items: center; }
+}
+
+/* phones: the view switcher and Present on one row, the tools on the next */
+@media (max-width: 600px) {
+  .toolbar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+  .toolbar .seg { justify-self: start; }
+  .toolbar .tools { grid-column: 1 / -1; order: 3; margin-left: 0; display: flex; flex-wrap: nowrap; }
+  .toolbar .tools .btn { flex: 1 1 0; min-width: 0; padding-inline: 4px; }
+}
+
+/* timer: the status sits above the clock, so the bar fits on one row on a laptop */
+.timerbar { gap: 12px 16px; }
+.timer-main { flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; width: 160px; }
+.timer-status { max-width: none; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-settings { gap: 10px 12px; }
+.timer-settings label:not(.check) { gap: 5px; }
+body.presenting .timer-main { width: auto; }
+
+/* visible to screen readers only */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.timerbar { padding-left: 12px; padding-right: 12px; }
+
+/* keyboard shortcuts, as a list */
+.keys { margin-top: 4px; }
+.key-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 10px 0 0; align-items: center; }
+.key-list dt { white-space: nowrap; }
+.key-list dd { margin: 0; color: var(--muted); }
+.pal-stats .stat b { font-size: 15px; text-wrap: balance; }

@@ -86,6 +86,17 @@ Smaller ideas raised along the way:
 - **Cloud sessions:** reinstall with the owner's aiforui.dev install command using `--global`, or upload the skill folders to claude.ai account skills, which sync to all sessions.
 - **Locally:** the owner's global install already works.
 
+## UI refinement pass (after the palette)
+
+Reviewed with the `emil-ui-review` skill after memory mode, reveal, the color space and the palette had each added controls. Changes:
+- **Study tab, ordered by use:** presets as one compact row (Delete only shows for your own presets); Color (Gray, Color, Main colors, Palette, on one line); Number of values; **Squint** moved up; the value bars; then the finer controls (where values split, how each value is painted, with shorter choices).
+- **Value bars:** an outline for the empty part and a sample of each value under its bar, so a small dark share isn't lost against the dark panel.
+- **Palette mode:** the paints as color dots beside the palette's name, with Change… and "Mark what it can't mix".
+- **Timer:** Memory and Reveal are one **Practice** menu; the status sits above the clock; Time, Rounds and Break name themselves ("10 min", "2 rounds", "10 sec break"), so the bar fits one row at a 1400 px window.
+- **Phones:** the view switcher and Present share a row, the tools take the next; on a first visit the study opens alone at full width.
+- **Color tab:** one sentence under the color space, the rest behind "How to read this"; the same for how mixing is worked out.
+- **Canvas tab:** keyboard shortcuts as a list behind a toggle, instead of a run-on line.
+
 ## Decisions and risks
 
 - **Pinterest:** dropped. Its developer access is restrictive, and museum collections plus uploaded sets replace it.

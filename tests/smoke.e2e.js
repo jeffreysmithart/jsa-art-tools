@@ -355,7 +355,7 @@ function check(cond, msg) {
   const covered = () => page.isVisible('#memory-cover');
   const memRec = () => page.evaluate(() => window.VST.log.days()[window.VST.log.dayKey()].items[window.VST.app.img.item.id] || {});
   const memBefore = (await memRec()).memRounds || 0;
-  await page.selectOption('#t-memory', '30');
+  await page.selectOption('#t-practice', 'm30');
   check((await page.textContent('#timer-clock')) === '0:30' && (await page.textContent('#timer-status')).includes('look first'), 'memory mode arms a 30-second look');
   await page.click('#t-play');
   check(!(await covered()) && (await page.textContent('#timer-status')).includes('Look and remember'), 'the image shows while you look');
@@ -376,9 +376,9 @@ function check(cond, msg) {
   await page.evaluate(() => window.VST.app.countdown.finish(true));
   check((await memRec()).memRounds === memBefore + 1, 'a round with a peek is not counted as from memory');
   await page.keyboard.press('m');
-  check((await page.$eval('#t-memory', (e) => e.value)) === '0' && (await page.textContent('#timer-clock')) === '0:30', 'M turns memory mode off (back to the 30-second draw)');
+  check((await page.$eval('#t-practice', (e) => e.value)) === '' && (await page.textContent('#timer-clock')) === '0:30', 'M turns memory mode off (back to the 30-second draw)');
   await page.keyboard.press('m');
-  check((await page.$eval('#t-memory', (e) => e.value)) === '30', 'M turns it back on at the last look time');
+  check((await page.$eval('#t-practice', (e) => e.value)) === 'm30', 'M turns it back on at the last look time');
   await page.keyboard.press('m');
   await page.click('#t-stop');
 
@@ -421,7 +421,7 @@ function check(cond, msg) {
   check(!(await chip()) && (await st()).bands === own.bands, 'End stops a reveal part way');
 
   // staged reveal on the timer: stages follow the clock through a round
-  await page.selectOption('#t-reveal', '2,3,full');
+  await page.selectOption('#t-practice', 'r2,3,full');
   check((await page.textContent('#timer-status')).includes('reveals in stages'), 'Reveal in the timer arms a staged round');
   await page.click('#t-play');
   check(await chip() && (await st()).bands === 2, 'the round starts at 2 values');
@@ -431,9 +431,9 @@ function check(cond, msg) {
   await page.evaluate(() => window.VST.app.countdown.finish(true));
   rs = await st();
   check(!(await chip()) && rs.bands === own.bands && rs.view === own.view, 'when the round ends, your own view comes back to compare');
-  await page.selectOption('#t-memory', '30');
-  check((await page.$eval('#t-reveal', (e) => e.value)) === '', 'memory mode and reveal are one or the other');
-  await page.selectOption('#t-memory', '0');
+  await page.selectOption('#t-practice', 'm30');
+  check(await page.evaluate(() => window.VST.app.settings.revealSeq === '' && window.VST.app.settings.memorySec === 30), 'memory mode and reveal are one or the other (one Practice menu)');
+  await page.selectOption('#t-practice', '');
   await page.click('#t-stop');
 
   // ---- Master Copy mode with stand-in museum ----
@@ -885,7 +885,7 @@ function check(cond, msg) {
   await pp.selectOption('#preset-select', { label: 'Soft 3' });
   await pp.click('#preset-delete');
   check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 0, 'delete removes my preset');
-  check(await pp.$eval('#preset-delete', (b) => b.disabled) === true || await presetValue() === '', 'built-in presets can’t be deleted');
+  check(await pp.$eval('#preset-delete', (b) => b.hidden) === true || await presetValue() === '', 'built-in presets can’t be deleted (no Delete button)');
 
   // try presets on a set of two photos
   pAnswers.push('Try-on set');
