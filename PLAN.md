@@ -21,7 +21,7 @@ We admire both and build on their *ideas*, not their design, layout, wording or 
 
 ## Where things stand
 
-v1, v2, the v3 color tools and syncing across devices are complete (25 merged pull requests). The sidebar has five tabs:
+v1, v2, the v3 color tools and syncing across devices are complete (27 merged pull requests). The sidebar has five tabs:
 
 - **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; a **history** of everything studied; and **Sync**, which keeps sets, presets, history, the log and your own photos the same across devices with a sync code (or by scanning its QR code).
 - **Study** (ordered by how often things are used):
@@ -32,7 +32,7 @@ v1, v2, the v3 color tools and syncing across devices are complete (25 merged pu
   - the value bars;
   - splits (fit to image, even, or dragged) and how values are painted (area average by default, even steps, or custom marker values);
   - **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
-- **Color:** the picture's colors in a Munsell-style 3D color space (value up the middle, hue around, chroma outward; positions are CIE Lab, so close to Munsell, not exact). Optional ghost of the colors not in the picture, main colors ringed, and a large view to turn, zoom, slice by value and tap a color to read it. Figures: main hue, strongest colors, share near gray, value range.
+- **Color:** the picture's colors in a Munsell-style 3D color space (value up the middle, hue around, chroma outward; positions are CIE Lab, so close to Munsell, not exact). Optional ghost of the colors not in the picture, main colors ringed, and a large view to turn, zoom, slice by value and tap a color to read it and see where it is in the picture (matches in color, ringed in white, the rest in faded gray; **Match** widens it to close or similar colors; tap the picture to find a spot's color in the space). Figures: main hue, strongest colors, share near gray, value range.
 - **Limited palette** (Color tab): presets or your own paints; how much of the picture it can mix and what it can't; optionally its range in the color space (colors it can't mix are faded); rough recipes; and a **Palette** study tone that repaints with the nearest mixes and stripes what's out of reach.
 - **Canvas:** composition guides (rule of thirds, golden section, diagonals with their reciprocals, and lines through the crossings), also shown in Crop for framing reference photos; grid (any columns × rows, square cells, diagonals); and downloads (study, cropped original, side-by-side or comparison sheet).
 - **Log:** practice time this week, streaks, a month calendar shaded by time, and per-day detail of what was studied. Downloads as CSV.
@@ -46,11 +46,12 @@ Nothing is in progress. The owner picks what's next; these are the ideas so far,
 1. **Real accounts** for sync (the last step of the sync plan): probably Supabase, through the same adapter in `js/sync.js`. See [Real accounts, later](#real-accounts-later).
 2. **Diagonal construction grid** (below), once the composition guides have been tried on real photos.
 3. **Palette follow-ups:** match a paint's color or strength to a brand, named palettes, recipes for the study's swatches, a mixing chart.
-4. **Color space follow-ups:** tap a color to see where it is in the picture; exact Munsell notation from the Munsell renotation data.
+4. **Color space follow-ups:** a gamut mask.
 
 Done, for reference:
 
-- **Color gamut view:** done (the Color tab, as a 3D color space). Ideas for later: tap a color to highlight where it is in the picture; true Munsell notation from the Munsell renotation data instead of the Lab approximation; a gamut mask.
+- **Color gamut view:** done (the Color tab, as a 3D color space). Tap a color to see where it is in the picture: done. Exact Munsell notation: done (below). Idea for later: a gamut mask.
+- **Munsell notation:** readings use the Munsell renotation data (Newhall, Nickerson & Judd, JOSA 33(7), 1943; `real.dat` from RIT's Munsell Color Science Laboratory), built into `data/munsell-renotation.js` by `tools/build_munsell.py`. No license is stated on the data. It's a table of measured values from a 1943 scientific report, and it's redistributed freely (colour-science, BSD; the R `munsell` package, MIT), so the owner OK'd using it with a credit line. Don't confuse it with the 2021 "re-renotation" on IEEE DataPort, which is CC BY-NC-SA. `js/munsell.js` is written for this app: Lab is adapted from D65 to Illuminant C (Bradford), value comes from Y by ASTM D1535 (so the file's 1/0.975 Y scaling doesn't matter), and hue and chroma are found by searching the data's x, y loci. Values under 1 or over 9, and chroma past the data, are extended, so they're less exact. The 3D layout itself stays CIE Lab.
 - **Limited-palette recolor:** done. Mixing uses spectral.js 3.0.0 (MIT), vendored unchanged in `js/vendor/`. Each paint is a typical masstone color with a tinting strength tuned by eye so its tints behave roughly like the real paint (in `js/palette.js`). Ideas for later: let a painter adjust a paint's color or strength to match their brand; save palettes by name; show recipes for the study's swatches; a mixing chart of the palette.
 
 Composition, next step:

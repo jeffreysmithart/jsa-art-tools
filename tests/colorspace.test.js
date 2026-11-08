@@ -92,3 +92,54 @@ test('a white edge rings the match, so even a single pixel shows', () => {
   assert.ok(!white(3, 3), 'the match itself keeps its color');
   for (const [x, y] of [[1, 1], [5, 3], [0, 0]]) assert.ok(!white(x, y), `no edge at ${x},${y}`);
 });
+
+/* ---------- exact Munsell notation (renotation data) ---------- */
+
+require(path.join(__dirname, '../data/munsell-renotation.js'));
+require(path.join(__dirname, '../js/munsell.js'));
+const MX = globalThis.VST.munsellExact;
+const hueGap = (p, q) => Math.abs(((p - q + 150) % 100) - 50);
+
+test('every renotation color reads back as itself', () => {
+  const D = globalThis.VST.munsellData;
+  let n = 0;
+  D.loci.forEach((plane, vi) =>
+    plane.forEach((pts, h) => {
+      for (let k = 0; k < pts.length; k += 2) {
+        const [H, V, Cc] = [h * 2.5, D.values[vi], k + 2];
+        const m = MX.fromLab(...MX.toLab(H, V, Cc));
+        assert.ok(hueGap(m.hue, H) < 0.01 && Math.abs(m.value - V) < 0.01 && Math.abs(m.chroma - Cc) < 0.01, `${H} ${V}/${Cc}`);
+        n++;
+      }
+    })
+  );
+  assert.equal(n, 2729);
+});
+
+test('colors between the data points read back too', () => {
+  for (const [H, V, Cc] of [[3.75, 5.5, 7], [41.2, 2.3, 3.1], [77.7, 8.4, 9], [98.9, 6.6, 12.5], [61, 4, 1.2]]) {
+    const m = MX.fromLab(...MX.toLab(H, V, Cc));
+    assert.ok(hueGap(m.hue, H) < 0.05 && Math.abs(m.value - V) < 0.01 && Math.abs(m.chroma - Cc) < 0.05, `${H} ${V}/${Cc}: ${JSON.stringify(m)}`);
+  }
+});
+
+test('screen colors get the notation published conversions give', () => {
+  const read = (r, g, b) => MX.notation(MX.fromLab(...C.rgbToLab(r, g, b, [0, 0, 0])));
+  assert.equal(read(255, 0, 0), '7.8R 5.2/20'); // sRGB red
+  assert.equal(read(0, 0, 255), '7PB 3.3/27'); // sRGB blue
+  assert.match(read(0, 255, 0), /^9\.\dGY 8\.7\/19$/); // sRGB green
+  assert.equal(read(128, 128, 128), 'N 5.3/');
+  assert.equal(read(255, 255, 255), 'N 10/');
+});
+
+test('value follows ASTM D1535, and hue numbers name their families', () => {
+  assert.ok(Math.abs(MX.valueToY(10) - 100) < 0.01);
+  assert.ok(Math.abs(MX.valueToY(5) - 19.77 * 0.975) < 0.05, 'the 1943 Y, scaled by 0.975');
+  assert.ok(Math.abs(MX.yToValue(MX.valueToY(3.7)) - 3.7) < 1e-6);
+  assert.deepEqual(MX.family(10), { code: 'R', name: 'red', step: 10 });
+  assert.deepEqual(MX.family(12.5), { code: 'YR', name: 'orange', step: 2.5 });
+  assert.equal(MX.family(0).code, 'RP');
+  assert.equal(MX.family(99.97).step, 10, '10RP, not 0R');
+  assert.equal(MX.notation({ hue: 47.5, value: 6.04, chroma: 8.4 }), '7.5G 6/8');
+  assert.equal(MX.notation({ hue: null, value: 2.26, chroma: 0.2 }), 'N 2.3/');
+});
