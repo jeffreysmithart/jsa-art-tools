@@ -198,6 +198,16 @@ function check(cond, msg) {
   const zornReach = await reachOf();
   const outName = await page.$eval('#pal-stats .stat:nth-child(2) b', (e) => e.textContent);
   check(zornReach < povReach && /green/i.test(outName) && /blue/i.test(outName), `without a blue, Zorn reaches less of this landscape, missing its ${outName.toLowerCase()} (${zornReach}%)`);
+  // which paint would help: Zorn has no blue, so a blue or green should top the list
+  await page.waitForSelector('#pal-suggest .pal-sg', { timeout: 15000 });
+  const topAdd = await page.$eval('#pal-suggest .pal-sg', (b) => ({ name: b.querySelector('.nm').textContent, gain: parseInt(b.querySelector('b').textContent.replace('+', ''), 10) }));
+  check(/blue|green|viridian/i.test(topAdd.name) && topAdd.gain > 0, `for this landscape, Zorn's best addition is a blue or green (${topAdd.name} +${topAdd.gain}%)`);
+  check(/Least needed here/.test(await page.textContent('#pal-suggest')), 'it also says which paint is least needed');
+  await page.click('#pal-suggest .pal-sg');
+  await page.waitForFunction((r) => parseInt(document.querySelector('#pal-stats .stat b').textContent, 10) > r, zornReach, { timeout: 3000 }).catch(() => {});
+  const withTop = await reachOf();
+  check(Math.abs(withTop - (zornReach + topAdd.gain)) <= 1 && (await page.$$('#pal-paints .pal-chip')).length === 5, `tapping it adds the paint, and the reach goes up by what it said (${zornReach}% + ${topAdd.gain}% -> ${withTop}%)`);
+  await page.selectOption('#pal-preset', 'zorn');
   await page.selectOption('#pal-add', 'ultramarine');
   check((await page.$eval('#pal-preset', (e) => e.value)) === 'custom' && (await reachOf()) > zornReach, 'adding ultramarine to Zorn makes it my palette and reaches more');
   await page.click('#pal-paints .pal-chip:nth-child(1) .pal-remove');
@@ -223,6 +233,20 @@ function check(cond, msg) {
   await page.keyboard.press('k');
   check(await page.evaluate(() => window.VST.app.settings.tone === 'gray'), 'K goes from Palette back to grayscale');
   await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.selectOption('#pal-preset', 'pov');
+  // compare palettes: every preset painted on this picture, the one that reaches most first
+  await page.click('#pal-compare');
+  await page.waitForSelector('#palcmp-grid .pal-tile', { timeout: 15000 });
+  const palTiles = await page.$$eval('#palcmp-grid .pal-tile', (els) => els.map((e) => ({ name: e.querySelector('.pt-name').textContent, reach: parseInt(e.querySelector('.pt-reach b').textContent, 10), yours: e.classList.contains('current') })));
+  const presetCount = await page.evaluate(() => window.VST.palette.PRESETS.length);
+  check(palTiles.length === presetCount && palTiles.every((t, i) => i === 0 || t.reach <= palTiles[i - 1].reach), `Compare palettes shows every preset, the best reach first (${palTiles.map((t) => `${t.name} ${t.reach}%`).join(', ')})`);
+  const yours = palTiles.filter((t) => t.yours);
+  check(yours.length === 1 && /Prussian/.test(yours[0].name) && yours[0].reach === povReach, 'your palette is marked, with the reach the Color tab shows');
+  check((await page.$$eval('#palcmp-grid canvas', (cs) => cs.filter((c) => c.width > 0).length)) === palTiles.length, 'each palette paints the picture');
+  await page.screenshot({ path: path.join(OUT, '2f-compare-palettes.png') });
+  await page.click('#palcmp-grid .pal-tile:has-text("Zorn")');
+  check(!(await page.isVisible('#palcmp-modal')) && (await page.$eval('#pal-preset', (e) => e.value)) === 'zorn' && await page.evaluate(() => window.VST.app.settings.tone === 'palette'), 'tapping a palette paints the study with it');
+  await page.keyboard.press('k');
   await page.selectOption('#pal-preset', 'pov');
 
 

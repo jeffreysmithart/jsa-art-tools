@@ -237,6 +237,72 @@
     return { reached, outShare: Math.max(0, 1 - reached), outCells, outHue };
   }
 
+  /**
+   * Repaints a Lab image ({ L, A, B }) with the palette's nearest mixes into
+   * RGBA bytes `out`. With `mark`, thin diagonal lines (sized to the image,
+   * light on dark mixes and dark on light ones) stripe what it can't reach.
+   * Returns how many pixels each mix covers (Map: mix index -> count).
+   */
+  function paint(model, lab, out, width, { mark = true } = {}) {
+    const n = lab.L.length;
+    const counts = new Map();
+    const w = width || n;
+    const period = Math.max(8, Math.round(w / 70));
+    const line = Math.max(2, Math.round(period * 0.28));
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      const hit = nearestCached(model, lab.L[i], lab.A[i], lab.B[i]);
+      const m = model.mixes[hit.i];
+      counts.set(hit.i, (counts.get(hit.i) || 0) + 1);
+      let r = m.rgb[0];
+      let g = m.rgb[1];
+      let b = m.rgb[2];
+      if (mark && hit.d > REACH && ((i % w) + ((i / w) | 0)) % period < line) {
+        const ink = m.L > 55 ? 0 : 255;
+        r = r * 0.35 + ink * 0.65;
+        g = g * 0.35 + ink * 0.65;
+        b = b * 0.35 + ink * 0.65;
+      }
+      out[j] = r;
+      out[j + 1] = g;
+      out[j + 2] = b;
+      out[j + 3] = 255;
+    }
+    return counts;
+  }
+
+  /**
+   * The palettes to try for "which paint would help": the palette with each
+   * paint it doesn't have added, and (if it has more than one) with each of
+   * its paints taken out. [{ kind: 'add' | 'drop', id, ids }]
+   */
+  function variations(ids) {
+    const have = paintsFor(ids).map((p) => p.id);
+    const out = [];
+    for (const p of PIGMENTS) if (!have.includes(p.id)) out.push({ kind: 'add', id: p.id, ids: [...have, p.id] });
+    if (have.length > 1) for (const id of have) out.push({ kind: 'drop', id, ids: have.filter((x) => x !== id) });
+    return out;
+  }
+
+  /**
+   * Ranks tried variations against the palette's own reach: the paints that
+   * add the most, and the ones it needs least. `tried` is
+   * [{ kind, id, reached, outCells }]; `base` is the palette's reach().
+   * Returns { adds: [{ id, gain, gained (cells newly reached) }], drops: [{ id, loss }] },
+   * adds by gain and drops by loss, both largest effect first for adds and
+   * smallest loss first for drops.
+   */
+  function rank(base, tried) {
+    const adds = tried
+      .filter((t) => t.kind === 'add')
+      .map((t) => ({ id: t.id, gain: t.reached - base.reached, gained: [...base.outCells].filter((c) => !t.outCells.has(c)) }))
+      .sort((p, q) => q.gain - p.gain || PIGMENTS.indexOf(byId.get(p.id)) - PIGMENTS.indexOf(byId.get(q.id)));
+    const drops = tried
+      .filter((t) => t.kind === 'drop')
+      .map((t) => ({ id: t.id, loss: Math.max(0, base.reached - t.reached) }))
+      .sort((p, q) => p.loss - q.loss);
+    return { adds, drops };
+  }
+
   /** "mostly yellow ochre and titanium white, a touch of vermilion" (roughly; paint brands vary). */
   function recipe(parts) {
     const total = parts.reduce((s, [, f]) => s + f, 0) || 1;
@@ -255,5 +321,5 @@
     return out.join(', ');
   }
 
-  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, recipe };
+  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, paint, variations, rank, recipe };
 })(typeof window !== 'undefined' ? window : globalThis);
