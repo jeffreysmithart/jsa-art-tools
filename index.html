@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08d">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08f">
 </head>
 <body>
   <header class="topbar">
@@ -110,6 +110,46 @@
           <p class="hint" id="history-empty">Images you study show up here, even after a refresh.</p>
           <button class="btn tiny" id="history-clear" type="button">Clear history</button>
         </details>
+      </section>
+
+      <!-- Sync: the same sets, presets, history and log on every device -->
+      <section class="group" id="sec-sync" hidden>
+        <h2>Sync</h2>
+        <div id="sync-off">
+          <p class="hint">Keep study sets, presets, history and the practice log the same on your iPad, Mac and iPhone.</p>
+          <div class="row tight">
+            <button class="btn" id="sync-turn-on" type="button">Turn on sync</button>
+            <button class="btn" id="sync-join-open" type="button" aria-expanded="false" aria-controls="sync-join">Join with a code</button>
+          </div>
+          <form id="sync-join" class="inline-form sync-join" hidden>
+            <input type="text" id="sync-code-input" class="code-input" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-…" aria-label="Sync code">
+            <button class="btn primary" type="submit">Join</button>
+          </form>
+        </div>
+        <div id="sync-on-box" hidden>
+          <p class="sync-status" id="sync-status"><span class="sync-dot" aria-hidden="true"></span><span id="sync-status-text"></span></p>
+          <div class="row tight">
+            <button class="btn tiny" id="sync-now" type="button">Sync now</button>
+            <button class="btn tiny" id="sync-show" type="button" aria-expanded="false" aria-controls="sync-code-box">Show my code</button>
+            <span class="spacer"></span>
+            <button class="btn tiny" id="sync-stop" type="button">Stop syncing</button>
+          </div>
+          <div class="sync-code-box" id="sync-code-box" hidden>
+            <code class="sync-code" id="sync-code"></code>
+            <div class="row tight">
+              <button class="btn tiny" id="sync-copy" type="button">Copy</button>
+              <button class="btn tiny" id="sync-share" type="button" hidden>Share…</button>
+            </div>
+            <p class="hint">On another device, choose <b>Join with a code</b> and enter this. Keep it private: it’s the key to your synced copy, and it can’t be recovered if it’s lost.</p>
+            <details class="howto">
+              <summary>Delete the synced copy</summary>
+              <p>Removes the copy kept online, for every device. Each device keeps what it has.</p>
+              <button class="btn tiny danger" id="sync-delete" type="button">Delete the synced copy</button>
+            </details>
+          </div>
+          <p class="fine">Your own uploaded photos stay on the device they were added on for now; syncing them is next.</p>
+        </div>
+        <p class="msg" id="sync-msg" role="status"></p>
       </section>
       </div>
 
@@ -600,23 +640,24 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08d"></script>
-  <script src="js/process.js?v=2026-11-08d"></script>
-  <script src="js/config.js?v=2026-11-08d"></script>
-  <script src="js/museum.js?v=2026-11-08d"></script>
-  <script src="js/sync-merge.js?v=2026-11-08d"></script>
-  <script src="js/library.js?v=2026-11-08d"></script>
-  <script src="js/presets.js?v=2026-11-08d"></script>
-  <script src="js/log.js?v=2026-11-08d"></script>
-  <script src="js/timer.js?v=2026-11-08d"></script>
-  <script src="js/compose.js?v=2026-11-08d"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08d"></script>
-  <script src="js/palette.js?v=2026-11-08d"></script>
-  <script src="js/colorspace.js?v=2026-11-08d"></script>
-  <script src="js/gamut.js?v=2026-11-08d"></script>
-  <script src="js/crop.js?v=2026-11-08d"></script>
-  <script src="js/warp.js?v=2026-11-08d"></script>
-  <script src="js/squareup.js?v=2026-11-08d"></script>
-  <script src="js/app.js?v=2026-11-08d"></script>
+  <script src="js/color.js?v=2026-11-08f"></script>
+  <script src="js/process.js?v=2026-11-08f"></script>
+  <script src="js/config.js?v=2026-11-08f"></script>
+  <script src="js/museum.js?v=2026-11-08f"></script>
+  <script src="js/sync-merge.js?v=2026-11-08f"></script>
+  <script src="js/library.js?v=2026-11-08f"></script>
+  <script src="js/presets.js?v=2026-11-08f"></script>
+  <script src="js/log.js?v=2026-11-08f"></script>
+  <script src="js/sync.js?v=2026-11-08f"></script>
+  <script src="js/timer.js?v=2026-11-08f"></script>
+  <script src="js/compose.js?v=2026-11-08f"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08f"></script>
+  <script src="js/palette.js?v=2026-11-08f"></script>
+  <script src="js/colorspace.js?v=2026-11-08f"></script>
+  <script src="js/gamut.js?v=2026-11-08f"></script>
+  <script src="js/crop.js?v=2026-11-08f"></script>
+  <script src="js/warp.js?v=2026-11-08f"></script>
+  <script src="js/squareup.js?v=2026-11-08f"></script>
+  <script src="js/app.js?v=2026-11-08f"></script>
 </body>
 </html>

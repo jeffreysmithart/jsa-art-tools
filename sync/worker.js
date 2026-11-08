@@ -21,7 +21,14 @@
  * Bindings: SYNC (an R2 bucket). Optional: ALLOWED_ORIGINS (comma-separated).
  */
 
-const DEFAULT_ORIGINS = ['https://jeffreysmithart.github.io', 'http://localhost:8000', 'http://localhost:8765'];
+// the app's addresses: its own domain, the GitHub Pages address, and local testing
+const DEFAULT_ORIGINS = [
+  'https://jeffreysmithdesigner.com',
+  'https://www.jeffreysmithdesigner.com',
+  'https://jeffreysmithart.github.io',
+  'http://localhost:8000',
+  'http://localhost:8765',
+];
 const MAX_DOC = 5 * 1024 * 1024; // 5 MB per document
 const MAX_TOTAL = 2 * 1024 * 1024 * 1024; // 2 GB per id
 const RATE = { perMinute: 120 }; // requests per id per minute (per Worker instance)

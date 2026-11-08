@@ -1028,6 +1028,63 @@ function check(cond, msg) {
   check(fieldSizes.every((f) => f >= 16), `on iPad, text fields and menus are 16px (no zoom on focus): ${[...new Set(fieldSizes)].join(', ')}px`);
   await ipad.close();
 
+  // ---- Sync: two devices with the same code, against a local sync service ----
+  const { spawn } = require('child_process');
+  const syncPort = 8799;
+  const syncServer = spawn(process.execPath, [path.join(__dirname, 'sync-dev.mjs'), String(syncPort)], { stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 600));
+    const syncConfig = `window.VST=window.VST||{};window.VST.config={imageRelay:'',syncService:'http://localhost:${syncPort}'};`;
+    const device = async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const pg = await ctx.newPage();
+      aware(pg);
+      pg.on('pageerror', (e) => errors.push(e.message));
+      pg.on('dialog', (d) => d.accept());
+      await pg.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: syncConfig }));
+      await pg.goto(BASE);
+      await pg.evaluate(() => window.VST.app.setPanel('images'));
+      return { ctx, pg };
+    };
+    const mac = await device();
+    const ipad = await device();
+    const synced = (pg) => pg.waitForFunction(() => { const s = window.VST.sync.status(); return s.on && !s.busy && s.lastSync > 0; }, null, { timeout: 8000 });
+    check(await mac.pg.isVisible('#sec-sync') && await mac.pg.isVisible('#sync-turn-on'), 'the Sync section offers to turn sync on');
+    // the Mac has a set; turning sync on shows its code
+    await mac.pg.evaluate(() => { const L = window.VST.library; const s = L.createSet('Inness'); L.addToSet(s.id, { id: 'aic-100', source: 'aic', title: 'Landscape 1', artist: 'George Inness' }); });
+    await mac.pg.click('#sync-turn-on');
+    await synced(mac.pg);
+    const code = (await mac.pg.textContent('#sync-code')).trim();
+    check(/^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(code) && await mac.pg.isVisible('#sync-code-box'), `turning sync on shows a code to use on other devices (${code.slice(0, 5)}-…)`);
+    check(/Synced just now/.test(await mac.pg.textContent('#sync-status')), 'the status says it’s synced');
+    // the iPad joins with the code and gets the set
+    await ipad.pg.click('#sync-join-open');
+    await ipad.pg.fill('#sync-code-input', 'not a code');
+    await ipad.pg.click('#sync-join button[type=submit]');
+    check(/doesn’t look like a sync code/.test(await ipad.pg.textContent('#sync-msg')), 'a mistyped code is caught before anything is sent');
+    await ipad.pg.fill('#sync-code-input', code.toLowerCase());
+    await ipad.pg.click('#sync-join button[type=submit]');
+    await synced(ipad.pg);
+    check(await ipad.pg.$eval('#set-select', (s) => [...s.options].some((o) => o.textContent.includes('Inness'))), 'joining with the code brings the Mac’s set to the iPad');
+    check(/2 devices/.test(await ipad.pg.textContent('#sync-status')), `the status counts both devices (${(await ipad.pg.textContent('#sync-status')).trim()})`);
+    // a change on the iPad reaches the Mac
+    await ipad.pg.evaluate(() => { const L = window.VST.library; const s = L.sets()[0]; L.renameSet(s.id, 'Inness, late'); });
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
+    check(true, 'a rename on the iPad shows up on the Mac after syncing');
+    await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
+    // stop syncing: the data stays on the device
+    await ipad.pg.click('#sync-stop');
+    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1), 'stopping sync keeps this device’s data');
+    await mac.ctx.close();
+    await ipad.ctx.close();
+  } finally {
+    syncServer.kill();
+  }
+
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   aware(phone);

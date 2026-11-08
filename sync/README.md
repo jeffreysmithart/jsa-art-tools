@@ -3,7 +3,7 @@
 Keeps study sets, presets, history and the practice log in step across your devices. See PLAN.md, "Syncing across devices", for how it works.
 
 - **It never sees anything readable.** Devices encrypt everything with a key made from the sync code before sending it. The service stores encrypted bytes, a storage id and a hash of the write token, all made from the code.
-- **Only the app's site can use it** (`https://jeffreysmithart.github.io`, plus `localhost` for testing). Change the list with an `ALLOWED_ORIGINS` variable, comma-separated.
+- **Only the app's site can use it** (`https://jeffreysmithdesigner.com`, with or without `www.`, and `https://jeffreysmithart.github.io`, plus `localhost` for testing). Change the list with an `ALLOWED_ORIGINS` variable, comma-separated.
 - **Limits:**
   - 5 MB per document and 2 GB per sync code.
   - 120 requests a minute per sync code.
