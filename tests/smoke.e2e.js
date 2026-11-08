@@ -1076,9 +1076,25 @@ function check(cond, msg) {
     await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
     check(true, 'a rename on the iPad shows up on the Mac after syncing');
     await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
+    // a photo uploaded on the Mac opens on the iPad
+    await mac.pg.setInputFiles('#file-input', { name: 'my-sketch.png', mimeType: 'image/png', buffer: png });
+    await mac.pg.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.source === 'upload');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload'));
+    await mac.pg.click('#sync-now');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.photo), null, { timeout: 8000 });
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const opened = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      if (!it) return 'no item';
+      const ok = await window.VST.app.openItem(it);
+      return ok && window.VST.app.work.w > 0 ? `${window.VST.app.work.w}x${window.VST.app.work.h}` : 'not opened';
+    });
+    check(/^\d+x\d+$/.test(opened), `a photo uploaded on the Mac opens on the iPad (${opened})`);
     // stop syncing: the data stays on the device
     await ipad.pg.click('#sync-stop');
-    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1), 'stopping sync keeps this device’s data');
+    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1 && window.VST.library.history().length >= 1), 'stopping sync keeps this device’s data');
     await mac.ctx.close();
     await ipad.ctx.close();
   } finally {

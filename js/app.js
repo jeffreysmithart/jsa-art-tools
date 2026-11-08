@@ -2286,7 +2286,14 @@
         renderLibrary();
         return true;
       } catch (e) {
-        toast(SY.status().on ? 'That photo is on the device it was added on: syncing photos is coming next.' : 'That photo is no longer stored in this browser.', true);
+        toast(
+          SY.status().on && item.photo
+            ? 'Couldn’t get that photo from your synced copy. Check the connection and try again.'
+            : SY.status().on
+              ? 'That photo hasn’t synced yet: open the app on the device it was added on, and it will upload.'
+              : 'That photo is no longer stored in this browser.',
+          true
+        );
         return false;
       } finally {
         setBusy(false);

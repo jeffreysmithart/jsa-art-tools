@@ -40,7 +40,7 @@ test('only the site (and local testing) can use it', async () => {
 test('the first write claims the id; after that the token must match', async () => {
   const env = { SYNC: memoryBucket() };
   assert.equal((await call(env, 'GET', `/v1/${ID}`, { token: null })).status, 401, 'no token');
-  assert.deepEqual(await (await call(env, 'GET', `/v1/${ID}`)).json(), { docs: [] }, 'nothing stored yet');
+  assert.deepEqual(await (await call(env, 'GET', `/v1/${ID}`)).json(), { docs: [], photos: [] }, 'nothing stored yet');
   const put = await call(env, 'PUT', `/v1/${ID}/doc/sets`, { body: 'cipher-1', headers: { 'If-None-Match': '*' } });
   assert.equal(put.status, 200);
   assert.equal((await call(env, 'GET', `/v1/${ID}`, { token: hex('c') })).status, 403, 'another token can’t read it');
@@ -112,7 +112,7 @@ test('turning sync off deletes everything for the id', async () => {
   const del = await call(env, 'DELETE', `/v1/${ID}`);
   assert.equal(del.status, 200);
   assert.equal((await del.json()).deleted, 4, 'three documents and the claim');
-  assert.deepEqual(await (await call(env, 'GET', `/v1/${ID}`)).json(), { docs: [] });
+  assert.deepEqual(await (await call(env, 'GET', `/v1/${ID}`)).json(), { docs: [], photos: [] });
   assert.ok([...env.SYNC.store.keys()].some((k) => k.startsWith(`u/${hex('d')}/`)), 'other ids are untouched');
 });
 
@@ -122,4 +122,24 @@ test('a runaway loop is slowed down', () => {
   for (let i = 0; i < 121; i++) limited = rateLimited('loop', t);
   assert.equal(limited, true);
   assert.equal(rateLimited('loop', t + 60000), false, 'a minute later it’s fine again');
+});
+
+test('photos: stored once, read back, listed, and removed', async () => {
+  const env = { SYNC: memoryBucket() };
+  const P = hex('e');
+  const put = (body) => call(env, 'PUT', `/v1/${ID}/photo/${P}`, { body });
+  assert.equal((await put(new Uint8Array([9, 8, 7]))).status, 200);
+  const again = await put(new Uint8Array([1]));
+  assert.equal((await again.json()).already, true, 'a second upload of the same name changes nothing');
+  const got = await call(env, 'GET', `/v1/${ID}/photo/${P}`);
+  assert.deepEqual([...new Uint8Array(await got.arrayBuffer())], [9, 8, 7]);
+  const list = await (await call(env, 'GET', `/v1/${ID}`)).json();
+  assert.deepEqual(list.photos.map((p) => [p.name, p.size]), [[P, 3]]);
+  assert.ok(list.photos[0].uploaded, 'with when it was uploaded');
+  assert.equal(list.docs.length, 0, 'photos aren’t listed as documents');
+  assert.equal((await call(env, 'GET', `/v1/${ID}/photo/${P}`, { token: hex('c') })).status, 403, 'another token can’t read it');
+  assert.equal((await call(env, 'PUT', `/v1/${ID}/photo/not-a-name`, { body: 'x' })).status, 400);
+  assert.equal((await call(env, 'PUT', `/v1/${ID}/photo/${hex('f')}`, { body: new Uint8Array(15 * 1024 * 1024 + 1) })).status, 413);
+  assert.equal((await call(env, 'DELETE', `/v1/${ID}/photo/${P}`)).status, 200);
+  assert.equal((await call(env, 'GET', `/v1/${ID}/photo/${P}`)).status, 404);
 });

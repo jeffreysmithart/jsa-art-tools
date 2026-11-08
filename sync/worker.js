@@ -12,12 +12,18 @@
  *                                   (If-Match: <version>) or that it's new (If-None-Match: *).
  *                                   If it changed meanwhile: 412, and the device pulls,
  *                                   merges and tries again.
+ *   GET    /v1/<id>/photo/<name>    one photo (encrypted bytes)
+ *   PUT    /v1/<id>/photo/<name>    store a photo; photos never change, so a second
+ *                                   upload of the same name just says it's there
+ *   DELETE /v1/<id>/photo/<name>    remove a photo nothing uses any more
  *   DELETE /v1/<id>                 delete everything for this id (turning sync off)
  *
  * Every request needs "Authorization: Bearer <token>". The first write to
  * an id records a hash of its token; after that, the token must match.
  *
- * Document names: sets, presets, history, or log/<deviceId>.
+ * Document names: sets, presets, history, or log/<deviceId>. Photo names are
+ * 64 hex characters, made on the device from the photo and the sync code's
+ * key, so they say nothing about the photo.
  * Bindings: SYNC (an R2 bucket). Optional: ALLOWED_ORIGINS (comma-separated).
  */
 
@@ -30,12 +36,14 @@ const DEFAULT_ORIGINS = [
   'http://localhost:8765',
 ];
 const MAX_DOC = 5 * 1024 * 1024; // 5 MB per document
+const MAX_PHOTO = 15 * 1024 * 1024; // 15 MB per photo
 const MAX_TOTAL = 2 * 1024 * 1024 * 1024; // 2 GB per id
 const RATE = { perMinute: 120 }; // requests per id per minute (per Worker instance)
 
 const ID = /^[0-9a-f]{64}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
 const NAME = /^(sets|presets|history|log\/d-[a-z0-9-]{1,40})$/;
+const PHOTO = /^[0-9a-f]{64}$/;
 
 function origins(env) {
   const extra = env && env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : [];
@@ -132,25 +140,69 @@ export default {
     if (!env || !env.SYNC) return json(500, { error: 'Storage isn’t set up (missing SYNC bucket).' }, echo);
 
     const url = new URL(request.url);
-    const m = url.pathname.match(/^\/v1\/([^/]+)(?:\/doc\/(.+))?\/?$/);
+    const m = url.pathname.match(/^\/v1\/([^/]+)(?:\/(doc|photo)\/(.+))?\/?$/);
     if (!m) return json(404, { error: 'Not found.' }, echo);
     const id = m[1];
-    const name = m[2] ? decodeURIComponent(m[2]) : null;
+    const kind = m[2] || null;
+    const name = m[3] ? decodeURIComponent(m[3]) : null;
     if (!ID.test(id)) return json(400, { error: 'Bad id.' }, echo);
-    if (name !== null && !NAME.test(name)) return json(400, { error: 'Bad document name.' }, echo);
+    if (kind === 'doc' && !NAME.test(name)) return json(400, { error: 'Bad document name.' }, echo);
+    if (kind === 'photo' && !PHOTO.test(name)) return json(400, { error: 'Bad photo name.' }, echo);
     if (rateLimited(id)) return json(429, { error: 'Too many requests; try again in a minute.' }, echo, { 'Retry-After': '60' });
 
     const method = request.method;
     const isWrite = method === 'PUT';
     const denied = await authorize(env, id, request, echo, { claim: isWrite });
     const prefix = `u/${id}/doc/`;
+    const photos = `u/${id}/photo/`;
 
     // what's stored
     if (method === 'GET' && name === null) {
-      if (denied === 'empty') return json(200, { docs: [] }, echo);
+      if (denied === 'empty') return json(200, { docs: [], photos: [] }, echo);
       if (denied) return denied;
-      const objs = await listAll(env.SYNC, prefix);
-      return json(200, { docs: objs.map((o) => ({ name: o.key.slice(prefix.length), version: etagOf(o), size: o.size })) }, echo);
+      const objs = await listAll(env.SYNC, `u/${id}/`);
+      return json(
+        200,
+        {
+          docs: objs.filter((o) => o.key.startsWith(prefix)).map((o) => ({ name: o.key.slice(prefix.length), version: etagOf(o), size: o.size })),
+          photos: objs
+            .filter((o) => o.key.startsWith(photos))
+            .map((o) => ({ name: o.key.slice(photos.length), size: o.size, uploaded: o.uploaded ? new Date(o.uploaded).toISOString() : null })),
+        },
+        echo
+      );
+    }
+
+    // photos: stored once, read back, removed when nothing uses them
+    if (kind === 'photo') {
+      if (denied === 'empty') return json(404, { error: 'Not found.' }, echo);
+      if (denied) return denied;
+      const key = photos + name;
+      if (method === 'GET') {
+        const obj = await env.SYNC.get(key);
+        if (!obj) return json(404, { error: 'Not found.' }, echo);
+        return new Response(obj.body, {
+          status: 200,
+          headers: { ...corsHeaders(echo), 'Content-Type': 'application/octet-stream', 'Cache-Control': 'private, max-age=31536000, immutable' },
+        });
+      }
+      if (method === 'PUT') {
+        const len = Number(request.headers.get('Content-Length') || 0);
+        if (len > MAX_PHOTO) return json(413, { error: 'That photo is too large to sync.' }, echo);
+        if (await env.SYNC.head(key)) return json(200, { stored: true, already: true }, echo);
+        const body = await request.arrayBuffer();
+        if (body.byteLength > MAX_PHOTO) return json(413, { error: 'That photo is too large to sync.' }, echo);
+        const objs = await listAll(env.SYNC, `u/${id}/`);
+        const total = objs.reduce((s, o) => s + o.size, 0);
+        if (total + body.byteLength > MAX_TOTAL) return json(507, { error: 'Your synced copy is full.' }, echo);
+        await env.SYNC.put(key, body, { httpMetadata: { contentType: 'application/octet-stream' } });
+        return json(200, { stored: true }, echo);
+      }
+      if (method === 'DELETE') {
+        await env.SYNC.delete(key);
+        return json(200, { deleted: 1 }, echo);
+      }
+      return json(405, { error: 'Not allowed.' }, echo);
     }
 
     // one document

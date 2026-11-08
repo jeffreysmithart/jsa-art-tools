@@ -15,6 +15,13 @@
  *
  * Documents: sets, presets, history, and log/<deviceId> (each device's own
  * practice log; the others are only read).
+ *
+ * Photos: an uploaded photo is encrypted and stored once, under a name made
+ * from the photo and the code's key (so names say nothing about photos).
+ * Items in sets and history record that name as `photo`; another device
+ * fetches the photo the first time it's opened. Photos nothing uses any
+ * more are removed after a day, so one another device has just uploaded
+ * (and not yet linked) is never caught.
  */
 (function (root) {
   'use strict';
@@ -63,13 +70,22 @@
     const id = hex(await subtle.deriveBits(params('storage id'), base, 256));
     const token = hex(await subtle.deriveBits(params('write token'), base, 256));
     const key = await subtle.deriveKey(params('encryption key'), base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-    return { id, token, key };
+    const naming = await subtle.deriveKey(params('photo names'), base, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign']);
+    return { id, token, key, naming };
+  }
+
+  /** A photo's synced name: an HMAC of its bytes with the code's naming key. */
+  async function photoName(keys, bytes) {
+    return hex(await root.crypto.subtle.sign('HMAC', keys.naming, bytes));
   }
 
   /** A value as encrypted bytes: a 12-byte nonce, then the sealed JSON. */
-  async function seal(key, value) {
+  function seal(key, value) {
+    return sealBytes(key, enc.encode(JSON.stringify(value)));
+  }
+  async function sealBytes(key, bytes) {
     const iv = root.crypto.getRandomValues(new Uint8Array(12));
-    const data = await root.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(value)));
+    const data = await root.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes);
     const out = new Uint8Array(12 + data.byteLength);
     out.set(iv, 0);
     out.set(new Uint8Array(data), 12);
@@ -77,9 +93,11 @@
   }
 
   async function open(key, bytes) {
+    return JSON.parse(new TextDecoder().decode(await openBytes(key, bytes)));
+  }
+  async function openBytes(key, bytes) {
     const b = new Uint8Array(bytes);
-    const data = await root.crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, key, b.slice(12));
-    return JSON.parse(new TextDecoder().decode(data));
+    return root.crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12) }, key, b.slice(12));
   }
 
   /** JSON with object keys in a fixed order, so the same data always compares equal. */
@@ -112,12 +130,28 @@
       return err;
     };
     return {
+      /** { versions: { [doc]: version }, photos: [{ name, uploaded }] } */
       async list() {
         const r = await fetch(url(''), { headers: auth, cache: 'no-store' });
         if (!r.ok) throw await fail(r);
-        const out = {};
-        for (const d of (await r.json()).docs) out[d.name] = d.version;
-        return out;
+        const body = await r.json();
+        const versions = {};
+        for (const d of body.docs) versions[d.name] = d.version;
+        return { versions, photos: body.photos || [] };
+      },
+      async getPhoto(name) {
+        const r = await fetch(url(`/photo/${name}`), { headers: auth });
+        if (r.status === 404) return null;
+        if (!r.ok) throw await fail(r);
+        return r.arrayBuffer();
+      },
+      async putPhoto(name, bytes) {
+        const r = await fetch(url(`/photo/${name}`), { method: 'PUT', headers: { ...auth, 'Content-Type': 'application/octet-stream' }, body: bytes });
+        if (!r.ok) throw await fail(r);
+      },
+      async deletePhoto(name) {
+        const r = await fetch(url(`/photo/${name}`), { method: 'DELETE', headers: auth });
+        if (!r.ok && r.status !== 404) throw await fail(r);
       },
       async get(name) {
         const r = await fetch(url(`/doc/${name}`), { headers: auth, cache: 'no-store' });
@@ -224,11 +258,31 @@
 
   /* ---------- a sync pass ---------- */
 
+  const PHOTO_GRACE = 24 * 60 * 60 * 1000; // a day before an unused photo is removed
+
   async function pass() {
     const api = service(base(), keys);
-    const versions = await api.list();
+    const listed = await api.list();
+    const versions = listed.versions;
     const seen = state.seen || (state.seen = {});
     const changed = [];
+    const L = VST.library;
+
+    // photos first: upload any this device has that aren't synced yet, and
+    // record their names on the items, so the documents below carry them
+    const online = new Set(listed.photos.map((p) => p.name));
+    for (const { blobId } of L.uploadsToName()) {
+      const blob = await L.photoBlob(blobId);
+      if (!blob) continue; // on another device; that one will upload it
+      const bytes = await blob.arrayBuffer();
+      const name = await photoName(keys, bytes);
+      if (!online.has(name)) {
+        await api.putPhoto(name, await sealBytes(keys.key, bytes));
+        online.add(name);
+      }
+      L.namePhoto(blobId, name);
+      if (!changed.includes('photos')) changed.push('photos');
+    }
 
     for (const doc of documents()) {
       for (let attempt = 0; attempt < 4; attempt++) {
@@ -261,7 +315,7 @@
         if (put.conflict) {
           // another device saved in between: pull again and merge with that
           const fresh = await api.list();
-          versions[doc.name] = fresh[doc.name];
+          versions[doc.name] = fresh.versions[doc.name];
           continue;
         }
         seen[doc.name] = { version: put.version, hash: keptHash };
@@ -280,7 +334,7 @@
       if (put.conflict) {
         // only this device writes its log; take over whatever is there
         const fresh = await api.list();
-        put = await api.put(logName, await seal(keys.key, mine), fresh[logName] || null);
+        put = await api.put(logName, await seal(keys.key, mine), fresh.versions[logName] || null);
       }
       if (!put.conflict) seen[logName] = { version: put.version, hash: mineHash };
     }
@@ -314,7 +368,24 @@
       changed.push('log');
     }
     state.devices = 1 + Object.keys(others).length;
+
+    // photos nothing uses any more: remove them, once they're a day old
+    const inUse = L.photosInUse();
+    const now = Date.now();
+    for (const p of listed.photos) {
+      if (inUse.has(p.name)) continue;
+      const age = p.uploaded ? now - Date.parse(p.uploaded) : 0;
+      if (age > PHOTO_GRACE) await api.deletePhoto(p.name);
+    }
     return changed;
+  }
+
+  /** A photo this device doesn't have, from the synced copy: a Blob, or null. */
+  async function fetchPhoto(item) {
+    if (!state || !keys || !base() || !item || !item.photo) return null;
+    const sealed = await service(base(), keys).getPhoto(item.photo);
+    if (!sealed) return null;
+    return new Blob([await openBytes(keys.key, sealed)]);
   }
 
   /** Runs a sync pass now (or right after the one that's running). */
@@ -432,5 +503,8 @@
     window.addEventListener('online', () => state && syncNow());
   }
 
-  VST.sync = { newCode, normalize, format, keysFor, seal, open, stable, deviceName, status, onStatus, onApplied, resume, syncNow, turnOn, join, turnOff, CODE_LEN };
+  // when a set needs a photo this device doesn't have, fetch it from the synced copy
+  if (VST.library && VST.library.onMissingPhoto) VST.library.onMissingPhoto(fetchPhoto);
+
+  VST.sync = { newCode, normalize, format, keysFor, seal, open, sealBytes, openBytes, photoName, fetchPhoto, stable, deviceName, status, onStatus, onApplied, resume, syncNow, turnOn, join, turnOff, CODE_LEN, PHOTO_GRACE };
 })(typeof window !== 'undefined' ? window : globalThis);

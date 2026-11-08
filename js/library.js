@@ -158,17 +158,69 @@
     return (h >>> 0).toString(36);
   }
 
-  /** The stored photo for an uploaded item, as a Blob. */
+  /*
+   * Where to get an uploaded photo this device doesn't have (set by syncing):
+   * fn(item) -> Blob. The photo is kept here once fetched.
+   */
+  let fetchMissing = null;
+  function onMissingPhoto(fn) {
+    fetchMissing = fn;
+  }
+
+  /** The stored photo for an uploaded item, as a Blob (fetched from the synced copy if needed). */
   async function loadUpload(item) {
-    const blob = await getBlob(item.blobId);
+    let blob = await getBlob(item.blobId);
+    if (!blob && fetchMissing && item.photo) {
+      blob = await fetchMissing(item);
+      if (blob) await putBlob(item.blobId, blob);
+    }
     if (!blob) throw new Error('missing');
     return blob;
+  }
+
+  /* ---------- for syncing photos ---------- */
+
+  /** Uploaded photos in sets and history that don't have a synced name yet: [{ blobId }]. */
+  function uploadsToName() {
+    const seen = new Map();
+    const note = (it) => it && it.source === 'upload' && it.blobId && !it.photo && seen.set(it.blobId, { blobId: it.blobId });
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return [...seen.values()];
+  }
+  /** Records a photo's synced name on every item that uses it. */
+  function namePhoto(blobId, name) {
+    const list = sets();
+    let changed = false;
+    for (const s of list) {
+      for (const it of s.items) {
+        if (it.blobId === blobId && it.photo !== name) {
+          it.photo = name;
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveSets(list);
+    const h = history();
+    if (h.some((it) => it.blobId === blobId && it.photo !== name)) write(HISTORY_KEY, h.map((it) => (it.blobId === blobId ? { ...it, photo: name } : it)));
+  }
+  /** The synced names of the photos sets and history still use. */
+  function photosInUse() {
+    const used = new Set();
+    const note = (it) => it && it.photo && used.add(it.photo);
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return used;
+  }
+  /** This device's stored photo, if any (for uploading it). */
+  function photoBlob(blobId) {
+    return getBlob(blobId).catch(() => null);
   }
 
   /** Only the fields worth keeping (drops temporary ones like _order). */
   function clean(item) {
     const out = {};
-    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'added']) {
+    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'photo', 'added']) {
       if (item[k] !== undefined && item[k] !== '') out[k] = item[k];
     }
     return out;
@@ -389,6 +441,11 @@
     clean,
     setsDoc,
     applySetsDoc,
+    onMissingPhoto,
+    uploadsToName,
+    namePhoto,
+    photosInUse,
+    photoBlob,
     historyDoc,
     applyHistoryDoc,
   };
