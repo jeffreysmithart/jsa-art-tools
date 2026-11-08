@@ -99,5 +99,6 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it
 - `js/config.js`: site settings (the image relay address)
+- `sync/`: the sync service (a Cloudflare Worker with R2 storage; `node tests/sync-dev.mjs` runs it locally); not deployed or connected to the app yet
 - `relay/`: the Cloudflare image relay and its setup steps (`node tests/relay-dev.mjs` runs it locally)
 - `js/app.js`: the interface
