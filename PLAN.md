@@ -53,7 +53,7 @@ Smaller ideas raised along the way:
 
 ## Syncing across devices
 
-**Status:** step 1 (merge rules and local changes) is done; the service is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** steps 1 (merge rules and local changes) and 2 (the service, built and tested locally) are done. The service isn't deployed yet: that needs the owner's OK. The client is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
 
 ### Why
 
@@ -151,7 +151,7 @@ Moving from the sync code to an account would be one step: sign in on a synced d
    - Tombstones and `updated` times in sets and presets.
    - The log split into this device's own log plus other devices' logs, which the Log tab adds up.
    - Existing data migrates on first load.
-2. **The service.**
+2. **The service.** Built: `sync/worker.js` (with `sync/README.md` and `sync/wrangler.toml`), tested in `tests/sync.test.mjs` against an in-memory R2 bucket (`tests/r2-memory.mjs`); `node tests/sync-dev.mjs` runs it locally. Not deployed yet. As planned:
    - `sync/worker.js` with tests against an in-memory R2 stand-in, like `tests/relay-dev.mjs`.
    - Deploying it is outward-facing: ask the owner first.
 3. **The client:** sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
