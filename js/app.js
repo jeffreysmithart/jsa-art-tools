@@ -110,6 +110,8 @@
     return s;
   }
   const S = loadSettings();
+  // on a phone, two stacked images are small: start on the study alone
+  if (!(store.get('settings', {}) || {}).view && window.matchMedia && matchMedia('(max-width: 600px)').matches) S.view = 'study';
   if (S.view === 'compare') S.view = 'both'; // the study photo isn't kept between visits
   let saveTimer = 0;
   /*
@@ -531,6 +533,14 @@
     $('#palette-ctl').hidden = S.tone !== 'palette';
     $('#pal-mark').checked = S.palMark;
     $('#palette-name').textContent = paletteName();
+    const dots = $('#palette-dots');
+    dots.innerHTML = '';
+    for (const p of PAL.paintsFor(S.palette)) {
+      const d = document.createElement('i');
+      d.style.background = p.hex;
+      d.title = p.name;
+      dots.appendChild(d);
+    }
     $('#split-ctl').hidden = !grouped();
     $('#levels-ctl').hidden = !grouped();
     $('#levels-mode').value = S.levelsMode;
@@ -617,6 +627,10 @@
       bar.title = `Value ${valueLabel(b.L)} · ${Math.round(b.share * 100)}% of the picture`;
       track.appendChild(bar);
       el.appendChild(track);
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.style.background = bar.style.background;
+      el.appendChild(chip);
       if (editable) {
         const input = document.createElement('input');
         input.type = 'number';
@@ -1452,7 +1466,7 @@
       outLabel = text.charAt(0).toUpperCase() + text.slice(1);
     }
     const pct = (v) => (v > 0 && v < 0.01 ? '<1' : Math.round(v * 100));
-    stats.innerHTML = stat(`${pct(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `out of reach · ${pct(r.outShare)}% of the picture` : 'out of reach');
+    stats.innerHTML = stat(`${pct(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pct(r.outShare)}%)` : 'it can’t mix');
   }
 
   /** A new set of paints: rebuild what it mixes and repaint what shows it. */
@@ -2556,7 +2570,7 @@
     group('Built-in', all.filter((p) => p.builtin));
     group('My presets', all.filter((p) => !p.builtin));
     sel.value = match ? match.id : '';
-    $('#preset-delete').disabled = !match || match.builtin;
+    $('#preset-delete').hidden = !match || match.builtin;
     $('#preset-desc').textContent = match ? PR.describe(match) : '';
   }
 
@@ -2939,17 +2953,28 @@
   function setMemory(sec) {
     S.memorySec = sec;
     if (sec) S.memoryLast = sec;
-    $('#t-memory').value = String(sec);
-    if (sec && S.revealSeq) {
-      S.revealSeq = ''; // a hidden image can't also be revealed in stages
-      $('#t-reveal').value = '';
-    }
+    if (sec && S.revealSeq) S.revealSeq = ''; // a hidden image can't also be revealed in stages
+    $('#t-practice').value = practiceValue();
     // a round that hasn't started yet picks up the change
     if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
     updateTimerUi();
     save();
   }
-  $('#t-memory').addEventListener('change', (e) => setMemory(+e.target.value));
+  /** The Practice menu's value for the current settings: '', 'm30' (memory) or 'r2,3,full' (reveal). */
+  function practiceValue() {
+    if (S.memorySec > 0) return `m${S.memorySec}`;
+    if (S.revealSeq) return `r${S.revealSeq}`;
+    return '';
+  }
+  $('#t-practice').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v.startsWith('m')) setMemory(+v.slice(1));
+    else if (v.startsWith('r')) setReveal(v.slice(1));
+    else {
+      setMemory(0);
+      setReveal('');
+    }
+  });
   function toggleMemory() {
     const on = !(S.memorySec > 0);
     if (on && !S.timerVisible && !flow.session) {
@@ -2964,8 +2989,7 @@
     $('#t-rounds').value = String(S.rounds);
     syncRoundsControl();
     $('#t-break').value = String(S.breakSec);
-    $('#t-memory').value = String(S.memorySec);
-    $('#t-reveal').value = S.revealSeq;
+    $('#t-practice').value = practiceValue();
     $('#t-chime').checked = S.chime;
   }
   /** Shorter-and-shorter times set the rounds themselves. */
@@ -3116,13 +3140,13 @@
   function setReveal(seq) {
     S.revealSeq = seq;
     if (seq) S.revealLast = seq;
-    $('#t-reveal').value = seq;
+    $('#t-practice').value = practiceValue();
     if (seq && S.memorySec) setMemory(0);
+    $('#t-practice').value = practiceValue();
     if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
     updateTimerUi();
     save();
   }
-  $('#t-reveal').addEventListener('change', (e) => setReveal(e.target.value));
 
   /* ================= Present mode ================= */
 

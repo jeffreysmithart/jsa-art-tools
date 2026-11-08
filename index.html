@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08a">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08c">
 </head>
 <body>
   <header class="topbar">
@@ -117,78 +117,65 @@
       <div class="side-panel" id="panel-study" data-panel="study" role="tabpanel" aria-labelledby="ptab-study" hidden>
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
-        <div class="field preset-field">
-          <span class="label">Preset</span>
-          <select id="preset-select" aria-label="Preset"></select>
-          <div class="row tight preset-actions">
-            <button class="btn tiny" id="preset-save" type="button" title="Save the current settings as a preset">Save as preset…</button>
-            <button class="btn tiny" id="preset-delete" type="button" title="Delete this preset">Delete</button>
+        <div class="preset-row">
+          <label class="label" for="preset-select">Preset</label>
+          <div class="preset-bar">
+            <select id="preset-select"></select>
+            <button class="btn tiny" id="preset-save" type="button" title="Save the current settings as a preset">Save…</button>
+            <button class="btn tiny" id="preset-delete" type="button" title="Delete this preset" hidden>Delete</button>
           </div>
           <p class="hint" id="preset-desc"></p>
         </div>
-        <span class="label">Color</span>
-        <div class="seg" id="tone-seg" role="radiogroup" aria-label="Color">
-          <button data-tone="gray" role="radio" title="Values only (K cycles)">Grayscale</button>
-          <button data-tone="color" role="radio" title="Keep the image's colors (K cycles)">Color</button>
-          <button data-tone="poster" role="radio" title="Repaint with the few colors that best sum up the image (K cycles)">Main colors</button>
-          <button data-tone="palette" role="radio" title="Repaint with what your limited palette can mix (choose the paints in the Color tab)">Palette</button>
-        </div>
 
-        <div id="values-ctl">
-          <div class="field">
-            <span class="label">Number of values</span>
-            <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
-              <button data-n="0" role="radio" title="Full range, no grouping (0)">All</button>
-              <button data-n="2" role="radio" title="Two values (notan)">2</button>
-              <button data-n="3" role="radio">3</button>
-              <button data-n="4" role="radio">4</button>
-              <button data-n="5" role="radio">5</button>
-              <button data-n="6" role="radio">6</button>
-            </div>
-          </div>
-          <div class="field" id="split-ctl">
-            <div class="label-row">
-              <span class="label">Where values split</span>
-              <span class="row tight">
-                <button class="btn tiny" id="btn-auto" title="Find the natural breaks in this image">Fit to image</button>
-                <button class="btn tiny" id="btn-even" title="Evenly spaced breaks">Even</button>
-              </span>
-            </div>
-            <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
-            <div id="thresholds" class="thresholds"></div>
-          </div>
-          <div class="field" id="levels-ctl">
-            <label class="label" for="levels-mode">Paint each value as</label>
-            <select id="levels-mode">
-              <option value="average">Average of each area (true to the image)</option>
-              <option value="even">Even steps, dark to light</option>
-              <option value="custom">Custom (start from the average)</option>
-            </select>
+        <div class="field">
+          <span class="label">Color</span>
+          <div class="seg tone-seg" id="tone-seg" role="radiogroup" aria-label="Color">
+            <button data-tone="gray" role="radio" title="Values only (K cycles)">Gray</button>
+            <button data-tone="color" role="radio" title="Keep the image's colors (K cycles)">Color</button>
+            <button data-tone="poster" role="radio" title="Repaint with the few colors that best sum up the image (K cycles)">Main colors</button>
+            <button data-tone="palette" role="radio" title="Repaint with what your limited palette can mix (choose the paints in the Color tab)">Palette</button>
           </div>
         </div>
 
-        <div id="poster-ctl" hidden>
-          <div class="field">
-            <span class="label">Number of colors</span>
-            <div class="seg small" id="k-seg" role="radiogroup" aria-label="Number of colors">
-              <button data-k="2" role="radio">2</button>
-              <button data-k="3" role="radio">3</button>
-              <button data-k="4" role="radio">4</button>
-              <button data-k="5" role="radio">5</button>
-              <button data-k="6" role="radio">6</button>
-              <button data-k="8" role="radio">8</button>
-            </div>
+        <div class="field" id="values-ctl">
+          <span class="label">Number of values</span>
+          <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
+            <button data-n="0" role="radio" title="Full range, no grouping (0)">All</button>
+            <button data-n="2" role="radio" title="Two values (notan)">2</button>
+            <button data-n="3" role="radio">3</button>
+            <button data-n="4" role="radio">4</button>
+            <button data-n="5" role="radio">5</button>
+            <button data-n="6" role="radio">6</button>
           </div>
         </div>
 
-        <div id="palette-ctl" hidden>
-          <div class="field">
-            <div class="label-row">
-              <span class="label">Paints: <b id="palette-name"></b></span>
-              <button class="btn tiny" id="pal-choose" type="button">Change…</button>
-            </div>
-            <label class="check" title="Diagonal stripes over the parts of the picture the palette can't mix"><input type="checkbox" id="pal-mark" checked> Stripe what it can’t mix</label>
+        <div class="field" id="poster-ctl" hidden>
+          <span class="label">Number of colors</span>
+          <div class="seg small" id="k-seg" role="radiogroup" aria-label="Number of colors">
+            <button data-k="2" role="radio">2</button>
+            <button data-k="3" role="radio">3</button>
+            <button data-k="4" role="radio">4</button>
+            <button data-k="5" role="radio">5</button>
+            <button data-k="6" role="radio">6</button>
+            <button data-k="8" role="radio">8</button>
           </div>
+        </div>
+
+        <div class="field palette-ctl" id="palette-ctl" hidden>
+          <div class="label-row">
+            <span class="label">Paints</span>
+            <button class="btn tiny" id="pal-choose" type="button" title="Choose the paints in the Color tab">Change…</button>
+          </div>
+          <div class="palette-summary"><span class="palette-dots" id="palette-dots" aria-hidden="true"></span><b id="palette-name"></b></div>
+          <label class="check" title="Thin diagonal lines over the parts of the picture the palette can't mix"><input type="checkbox" id="pal-mark" checked> Mark what it can’t mix</label>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label class="label" for="blur">Squint</label>
+            <output id="blur-out" for="blur">Off</output>
+          </div>
+          <input type="range" id="blur" min="0" max="100" step="1" value="0">
         </div>
 
         <p class="label swatch-title" id="swatches-master-label" hidden>Reference</p>
@@ -197,14 +184,26 @@
           <p class="label swatch-title">My study</p>
           <div class="swatches" id="swatches-mine" aria-label="Values in my study"></div>
         </div>
-        <p class="hint" id="swatch-hint">Value scale 0 (black) to 10 (white), like Munsell value.</p>
+        <p class="hint" id="swatch-hint">Values from 0 (black) to 10 (white), like Munsell.</p>
 
-        <div class="field">
+        <div class="field" id="split-ctl">
           <div class="label-row">
-            <label class="label" for="blur">Squint (blur)</label>
-            <output id="blur-out" for="blur">0</output>
+            <span class="label">Where values split</span>
+            <span class="row tight">
+              <button class="btn tiny" id="btn-auto" title="Find the natural breaks in this image">Fit to image</button>
+              <button class="btn tiny" id="btn-even" title="Evenly spaced breaks">Even</button>
+            </span>
           </div>
-          <input type="range" id="blur" min="0" max="100" step="1" value="0">
+          <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
+          <div id="thresholds" class="thresholds"></div>
+        </div>
+        <div class="field" id="levels-ctl">
+          <label class="label" for="levels-mode">Paint each value as</label>
+          <select id="levels-mode">
+            <option value="average">Average of each area</option>
+            <option value="even">Even steps</option>
+            <option value="custom">Custom values</option>
+          </select>
         </div>
       </section>
 
@@ -244,7 +243,12 @@
         <p class="hint" id="gamut-empty">Load an image to see its colors in the color space.</p>
         <div class="log-stats gamut-stats" id="gamut-stats"></div>
         <label class="check"><input type="checkbox" id="space-unused"> Show colors not in the picture</label>
-        <p class="hint">Laid out like the Munsell color solid: <b>value</b> runs up the middle from black to white, <b>hue</b> goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and <b>chroma</b> gets stronger away from the gray center. Each dot is a color in the picture, bigger where it covers more. Positions are CIE Lab, so hue and chroma are close to Munsell, not exact. <b>Squint</b> (in Study) smooths out noise.</p>
+        <p class="hint">Each dot is a color in the picture, bigger where it covers more.</p>
+        <details class="howto">
+          <summary>How to read this</summary>
+          <p>It’s laid out like the Munsell color solid: <b>value</b> runs up the middle from black to white, <b>hue</b> goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and <b>chroma</b> gets stronger away from the gray center. Tap the view to open it large, turn it, and see one value at a time.</p>
+          <p>Positions come from CIE Lab, so hue and chroma are close to Munsell, not exact. <b>Squint</b> (in Study) smooths out photo noise first.</p>
+        </details>
         <p class="hint" id="gamut-marks-hint" hidden>The ringed dots are the main colors.</p>
       </section>
 
@@ -254,10 +258,14 @@
         <div class="pal-paints" id="pal-paints" aria-label="Paints in this palette"></div>
         <select id="pal-add" aria-label="Add a paint"></select>
         <div class="log-stats pal-stats" id="pal-stats"></div>
-        <label class="check"><input type="checkbox" id="pal-range" checked> Show what it can mix in the color space</label>
+        <label class="check"><input type="checkbox" id="pal-range" checked> Show its range in the color space</label>
         <p class="hint" id="pal-out-hint" hidden>Dots with a white ring are colors in the picture the palette can’t mix.</p>
         <button class="btn block" id="pal-study" type="button">Paint the study with this palette</button>
-        <p class="hint">Mixes are simulated with <a href="https://github.com/rvanwijnen/spectral.js" target="_blank" rel="noopener">spectral.js</a> (Kubelka–Munk, how paint absorbs and scatters light) from typical colors of each paint, with white and black where the palette has them. Brands vary, so treat it as a guide. “Can mix” means within ΔE 10 (a small but visible difference).</p>
+        <details class="howto">
+          <summary>How mixing is worked out</summary>
+          <p>Mixes are simulated with <a href="https://github.com/rvanwijnen/spectral.js" target="_blank" rel="noopener">spectral.js</a> (Kubelka–Munk: how paint absorbs and scatters light) from typical colors of each paint, up to three at a time, with white and black where the palette has them. Brands vary, so treat it as a guide.</p>
+          <p>“Can mix” means within ΔE 10, a small but visible difference.</p>
+        </details>
       </section>
       </div>
 
@@ -349,10 +357,25 @@
         </div>
       </section>
 
+      <details class="howto keys">
+        <summary>Keyboard shortcuts</summary>
+        <dl class="key-list">
+          <dt><kbd>2</kbd>–<kbd>6</kbd> <kbd>0</kbd></dt><dd>number of values (0 = all)</dd>
+          <dt><kbd>K</kbd></dt><dd>gray, color, main colors</dd>
+          <dt><kbd>V</kbd></dt><dd>view: both, study, original</dd>
+          <dt><kbd>G</kbd> <kbd>L</kbd></dt><dd>grid, composition guides</dd>
+          <dt><kbd>C</kbd> <kbd>F</kbd></dt><dd>crop, flip</dd>
+          <dt><kbd>R</kbd></dt><dd>reveal in stages</dd>
+          <dt><kbd>P</kbd></dt><dd>present</dd>
+          <dt><kbd>T</kbd> <kbd>Space</kbd></dt><dd>timer, start or pause</dd>
+          <dt><kbd>M</kbd></dt><dd>memory mode</dd>
+          <dt><kbd>O</kbd></dt><dd>overlay my study</dd>
+          <dt><kbd>S</kbd></dt><dd>add to the study set</dd>
+        </dl>
+      </details>
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
-        <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>L</kbd> guides, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>M</kbd> memory mode, <kbd>R</kbd> reveal, <kbd>Space</kbd> timer.</p>
+        <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.</p>
       </div>
     </aside>
 
@@ -364,14 +387,14 @@
           <button data-view="original" role="radio">Original</button>
           <button data-view="compare" role="radio" id="view-compare" disabled title="Compare with my study (add a photo first)">Compare</button>
         </div>
-        <div class="row tight">
+        <div class="row tight tools">
           <button class="btn" id="btn-save-set" title="Add this image to the current study set (S)">+ Set</button>
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
           <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
           <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
           <button class="btn" id="btn-reveal" aria-pressed="false" title="Show 2 values, then 3, then the full image: tap to step through (R)">Reveal</button>
-          <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
         </div>
+        <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
       </div>
       <button class="btn present-exit" id="btn-present-exit" hidden title="Show the controls again (Esc or P)">Exit presentation</button>
 
@@ -425,8 +448,8 @@
           <button class="btn" id="t-stop" title="Stop and reset">Stop</button>
         </div>
         <div class="timer-settings">
-          <label>Time
-            <select id="t-minutes">
+          <label><span class="vh">Time</span>
+            <select id="t-minutes" title="How long each round lasts">
               <option value="0.5">30 sec</option>
               <option value="1">1 min</option>
               <option value="2">2 min</option>
@@ -438,49 +461,48 @@
               <option value="30">30 min</option>
               <option value="45">45 min</option>
               <option value="60">60 min</option>
-              <optgroup label="Shorter each round">
-                <option value="2,1,0.5">2 → 1 min → 30 sec</option>
-                <option value="5,2,1">5 → 2 → 1 min</option>
-                <option value="10,5,2">10 → 5 → 2 min</option>
-                <option value="20,10,5">20 → 10 → 5 min</option>
+              <optgroup label="Shorter rounds">
+                <option value="2,1,0.5">2, 1, ½ min</option>
+                <option value="5,2,1">5, 2, 1 min</option>
+                <option value="10,5,2">10, 5, 2 min</option>
+                <option value="20,10,5">20, 10, 5 min</option>
               </optgroup>
             </select>
           </label>
-          <label title="Draw the same image more than once">Rounds
+          <label title="Draw the same image more than once"><span class="vh">Rounds</span>
             <select id="t-rounds">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
+              <option value="1">1 round</option>
+              <option value="2">2 rounds</option>
+              <option value="3">3 rounds</option>
+              <option value="4">4 rounds</option>
+              <option value="5">5 rounds</option>
             </select>
           </label>
-          <label title="A pause to turn the page">Break
+          <label title="A pause between rounds to turn the page"><span class="vh">Break</span>
             <select id="t-break">
-              <option value="0">None</option>
-              <option value="5">5 sec</option>
-              <option value="10">10 sec</option>
-              <option value="20">20 sec</option>
-              <option value="30">30 sec</option>
-              <option value="60">1 min</option>
+              <option value="0">No break</option>
+              <option value="5">5 sec break</option>
+              <option value="10">10 sec break</option>
+              <option value="20">20 sec break</option>
+              <option value="30">30 sec break</option>
+              <option value="60">1 min break</option>
             </select>
           </label>
-          <label title="Look at the image first, then draw it with the image hidden (M)">Memory
-            <select id="t-memory">
-              <option value="0">Off</option>
-              <option value="15">Look 15 sec</option>
-              <option value="30">Look 30 sec</option>
-              <option value="45">Look 45 sec</option>
-              <option value="60">Look 1 min</option>
-              <option value="90">Look 90 sec</option>
-            </select>
-          </label>
-          <label title="Show 2 values, then 3, then the full image, spread over each drawing round">Reveal
-            <select id="t-reveal">
-              <option value="">Off</option>
-              <option value="2,3,full">2 → 3 → full</option>
-              <option value="2,3,4,full">2 → 3 → 4 → full</option>
-              <option value="2,4,6,full">2 → 4 → 6 → full</option>
+          <label title="Memory: look, then draw with the image hidden (M). Reveal: 2 values, then 3, then the full image over each round.">Practice
+            <select id="t-practice">
+              <option value="">Normal</option>
+              <optgroup label="Memory">
+                <option value="m15">Look 15 sec</option>
+                <option value="m30">Look 30 sec</option>
+                <option value="m45">Look 45 sec</option>
+                <option value="m60">Look 1 min</option>
+                <option value="m90">Look 90 sec</option>
+              </optgroup>
+              <optgroup label="Reveal">
+                <option value="r2,3,full">2 → 3 → full</option>
+                <option value="r2,3,4,full">2 → 3 → 4 → full</option>
+                <option value="r2,4,6,full">2 → 4 → 6 → full</option>
+              </optgroup>
             </select>
           </label>
           <label class="check"><input type="checkbox" id="t-chime" checked> Chime</label>
@@ -578,22 +600,22 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08a"></script>
-  <script src="js/process.js?v=2026-11-08a"></script>
-  <script src="js/config.js?v=2026-11-08a"></script>
-  <script src="js/museum.js?v=2026-11-08a"></script>
-  <script src="js/library.js?v=2026-11-08a"></script>
-  <script src="js/presets.js?v=2026-11-08a"></script>
-  <script src="js/log.js?v=2026-11-08a"></script>
-  <script src="js/timer.js?v=2026-11-08a"></script>
-  <script src="js/compose.js?v=2026-11-08a"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08a"></script>
-  <script src="js/palette.js?v=2026-11-08a"></script>
-  <script src="js/colorspace.js?v=2026-11-08a"></script>
-  <script src="js/gamut.js?v=2026-11-08a"></script>
-  <script src="js/crop.js?v=2026-11-08a"></script>
-  <script src="js/warp.js?v=2026-11-08a"></script>
-  <script src="js/squareup.js?v=2026-11-08a"></script>
-  <script src="js/app.js?v=2026-11-08a"></script>
+  <script src="js/color.js?v=2026-11-08c"></script>
+  <script src="js/process.js?v=2026-11-08c"></script>
+  <script src="js/config.js?v=2026-11-08c"></script>
+  <script src="js/museum.js?v=2026-11-08c"></script>
+  <script src="js/library.js?v=2026-11-08c"></script>
+  <script src="js/presets.js?v=2026-11-08c"></script>
+  <script src="js/log.js?v=2026-11-08c"></script>
+  <script src="js/timer.js?v=2026-11-08c"></script>
+  <script src="js/compose.js?v=2026-11-08c"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08c"></script>
+  <script src="js/palette.js?v=2026-11-08c"></script>
+  <script src="js/colorspace.js?v=2026-11-08c"></script>
+  <script src="js/gamut.js?v=2026-11-08c"></script>
+  <script src="js/crop.js?v=2026-11-08c"></script>
+  <script src="js/warp.js?v=2026-11-08c"></script>
+  <script src="js/squareup.js?v=2026-11-08c"></script>
+  <script src="js/app.js?v=2026-11-08c"></script>
 </body>
 </html>
