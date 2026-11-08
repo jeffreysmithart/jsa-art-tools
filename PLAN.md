@@ -2,7 +2,7 @@
 
 A browser-based practice tool for painters. It turns any reference image into simplified value and color studies, and runs timed master-copy sessions from public-domain museum collections. It's built for deliberate practice: big shapes and the light key first, before you can overthink it.
 
-Live at **https://jeffreysmithart.github.io/jsa-art-tools/** (GitHub Pages, built from `main`). [README.md](README.md) describes every feature in detail; this file covers where things stand, what's next, and how to work on it.
+Live at **https://jeffreysmithdesigner.com/** (the owner's domain, served by GitHub Pages from `main`; the GitHub address `https://jeffreysmithart.github.io/jsa-art-tools/` also works). Anything that checks the site's address, like the sync service's allowed sites, needs the domain, not just the GitHub address. [README.md](README.md) describes every feature in detail; this file covers where things stand, what's next, and how to work on it.
 
 ## Inspiration
 
