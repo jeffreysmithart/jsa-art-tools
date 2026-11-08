@@ -10,6 +10,20 @@ Keeps study sets, presets, history and the practice log in step across your devi
   - Each write says which version it replaces, so two devices can't overwrite each other.
 - **Cost:** it fits Cloudflare's free plan (R2: 10 GB stored; Workers: 100,000 requests a day).
 
+## Current deployment
+
+- **Service:** runs at `https://value-study-sync.jeffrey-63e.workers.dev`, as the Worker `value-study-sync`, with the R2 bucket `value-study-sync` bound as `SYNC`. It was deployed on 2026-11-08 through the Cloudflare API, with `sync/worker.js` unchanged.
+- **Checked live:**
+  - a request from the site with nothing stored gets an empty list;
+  - other sites are refused;
+  - a store and a read-back match;
+  - a wrong token is refused;
+  - a stale write is refused;
+  - turning sync off deletes the data.
+
+  The test data was deleted afterwards.
+- **To update it:** edit `worker.js`, then paste it into the Worker's editor in the dashboard and deploy, or ask Claude to redeploy it (the binding stays).
+
 ## API
 
 | Request | What it does |

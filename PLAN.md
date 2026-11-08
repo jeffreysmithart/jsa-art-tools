@@ -53,7 +53,7 @@ Smaller ideas raised along the way:
 
 ## Syncing across devices
 
-**Status:** steps 1 (merge rules and local changes) and 2 (the service, built and tested locally) are done. The service isn't deployed yet: that needs the owner's OK. The client is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** steps 1 (merge rules and local changes) and 2 (the service) are done. The service is deployed at `https://value-study-sync.jeffrey-63e.workers.dev` but not connected to the app yet. The client is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
 
 ### Why
 
@@ -151,7 +151,7 @@ Moving from the sync code to an account would be one step: sign in on a synced d
    - Tombstones and `updated` times in sets and presets.
    - The log split into this device's own log plus other devices' logs, which the Log tab adds up.
    - Existing data migrates on first load.
-2. **The service.** Built: `sync/worker.js` (with `sync/README.md` and `sync/wrangler.toml`), tested in `tests/sync.test.mjs` against an in-memory R2 bucket (`tests/r2-memory.mjs`); `node tests/sync-dev.mjs` runs it locally. Not deployed yet. As planned:
+2. **The service.** Built: `sync/worker.js` (with `sync/README.md` and `sync/wrangler.toml`), tested in `tests/sync.test.mjs` against an in-memory R2 bucket (`tests/r2-memory.mjs`); `node tests/sync-dev.mjs` runs it locally. Deployed on 2026-11-08 (R2 bucket and Worker `value-study-sync`, with the owner's OK) and checked live. As planned:
    - `sync/worker.js` with tests against an in-memory R2 stand-in, like `tests/relay-dev.mjs`.
    - Deploying it is outward-facing: ask the owner first.
 3. **The client:** sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
@@ -164,6 +164,7 @@ Moving from the sync code to an account would be one step: sign in on a synced d
 
 **Museums.**
 - **The Art Institute, NGA and London** send images browsers can read directly. NGA has no search API, so the app searches `data/nga-paintings.json`, which `tools/build_nga_index.py` builds from the Gallery's published catalog.
+- **The sync service** (`sync/worker.js`) runs at `value-study-sync.jeffrey-63e.workers.dev`, with its data in the R2 bucket `value-study-sync`. The cloud environment allows that host, so sessions can test against it.
 - **The Met, Mia and Cleveland** don't allow pixel reading, so their study images go through the **image relay**, a Cloudflare Worker (`relay/worker.js`, deployed at `value-study-relay.jeffrey-63e.workers.dev` and set in `js/config.js`). It only relays those three museums' image hosts. To add a host, edit `ALLOWED_HOSTS` and redeploy, either through the Cloudflare dashboard or the API with the saved token.
 - **The Met** uses its search **v1.1** (v1 was retired on 2026-10-01).
 - **London's images** are CC BY-NC-ND: fine for personal study, but altered versions shouldn't be shared. Results carry that note.
