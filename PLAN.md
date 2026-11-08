@@ -55,8 +55,8 @@ Nothing is in progress. The owner picks what's next; these are the ideas so far,
      - **Marc Hanson:** a three-color plein air palette of cadmium yellow light, Rembrandt permanent red medium and ultramarine, with white (secondhand, WetCanvas).
      - **Richard Schmid:** his site's Tools & Materials page (richardschmid.com) lists his current palette; read it directly, the search summary of it looked incomplete.
      - **Daniel Keys:** his supply list at danieljkeys.com/supply-list (Winsor & Newton, Rembrandt, Michael Harding and Williamsburg colors); read it directly.
-     - **Scott Christensen:** a limited palette of primaries plus white and premixed grays (secondhand); the Plein Air Podcast episode on his palette is the best source.
-     - Paints these would add: cadmium lemon / yellow deep / scarlet, cobalt blue, manganese blue, terra rosa or Venetian red, transparent oxide red/brown, permanent red medium, and grays.
+     - **Scott Christensen** (primary source: his Adventure of Painting "Recommended Painting Supplies" PDF, shared by the owner): oils from Vasari. Foundational palette: Permanent Bright Red, Italian Venetian Red, Ruby Violet, Cadmium Yellow Lemon, Cadmium Yellow Deep, Yellow Ochre, Cobalt Blue, Ultramarine Blue, Viridian, Titanium White. Starter set: Permanent Bright Red, Italian Venetian Red, Cadmium Yellow Lemon, Yellow Ochre, Cobalt Blue, Ultramarine Blue, Titanium White. Also eight Vasari grays he designed (Jasper, Cedar, Bluff, Silver Point, Adobe, Bice, Shale, Ship Rock; Cedar and Bluff to start), which would need their colors matched from Vasari's swatches. Gouache (Winsor & Newton): Winsor Red, Venetian Red, Alizarin Crimson, Naples Yellow Deep, Cadmium Yellow Pale, Permanent Green Light, Cobalt Blue, Ultramarine Blue, Phthalo Blue, Viridian, Neutral Grey #3, Permanent White. Could be two palettes: his starter set and his full set.
+     - Paints these would add: cadmium lemon / yellow deep / scarlet, cobalt blue, manganese blue, terra rosa or Venetian red, transparent oxide red/brown, permanent (bright) red, ruby violet, and grays.
 4. **Color space follow-ups:** a gamut mask.
 
 Done, for reference:
