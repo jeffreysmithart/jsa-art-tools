@@ -21,22 +21,34 @@ We admire both and build on their *ideas*, not their design, layout, wording or 
 
 ## Where things stand
 
-v1 and v2 are complete (17 merged pull requests), and v3 is well along: the 3D color space and the limited palette. The sidebar has five tabs:
+v1, v2, the v3 color tools and syncing across devices are complete (25 merged pull requests). The sidebar has five tabs:
 
-- **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; and a **history** of everything studied.
-- **Study:** **presets** (built-in and your own); Grayscale / Color / Main colors; 2–6 values with adjustable splits (fit to image, even, or dragged); how values are painted (area average by default, even steps, or custom marker values); squint; and **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
+- **Images:** upload, paste or link an image; search six museums (Art Institute of Chicago, The Met, National Gallery of Art in Washington, Mia in Minneapolis, Cleveland, and The National Gallery in London); **study sets** that mix museum paintings and your own photos, with export/import; a **history** of everything studied; and **Sync**, which keeps sets, presets, history, the log and your own photos the same across devices with a sync code (or by scanning its QR code).
+- **Study** (ordered by how often things are used):
+  - **presets** (built-in and your own);
+  - Gray / Color / Main colors / Palette;
+  - All or 2–6 values;
+  - **squint**;
+  - the value bars;
+  - splits (fit to image, even, or dragged) and how values are painted (area average by default, even steps, or custom marker values);
+  - **Compare my study**, which photographs a sketch, squares it up with four corner points, and compares it through the same settings, with an overlay option.
 - **Color:** the picture's colors in a Munsell-style 3D color space (value up the middle, hue around, chroma outward; positions are CIE Lab, so close to Munsell, not exact). Optional ghost of the colors not in the picture, main colors ringed, and a large view to turn, zoom, slice by value and tap a color to read it. Figures: main hue, strongest colors, share near gray, value range.
-- **Limited palette** (Color tab): presets or your own paints; how much of the picture it can mix and what it can't; its range and the unreachable colors in the color space; rough recipes; and a **Palette** study tone that repaints with the nearest mixes and stripes what's out of reach.
+- **Limited palette** (Color tab): presets or your own paints; how much of the picture it can mix and what it can't; optionally its range in the color space (colors it can't mix are faded); rough recipes; and a **Palette** study tone that repaints with the nearest mixes and stripes what's out of reach.
 - **Canvas:** composition guides (rule of thirds, golden section, diagonals with their reciprocals, and lines through the crossings), also shown in Crop for framing reference photos; grid (any columns × rows, square cells, diagonals); and downloads (study, cropped original, side-by-side or comparison sheet).
 - **Log:** practice time this week, streaks, a month calendar shaded by time, and per-day detail of what was studied. Downloads as CSV.
 
-Also: crop with canvas presets and custom sizes, flip, a timer with rounds, breaks and timed sessions through a list or a set, **memory mode** (look, then draw with the image hidden; logged separately), **staged reveal** (2 values, then 3, then the full image, by tap or over a timed round), **Present** mode, **Try presets** across a whole set, keyboard shortcuts, and touch sizing for iPad.
+Also: crop with canvas presets and custom sizes (each image keeps its crop, and it syncs), flip, a timer with rounds, breaks and timed sessions through a list or a set, **memory mode** (look, then draw with the image hidden; logged separately), **staged reveal** (2 values, then 3, then the full image, by tap or over a timed round), **Present** mode, **Try presets** across a whole set, keyboard shortcuts, and touch sizing for iPad.
 
 ## What's next
 
-v2 is complete: decreasing-time rounds ("Shorter each round" in the timer's Time menu) was the last item.
+Nothing is in progress. The owner picks what's next; these are the ideas so far, roughly in the order they came up as wanted:
 
-v3, a larger project to scope on its own:
+1. **Real accounts** for sync (the last step of the sync plan): probably Supabase, through the same adapter in `js/sync.js`. See [Real accounts, later](#real-accounts-later).
+2. **Diagonal construction grid** (below), once the composition guides have been tried on real photos.
+3. **Palette follow-ups:** match a paint's color or strength to a brand, named palettes, recipes for the study's swatches, a mixing chart.
+4. **Color space follow-ups:** tap a color to see where it is in the picture; exact Munsell notation from the Munsell renotation data.
+
+Done, for reference:
 
 - **Color gamut view:** done (the Color tab, as a 3D color space). Ideas for later: tap a color to highlight where it is in the picture; true Munsell notation from the Munsell renotation data instead of the Lab approximation; a gamut mask.
 - **Limited-palette recolor:** done. Mixing uses spectral.js 3.0.0 (MIT), vendored unchanged in `js/vendor/`. Each paint is a typical masstone color with a tinting strength tuned by eye so its tints behave roughly like the real paint (in `js/palette.js`). Ideas for later: let a painter adjust a paint's color or strength to match their brand; save palettes by name; show recipes for the study's swatches; a mixing chart of the palette.
@@ -48,12 +60,12 @@ Composition, next step:
 Smaller ideas raised along the way:
 
 - **Grid in presets:** an "include grid" option, since presets currently skip the grid and crop on purpose.
-- **Syncing across devices:** planned, see [Syncing across devices](#syncing-across-devices) below.
+- **Syncing across devices:** done, see [Syncing across devices](#syncing-across-devices) below.
 - **More museums:** Rijksmuseum, Harvard Art Museums and the Smithsonian need free API keys.
 
 ## Syncing across devices
 
-**Status:** steps 1 (merge rules and local changes), 2 (the service, deployed at `https://value-study-sync.jeffrey-63e.workers.dev`) 3 (the app's sync and its Sync section) and 4 (photos and QR codes) are done. Real accounts are the remaining step, later. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** done and in use on the owner's Mac and iPad (a beta). Steps 1–4 are built: merge rules, the service (deployed at `https://value-study-sync.jeffrey-63e.workers.dev`), the app's Sync section, and photos and QR codes. Crops sync too (each image keeps its crop in sets and history). Real accounts are the remaining step, later.
 
 ### Why
 
@@ -168,11 +180,23 @@ Moving from the sync code to an account would be one step: sign in on a synced d
 
 ## Notes for a new session
 
-**Environment.** Start cloud sessions on the **jsa-art-tools** environment, not Default. It allows the museum APIs and image servers, the relay, `raw.githubusercontent.com` (for refreshing the NGA index) and `aiforui.vercel.app`. It also holds a saved Cloudflare API token, sent only to `api.cloudflare.com`, for redeploying the relay.
+**Environment.** Start cloud sessions on the **jsa-art-tools** environment, not Default.
+- **Allowed hosts:** the museum APIs and image servers, the image relay and the sync service (`*.jeffrey-63e.workers.dev`, listed by name), `raw.githubusercontent.com` (for refreshing the NGA index) and `aiforui.vercel.app`.
+- **Cloudflare API token:** saved in the environment and sent only to `api.cloudflare.com`. It's used for redeploying the relay and the sync Worker, and for reading the R2 bucket's object list.
+- **Not reachable:** the app's own domain (jeffreysmithdesigner.com) can't be fetched from a session, so live site checks are the owner's.
+
+**Cloudflare services** (account `jeffrey-63e`). Both are plain Workers in this repo, deployed by uploading the file unchanged through the API:
+- **Image relay:** `relay/worker.js` at `value-study-relay.jeffrey-63e.workers.dev`.
+- **Sync service:** `sync/worker.js` at `value-study-sync.jeffrey-63e.workers.dev`, with the R2 bucket `value-study-sync` bound as `SYNC`.
+- **How to deploy:**
+  - `PUT /accounts/<id>/workers/scripts/<name>` as multipart, with metadata `{"main_module":"worker.js","compatibility_date":"2026-11-01","bindings":[…]}` (for sync, the `r2_bucket` binding) and the file as `application/javascript+module`.
+  - Then check the live service with `curl` and a throwaway id.
+- **Ask the owner before every deploy.** The session's safety check also blocks deploys without an explicit OK in the conversation.
+- **The bucket holds the owner's encrypted sync data.** Never delete objects a session didn't create itself. Live tests use throwaway ids and remove their data afterwards; check the object list before and after.
+- **Allowed sites:** the sync service accepts only the app's own domain (with and without `www.`), the GitHub Pages address and `localhost`. If the site moves, update `DEFAULT_ORIGINS` in `sync/worker.js` and redeploy.
 
 **Museums.**
 - **The Art Institute, NGA and London** send images browsers can read directly. NGA has no search API, so the app searches `data/nga-paintings.json`, which `tools/build_nga_index.py` builds from the Gallery's published catalog.
-- **The sync service** (`sync/worker.js`) runs at `value-study-sync.jeffrey-63e.workers.dev`, with its data in the R2 bucket `value-study-sync`. The cloud environment allows that host, so sessions can test against it.
 - **The Met, Mia and Cleveland** don't allow pixel reading, so their study images go through the **image relay**, a Cloudflare Worker (`relay/worker.js`, deployed at `value-study-relay.jeffrey-63e.workers.dev` and set in `js/config.js`). It only relays those three museums' image hosts. To add a host, edit `ALLOWED_HOSTS` and redeploy, either through the Cloudflare dashboard or the API with the saved token.
 - **The Met** uses its search **v1.1** (v1 was retired on 2026-10-01).
 - **London's images** are CC BY-NC-ND: fine for personal study, but altered versions shouldn't be shared. Results carry that note.
@@ -180,14 +204,24 @@ Moving from the sync code to an account would be one step: sign in on a synced d
 - **The Art Institute's bot check** blocks automated browsers from cloud machines. Its live search can't be tested from a cloud session, though it works in normal browsers.
 
 **Testing.**
-- `node --test tests/*.test.js tests/*.test.mjs` runs the unit tests: image processing, warp, presets, log and relay.
-- `python3 -m http.server 8765 &` then `node tests/smoke.e2e.js` runs the browser test. Museum responses are simulated, and an `aware()` helper opens the right sidebar tab before using a control.
+- **Unit tests:** `node --test tests/*.test.js tests/*.test.mjs` runs all 83. They cover image processing, warp, presets, the log, the relay, composition guides, the color space, the palette, and sync:
+  - `sync-merge` (the merge rules);
+  - `sync-local` (two simulated devices' storage);
+  - `sync.test.mjs` (the Worker against an in-memory R2 bucket in `tests/r2-memory.mjs`);
+  - `sync-client.test.mjs` (two devices, the real Worker, end to end).
+- **Browser test:** run `python3 -m http.server 8765 &`, then `node tests/smoke.e2e.js`.
+  - Museum responses are simulated, and an `aware()` helper opens the right sidebar tab before using a control.
+  - It starts its own local sync service (`tests/sync-dev.mjs`, port 8799), so it never touches the live one.
+- **Local sync service:** `node tests/sync-dev.mjs [port]` runs the sync Worker with in-memory storage, for trying sync by hand.
 - **Write screenshots and downloads outside the repo,** using the `OUT` environment variable.
 - **Every change should keep both suites passing.**
 
 **Working style.**
 - **One pull request per feature,** on the session's branch. The owner reviews and merges; never push to `main`.
+- **Restarting the branch:** after a merge, restart it from the updated `main`. First check that the last pull request really is merged; if it isn't, keep building on the branch.
 - **Explain in plain language** with a clear recommendation, and ask before anything outward-facing, such as environment changes, deploys or installs.
+- **Outside code:** ask the owner before adding any. Check its license and look through it (no network, storage or `eval` calls) before running or vendoring it. It goes in `js/vendor/`, unchanged, with its license. So far: spectral.js (MIT) and qrcode-generator (MIT).
+- **The owner tests on an iPad and a Mac.** Screenshots from them are the best bug reports; there's no access to their devices from a session.
 
 **Design principles.**
 - **Grays stay truly neutral** (chroma 0), so the surroundings don't bias how values read.
@@ -217,5 +251,7 @@ Reviewed with the `emil-ui-review` skill after memory mode, reveal, the color sp
 
 - **Pinterest:** dropped. Its developer access is restrictive, and museum collections plus uploaded sets replace it.
 - **Artist coverage:** varies with what each museum releases openly. Some painters (e.g. Edgar Payne) have few open-access images, so uploaded sets fill the gap.
-- **Storage is per browser:** sets, presets, history and the log live in localStorage, with uploaded photos in IndexedDB. Safari may clear site storage after about 7 days without a visit, so exporting important sets is wise.
+- **Storage:** sets, presets, history and the log live in localStorage, with uploaded photos in IndexedDB. Without sync they're per browser, and Safari may clear site storage after about 7 days without a visit. With sync, the synced copy brings them back.
+- **The sync code is the key.** Everything is encrypted with it on the device, so a lost code means the synced copy can't be read (each device keeps its own data). The code is kept on each synced device so it can keep syncing and be shown again.
+- **Sync service limits:** 5 MB per document, 15 MB per photo, 2 GB per sync code, 120 requests a minute. Personal use fits Cloudflare's free tier.
 - **Originality:** match the *ideas* of the Proko value tool and Massa Art timer, not their design or branding.
