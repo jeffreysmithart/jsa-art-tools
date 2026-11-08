@@ -53,7 +53,7 @@ Smaller ideas raised along the way:
 
 ## Syncing across devices
 
-**Status:** planned, not built. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** step 1 (merge rules and local changes) is done; the service is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
 
 ### Why
 
@@ -137,7 +137,16 @@ Moving from the sync code to an account would be one step: sign in on a synced d
 
 ### Build steps
 
-1. **Merge rules and local changes, no network.**
+1. **Merge rules and local changes, no network.** Done:
+   - `js/sync-merge.js` holds the rules. Tests in `tests/sync-merge.test.js` check that the sync order doesn't matter and that repeating a merge changes nothing, and `tests/sync-local.test.js` has two simulated devices swap copies.
+   - New local records:
+     - `value-study:sets-deleted`, `:history-removed` and `:presets-deleted` (removal markers);
+     - `nameAt` and per-item `at` times in sets, and `updated` on presets;
+     - `value-study:device` (this browser's id) and `:log-others` (other devices' logs, which `VST.log.days()` adds in);
+     - `clearedAt` on a cleared log.
+   - Times never repeat or go backwards within a session.
+   - Nothing is migrated: older data counts as time 0.
+   - Originally planned for this step:
    - `js/sync-merge.js` with unit tests.
    - Tombstones and `updated` times in sets and presets.
    - The log split into this device's own log plus other devices' logs, which the Log tab adds up.
