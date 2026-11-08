@@ -16,7 +16,9 @@
 (function (root) {
   'use strict';
   const VST = (root.VST = root.VST || {});
-  const KEY = 'value-study:log';
+  const KEY = 'value-study:log'; // this device's own log
+  const OTHERS_KEY = 'value-study:log-others'; // other devices' logs, from syncing: { [deviceId]: log }
+  const DEVICE_KEY = 'value-study:device'; // this browser's id, so its log can be told apart
   const IDLE_MS = 30 * 60 * 1000;
   const MAX_STEP_MS = 90 * 1000; // a longer gap between ticks means the device slept
 
@@ -28,6 +30,28 @@
       /* fall through */
     }
     return { version: 1, days: {} };
+  }
+
+  /** A random id for this browser, made once. */
+  function deviceId() {
+    try {
+      let id = localStorage.getItem(DEVICE_KEY);
+      if (!id) {
+        id = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem(DEVICE_KEY, id);
+      }
+      return id;
+    } catch (e) {
+      return 'd-local';
+    }
+  }
+  function others() {
+    try {
+      const v = JSON.parse(localStorage.getItem(OTHERS_KEY) || '{}');
+      return v && typeof v === 'object' ? v : {};
+    } catch (e) {
+      return {};
+    }
   }
   const listeners = [];
   function store(data) {
@@ -121,8 +145,29 @@
     state.timerRunning = !!on;
   }
 
+  /** All practice: this device's log plus other devices' (from syncing), added up. */
   function days() {
-    return load().days;
+    const own = load();
+    const rest = Object.values(others());
+    const M = VST.syncMerge;
+    if (!rest.length || !M) return own.days;
+    return M.combineLogs([own, ...rest]);
+  }
+
+  /* for syncing: this device's own log, and the others' as received */
+  function syncDoc() {
+    return { ...load(), device: deviceId() };
+  }
+  function setOthers(map) {
+    const mine = deviceId();
+    const keep = {};
+    for (const [id, doc] of Object.entries(map || {})) if (id !== mine && doc) keep[id] = doc;
+    try {
+      localStorage.setItem(OTHERS_KEY, JSON.stringify(keep));
+    } catch (e) {
+      /* storage unavailable or full */
+    }
+    listeners.forEach((fn) => fn());
   }
 
   /* ---------- reading the log ---------- */
@@ -210,9 +255,10 @@
     return rows.map((r) => r.map(esc).join(',')).join('\n') + '\n';
   }
 
+  /** Clears the log. With syncing, `clearedAt` tells the other devices to clear theirs up to now. */
   function clear() {
     state.pendingMs = 0;
-    store({ version: 1, days: {} });
+    store({ version: 1, days: {}, clearedAt: Date.now() });
     if (state.item) start(state.item);
   }
 
@@ -234,5 +280,5 @@
     });
   }
 
-  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey, onChange, practiced, totals, stats, csv, clear, shiftDay };
+  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey, onChange, practiced, totals, stats, csv, clear, shiftDay, deviceId, syncDoc, setOthers };
 })(typeof window !== 'undefined' ? window : globalThis);

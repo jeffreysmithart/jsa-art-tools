@@ -94,6 +94,7 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset
 - `js/log.js`: the practice log (records study time and timed rounds per day)
+- `js/sync-merge.js`: merge rules for syncing across devices (study sets, presets, history, and each device's log); the sync itself is still to come, see PLAN.md
 - `js/library.js`: study sets and history (localStorage, with uploaded photos in IndexedDB)
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it

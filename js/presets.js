@@ -14,6 +14,7 @@
   const P = VST.process;
   const C = VST.color;
   const KEY = 'value-study:presets';
+  const DELETED_KEY = 'value-study:presets-deleted'; // { [presetId]: time }, for syncing
 
   const BUILTIN = [
     { id: 'b-notan', name: 'Notan (2 values)', tone: 'gray', bands: 2, splits: 'auto', levelsMode: 'even', blur: 0 },
@@ -59,13 +60,39 @@
     const base = (preset.name || 'My preset').trim().slice(0, 50) || 'My preset';
     let name = base;
     for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base} (${i})`;
-    const p = { ...preset, name, id: `p-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, builtin: false };
+    const p = { ...preset, name, id: `p-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, builtin: false, updated: Date.now() };
     list.push(p);
     write(list);
     return p;
   }
   function remove(id) {
     write(read().filter((p) => p.id !== id));
+    try {
+      const deleted = JSON.parse(localStorage.getItem(DELETED_KEY) || '{}') || {};
+      deleted[id] = Date.now();
+      localStorage.setItem(DELETED_KEY, JSON.stringify(deleted));
+    } catch (e) {
+      /* storage unavailable */
+    }
+  }
+
+  /* for syncing: what this device holds, and taking in a merged copy */
+  function syncDoc() {
+    let deleted = {};
+    try {
+      deleted = JSON.parse(localStorage.getItem(DELETED_KEY) || '{}') || {};
+    } catch (e) {
+      /* fall through */
+    }
+    return { presets: read(), deleted };
+  }
+  function applySyncDoc(doc) {
+    write((doc.presets || []).map((p) => ({ ...p, builtin: false })));
+    try {
+      localStorage.setItem(DELETED_KEY, JSON.stringify(doc.deleted || {}));
+    } catch (e) {
+      /* storage unavailable */
+    }
   }
 
   /** Where this preset splits the values of an image with this histogram. */
@@ -130,5 +157,5 @@
     return levels.map((L, i) => ({ L, share: shares[i] }));
   }
 
-  VST.presets = { all, user, get, save, remove, splitsFor, describe, render, BUILTIN };
+  VST.presets = { all, user, get, save, remove, splitsFor, describe, render, BUILTIN, syncDoc, applySyncDoc };
 })(typeof window !== 'undefined' ? window : globalThis);
