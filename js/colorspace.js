@@ -266,18 +266,13 @@
         const c = it.cell;
         const rad = (1.6 + 6 * it.r) * dpr * zoomR;
         const [r, g, b] = opts.toRgb(c.L, c.a, c.b);
+        // a color the palette can't mix: faded, so what it can mix stands out
+        if (data.out && data.out.has(c)) ctx.globalAlpha = 0.28;
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.beginPath();
         ctx.arc(it.sx, it.sy, rad, 0, Math.PI * 2);
         ctx.fill();
-        if (data.out && data.out.has(c)) {
-          // a color the palette can't mix: ringed
-          ctx.lineWidth = 1.5 * dpr;
-          ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-          ctx.beginPath();
-          ctx.arc(it.sx, it.sy, rad + 2 * dpr, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+        ctx.globalAlpha = 1;
         drawn.push({ x: it.sx, y: it.sy, rad, cell: c });
       }
       for (const m of data.marks) {

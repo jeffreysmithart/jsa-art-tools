@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08h">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08i">
 </head>
 <body>
   <header class="topbar">
@@ -302,8 +302,8 @@
         <div class="pal-paints" id="pal-paints" aria-label="Paints in this palette"></div>
         <select id="pal-add" aria-label="Add a paint"></select>
         <div class="log-stats pal-stats" id="pal-stats"></div>
-        <label class="check"><input type="checkbox" id="pal-range" checked> Show its range in the color space</label>
-        <p class="hint" id="pal-out-hint" hidden>Dots with a white ring are colors in the picture the palette can’t mix.</p>
+        <label class="check"><input type="checkbox" id="pal-range"> Show it in the color space</label>
+        <p class="hint" id="pal-out-hint" hidden>The faint cloud is what the palette can mix; faded dots are colors in the picture it can’t.</p>
         <button class="btn block" id="pal-study" type="button">Paint the study with this palette</button>
         <details class="howto">
           <summary>How mixing is worked out</summary>
@@ -615,6 +615,7 @@
     <div class="modal-bar">
       <strong>Color space</strong>
       <label class="check"><input type="checkbox" id="space-unused-big"> Show colors not in the picture</label>
+      <label class="check" title="What your limited palette can mix; colors it can't are faded"><input type="checkbox" id="space-pal"> My palette</label>
       <label>Value
         <select id="space-slice">
           <option value="">All values</option>
@@ -644,25 +645,25 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08h"></script>
-  <script src="js/process.js?v=2026-11-08h"></script>
-  <script src="js/config.js?v=2026-11-08h"></script>
-  <script src="js/museum.js?v=2026-11-08h"></script>
-  <script src="js/sync-merge.js?v=2026-11-08h"></script>
-  <script src="js/library.js?v=2026-11-08h"></script>
-  <script src="js/presets.js?v=2026-11-08h"></script>
-  <script src="js/log.js?v=2026-11-08h"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-08h"></script>
-  <script src="js/sync.js?v=2026-11-08h"></script>
-  <script src="js/timer.js?v=2026-11-08h"></script>
-  <script src="js/compose.js?v=2026-11-08h"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08h"></script>
-  <script src="js/palette.js?v=2026-11-08h"></script>
-  <script src="js/colorspace.js?v=2026-11-08h"></script>
-  <script src="js/gamut.js?v=2026-11-08h"></script>
-  <script src="js/crop.js?v=2026-11-08h"></script>
-  <script src="js/warp.js?v=2026-11-08h"></script>
-  <script src="js/squareup.js?v=2026-11-08h"></script>
-  <script src="js/app.js?v=2026-11-08h"></script>
+  <script src="js/color.js?v=2026-11-08i"></script>
+  <script src="js/process.js?v=2026-11-08i"></script>
+  <script src="js/config.js?v=2026-11-08i"></script>
+  <script src="js/museum.js?v=2026-11-08i"></script>
+  <script src="js/sync-merge.js?v=2026-11-08i"></script>
+  <script src="js/library.js?v=2026-11-08i"></script>
+  <script src="js/presets.js?v=2026-11-08i"></script>
+  <script src="js/log.js?v=2026-11-08i"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-08i"></script>
+  <script src="js/sync.js?v=2026-11-08i"></script>
+  <script src="js/timer.js?v=2026-11-08i"></script>
+  <script src="js/compose.js?v=2026-11-08i"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08i"></script>
+  <script src="js/palette.js?v=2026-11-08i"></script>
+  <script src="js/colorspace.js?v=2026-11-08i"></script>
+  <script src="js/gamut.js?v=2026-11-08i"></script>
+  <script src="js/crop.js?v=2026-11-08i"></script>
+  <script src="js/warp.js?v=2026-11-08i"></script>
+  <script src="js/squareup.js?v=2026-11-08i"></script>
+  <script src="js/app.js?v=2026-11-08i"></script>
 </body>
 </html>

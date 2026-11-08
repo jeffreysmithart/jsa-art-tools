@@ -220,7 +220,7 @@
   /** Only the fields worth keeping (drops temporary ones like _order). */
   function clean(item) {
     const out = {};
-    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'photo', 'added']) {
+    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'photo', 'crop', 'added']) {
       if (item[k] !== undefined && item[k] !== '') out[k] = item[k];
     }
     return out;
@@ -303,8 +303,13 @@
   }
   /** Records that an item was studied (most recent first, no duplicates). */
   function record(item) {
+    const prev = history().find((it) => it.id === item.id);
     const list = history().filter((it) => it.id !== item.id);
-    list.unshift({ ...clean(item), viewed: now() });
+    // keep what this device already knows about the image (its synced photo name, its crop)
+    const keep = {};
+    if (prev && prev.photo && !item.photo) keep.photo = prev.photo;
+    if (prev && prev.crop && (!item.crop || (prev.crop.at || 0) > (item.crop.at || 0))) keep.crop = prev.crop;
+    list.unshift({ ...clean(item), ...keep, viewed: now() });
     const dropped = list.splice(HISTORY_MAX);
     write(HISTORY_KEY, list);
     if (dropped.some((it) => it.blobId)) cleanup();
@@ -340,6 +345,38 @@
   function applyHistoryDoc(doc) {
     write(HISTORY_KEY, doc.items || []);
     write(HISTORY_REMOVED_KEY, { removed: doc.removed || {}, clearedAt: doc.clearedAt || 0 });
+  }
+
+  /**
+   * Remembers an image's crop (fractions of the image: { x, y, w, h, preset,
+   * landscape }) on every saved copy of it, so it comes back when the image
+   * is opened again, on this device or, with sync, another one.
+   */
+  function setCrop(itemId, crop) {
+    const c = { ...crop, at: now() };
+    const list = sets();
+    let changed = false;
+    for (const s of list) {
+      for (const it of s.items) {
+        if (it.id === itemId) {
+          it.crop = c;
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveSets(list);
+    const h = history();
+    if (h.some((it) => it.id === itemId)) write(HISTORY_KEY, h.map((it) => (it.id === itemId ? { ...it, crop: c } : it)));
+    return c;
+  }
+
+  /** The latest crop saved for an image, or null. */
+  function cropFor(itemId) {
+    let best = null;
+    const note = (it) => it && it.id === itemId && it.crop && (!best || (it.crop.at || 0) > (best.at || 0)) && (best = it.crop);
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return best;
   }
 
   /** Any saved copy of an item (from a set or history), by id. */
@@ -442,6 +479,8 @@
     setsDoc,
     applySetsDoc,
     onMissingPhoto,
+    setCrop,
+    cropFor,
     uploadsToName,
     namePhoto,
     photosInUse,

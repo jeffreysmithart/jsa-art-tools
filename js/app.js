@@ -75,7 +75,7 @@
     spaceUnused: false, // color space: also show the colors the picture doesn't use
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
-    palRange: true, // color space: show what the palette can mix
+    palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
     settingsVersion: 3,
   };
 
@@ -282,6 +282,33 @@
     el.classList.toggle('error', !!isError);
   }
 
+  /*
+   * An image's crop is saved with it (in sets and history, as fractions of
+   * the image, so it fits whatever size the image loads at), so it comes
+   * back when the image is opened again, on this device or another.
+   */
+  function rememberCrop() {
+    if (!img.item || !img.item.id || !img.w) return;
+    const r = img.crop || { x: 0, y: 0, w: img.w, h: img.h };
+    const crop = { x: r.x / img.w, y: r.y / img.h, w: r.w / img.w, h: r.h / img.h, preset: img.cropPreset, landscape: img.cropLandscape };
+    img.item.crop = L.setCrop(img.item.id, crop);
+  }
+  function restoreCrop(item) {
+    const c = item && item.id ? L.cropFor(item.id) || item.crop : null;
+    if (!c || !img.w) return;
+    const full = c.x <= 0.0005 && c.y <= 0.0005 && c.w >= 0.9995 && c.h >= 0.9995;
+    img.crop = full
+      ? null
+      : {
+          x: Math.round(c.x * img.w),
+          y: Math.round(c.y * img.h),
+          w: Math.max(1, Math.min(img.w - Math.round(c.x * img.w), Math.round(c.w * img.w))),
+          h: Math.max(1, Math.min(img.h - Math.round(c.y * img.h), Math.round(c.h * img.h))),
+        };
+    img.cropPreset = c.preset || 'free';
+    img.cropLandscape = c.landscape == null ? null : c.landscape;
+  }
+
   function setImage(el, { name, meta = null, objectUrl = null, item = null }) {
     if (img.url) URL.revokeObjectURL(img.url);
     img.item = item;
@@ -291,6 +318,7 @@
     img.crop = null;
     img.cropPreset = 'free';
     img.cropLandscape = null;
+    restoreCrop(item);
     img.meta = meta;
     img.name = name || 'reference';
     img.url = objectUrl;
@@ -923,6 +951,7 @@
         S.cropCustom = custom; // remembered for the next image
         save();
         buildSource();
+        rememberCrop();
       },
     });
   }
@@ -1215,8 +1244,8 @@
       shell: S.spaceUnused ? shell : [],
       marks,
       stats: colorCache.stats,
-      palette: S.palRange && pal ? ensurePalette().mixes : [],
-      out: S.palRange && pal ? pal.outCells : null,
+      palette: S.palShow && pal ? ensurePalette().mixes : [],
+      out: S.palShow && pal ? pal.outCells : null,
     };
   }
 
@@ -1442,7 +1471,8 @@
       o.textContent = p.name;
       add.appendChild(o);
     }
-    $('#pal-range').checked = S.palRange;
+    $('#pal-range').checked = S.palShow;
+    $('#space-pal').checked = S.palShow;
     const stats = $('#pal-stats');
     const r = paletteReach();
     if (!r) {
@@ -1486,8 +1516,21 @@
   $('#pal-add').addEventListener('change', (e) => {
     if (e.target.value) setPalette([...S.palette, e.target.value]);
   });
+  /** Shows or hides the palette in the color space (in the Color tab and the large view). */
+  function setPalShow(on) {
+    S.palShow = on;
+    $('#pal-range').checked = on;
+    $('#space-pal').checked = on;
+    const d = colorData();
+    if (d && !$('#space-modal').hidden) spaceBig.setData(d);
+  }
+  $('#space-pal').addEventListener('change', (e) => {
+    setPalShow(e.target.checked);
+    renderGamut();
+    save();
+  });
   $('#pal-range').addEventListener('change', (e) => {
-    S.palRange = e.target.checked;
+    setPalShow(e.target.checked);
     renderGamut();
     save();
   });
@@ -2306,6 +2349,12 @@
   /** Remembers what's being studied, for history and "Add current image". */
   function remember(item) {
     img.item = item;
+    if (img.crop) {
+      rememberCrop(); // cropped before the image was saved: keep that crop with it
+    } else {
+      restoreCrop(item); // seen before (here or, with sync, elsewhere): bring its crop back
+      if (img.crop) buildSource();
+    }
     L.record(item);
     VST.log.start(item);
     renderLibrary();

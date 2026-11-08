@@ -126,6 +126,7 @@ function check(cond, msg) {
   await page.uncheck('#space-unused');
   await page.screenshot({ path: path.join(OUT, '2c-color-space.png') });
   // tap to open it large: turn, zoom, slice by value, tap a dot to read it
+  check(!(await page.isChecked('#pal-range')), 'the palette isn’t shown in the color space unless asked for');
   await page.uncheck('#pal-range'); // just the picture's own colors for these checks
   await page.click('#space-open');
   check(await page.isVisible('#space-modal'), 'tapping the color space opens it large');
@@ -1108,6 +1109,29 @@ function check(cond, msg) {
       return ok && window.VST.app.work.w > 0 ? `${window.VST.app.work.w}x${window.VST.app.work.h}` : 'not opened';
     });
     check(/^\d+x\d+$/.test(opened), `a photo uploaded on the Mac opens on the iPad (${opened})`);
+    // a crop made on the Mac is applied on the iPad
+    await mac.pg.click('#btn-crop');
+    await mac.pg.selectOption('#crop-preset', '8x10');
+    await mac.pg.click('#crop-apply');
+    const macAspect = await mac.pg.evaluate(() => window.VST.app.work.w / window.VST.app.work.h);
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.crop));
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const ipadAspect = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(macAspect - 1.25) < 0.02 && Math.abs(ipadAspect - macAspect) < 0.02, `a crop made on the Mac is applied on the iPad (${macAspect.toFixed(2)} → ${ipadAspect.toFixed(2)})`);
+    // and on the Mac, reopening the image keeps its crop
+    const reopened = await mac.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(reopened - macAspect) < 0.02, 'reopening an image keeps its crop');
     // stop syncing: the data stays on the device
     await ipad.pg.click('#sync-stop');
     check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1 && window.VST.library.history().length >= 1), 'stopping sync keeps this device’s data');

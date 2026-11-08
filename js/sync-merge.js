@@ -55,12 +55,19 @@
   }
 
   /**
-   * An uploaded photo's synced name (`photo`) is added by the device that
-   * has the photo; keep it whichever device's copy of the item wins.
+   * Things a device adds to an item without making it "newer":
+   *   photo  an uploaded photo's synced name, added by the device that has it
+   *   crop   the image's crop, { x, y, w, h (fractions), preset, landscape, at }:
+   *          the most recently set one wins
+   * Keep them whichever device's copy of the item wins.
    */
   function withPhoto(item, x, y) {
+    const out = { ...item };
     const photo = item.photo || (x && x.photo) || (y && y.photo);
-    return photo ? { ...item, photo } : item;
+    if (photo) out.photo = photo;
+    const crops = [item.crop, x && x.crop, y && y.crop].filter(Boolean);
+    if (crops.length) out.crop = crops.reduce((p, q) => ((q.at || 0) > (p.at || 0) || ((q.at || 0) === (p.at || 0) && JSON.stringify(q) < JSON.stringify(p)) ? q : p));
+    return out;
   }
 
   /* ---------- study sets ---------- */
