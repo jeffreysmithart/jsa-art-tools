@@ -48,8 +48,106 @@ Composition, next step:
 Smaller ideas raised along the way:
 
 - **Grid in presets:** an "include grid" option, since presets currently skip the grid and crop on purpose.
-- **Syncing across devices:** sets, presets and the log are per browser today. Cloud sync would need an online store; the existing Cloudflare account could host one.
+- **Syncing across devices:** planned, see [Syncing across devices](#syncing-across-devices) below.
 - **More museums:** Rijksmuseum, Harvard Art Museums and the Smithsonian need free API keys.
+
+## Syncing across devices
+
+**Status:** planned, not built. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+
+### Why
+
+Sets, presets, the practice log and uploaded photos live in each browser's own storage, so work on the iPad doesn't show up on the Mac. iPad and iPhone Safari can also clear a site's storage after about seven days without a visit. A synced copy fixes both.
+
+### Decisions so far
+
+- **Who:** just the owner for now.
+- **Devices:** iPad, Mac, sometimes iPhone.
+- **Sign-in:** a **sync code**, no accounts yet.
+- **Photos:** a fast follow, right after the rest works.
+- **QR codes** for joining a device: a fast follow too. The first version shares the code by copy or AirDrop.
+- **Accounts later:** probably Supabase (see below). WordPress isn't needed: there's no existing site to join.
+
+### What syncs
+
+Today's storage: `localStorage` holds `value-study:sets`, `:history`, `:queue`, `:presets`, `:log` and `:settings`; IndexedDB (`value-study` → `blobs`) holds uploaded photos. Set items carry a small data-URL thumbnail, so lists show before a photo arrives.
+
+| Data | Syncs? | How two devices merge |
+|---|---|---|
+| Study sets | yes | By set. Each set and each item in it carries an `updated` time; removals leave a small "removed" marker (a tombstone) so a deletion on one device isn't undone by the other. Renames: the newest wins. |
+| Your presets | yes | By preset id; the newest edit wins; deletions leave tombstones. |
+| History | yes | Combine both lists by image, keep the latest study time, newest first, cap 60. |
+| Practice log | yes | **Each device keeps its own log**, and the Log tab adds them up. No merging conflicts, and nothing is counted twice or lost when both devices were used on the same day. |
+| Uploaded photos | fast follow | Stored once per photo (by a hash of its contents), downloaded on another device the first time it's opened. |
+| Settings (view, values, timer, palette paints) | no | Each device keeps its own: a phone and a laptop often want different views. Palette paints may sync later with named palettes. |
+| Session queue | no | It's a working list for one sitting. |
+
+Merge rules live in their own module (`js/sync-merge.js`) as plain functions, with unit tests and no network, so they work the same whatever server sits behind them. Times use the device clock, nudged to be later than the last time seen from the server, so a device with a slow clock can't lose edits.
+
+### The sync code
+
+- **Turning it on:** "Turn on sync" on the first device makes a random code (128 bits, shown as five groups of letters and digits, e.g. `K7QM-…`). It can be copied, or shared with AirDrop through the browser's share sheet. **QR code (fast follow):** the first device shows the code as a QR code, and the other scans it with the camera. Showing one needs a small QR library, vendored like spectral.js (check its license first, and ask before adding outside code). Scanning can use the phone's camera app, by putting the code in a link that opens the site and fills it in, so no scanning library is needed. The code goes after a `#` in that link (e.g. `…/jsa-art-tools/#sync=K7QM-…`), which browsers never send to a server, and the app removes it from the address bar as soon as it's read, so it doesn't linger in history.
+- **Joining:** "Join with a code" on another device takes the code, and from then on the devices stay in step.
+- **Keys:** from the code, the device derives a storage id, a write token, and an encryption key, with Web Crypto (HKDF over SHA-256).
+- **Encryption:** everything is encrypted on the device (AES-GCM) before it's sent, so the server, and anyone who gets into the Cloudflare account, sees only scrambled data.
+- **What the code means:** the code is the key. Lose it, and the synced copy can't be read, though each device still has its own data. Anyone with the code can read the data. "Show my code" on a synced device lets you see it again.
+
+### The service (Cloudflare, like the image relay)
+
+- **Worker:** a new Worker, `value-study-sync`, in `sync/`, deployed to the same Cloudflare account as the relay. It only accepts requests from the GitHub Pages site and `localhost`.
+- **Storage:** R2. R2 reads are always up to date and it supports conditional writes, which sync needs. KV can show stale data for up to a minute, so it's not used.
+  - Objects: `u/<id>/doc/<name>` for each data type, `u/<id>/log/<deviceId>` per device, and later `u/<id>/photo/<hash>`.
+- **API** (small and versioned):
+  - `GET /v1/<id>`: list what's stored, with versions.
+  - `GET` / `PUT /v1/<id>/doc/<name>`: read and write one data type. Writes say which version they replace, and fail if it changed meanwhile (the device then pulls, merges, and tries again).
+  - Later, `GET` / `PUT /v1/<id>/photo/<hash>`, write once.
+- **Write token:** the first write to an id records a hash of its write token; later writes must match it, so knowing an id alone isn't enough to overwrite data.
+- **Limits, even for one person:**
+  - 5 MB per data file and 15 MB per photo.
+  - A total cap per id (2 GB to start).
+  - A simple request rate limit.
+- **Cost:** a personal library fits in Cloudflare's free tier (R2: 10 GB stored; Workers: 100,000 requests a day).
+
+### When the app syncs
+
+The device's own storage stays the source of truth, so the app works offline as before. Sync then:
+1. pulls on load;
+2. pushes a few seconds after a change;
+3. pulls again when the page comes back into view, and every few minutes while open.
+
+Each pass pulls, merges, and pushes only what changed. A small status line in a new **Sync** section (Images tab, under History) shows "Synced 2 min ago · 3 devices", or what went wrong.
+
+### Photos (the fast follow)
+
+- **Upload:** each uploaded photo gets a content hash; set items keep their `blobId`, and a small map links each one to its hash. The encrypted photo uploads once.
+- **On another device:** the item shows its thumbnail right away, and the full photo downloads when it's opened.
+- **Clean-up:** a photo no set or history entry uses is removed from the server too.
+
+### Real accounts, later
+
+The client talks to the service through one small adapter (`pull`, `push`, `photo get` / `put`), so the backend can change without touching the rest of the app.
+
+| Option | Good | Watch out for |
+|---|---|---|
+| **Supabase** (recommended) | Built for this: sign-in by emailed link, a Postgres database, private photo storage with per-user rules, a free tier. The owner may already have an account. | Free projects can pause when idle for a while; a paid plan avoids that. Another service to look after. |
+| Cloudflare Zero Trust | Same account as the relay; free for up to 50 people; emails a one-time code. | Made for teams, not public sign-up; fine for a few beta testers. |
+| WordPress | Accounts, emails and a media library built in. | Media files are public by default; needs a custom plugin and upkeep. Only worth it next to an existing site, and there isn't one. |
+
+Moving from the sync code to an account would be one step: sign in on a synced device, and it copies the data from the code's storage to the account. Whether the data stays encrypted with a key only the devices hold is a decision for then.
+
+### Build steps
+
+1. **Merge rules and local changes, no network.**
+   - `js/sync-merge.js` with unit tests.
+   - Tombstones and `updated` times in sets and presets.
+   - The log split into this device's own log plus other devices' logs, which the Log tab adds up.
+   - Existing data migrates on first load.
+2. **The service.**
+   - `sync/worker.js` with tests against an in-memory R2 stand-in, like `tests/relay-dev.mjs`.
+   - Deploying it is outward-facing: ask the owner first.
+3. **The client:** sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
+4. **Photos and QR codes** (fast follows).
+5. **Accounts, later:** a Supabase adapter.
 
 ## Notes for a new session
 
