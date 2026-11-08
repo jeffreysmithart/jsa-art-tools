@@ -86,7 +86,7 @@ The Met's, Mia's and Cleveland's image servers don't let web pages read image pi
 ```sh
 node --test tests/*.test.js tests/*.test.mjs   # image-processing and relay unit tests
 python3 -m http.server 8765 &        # then, with Playwright installed:
-node tests/smoke.e2e.js              # browser test of both modes (museum responses are simulated)
+node tests/smoke.e2e.js              # browser test (museum responses are simulated; starts its own local sync service)
 ```
 
 ## Files
