@@ -2286,7 +2286,7 @@
         renderLibrary();
         return true;
       } catch (e) {
-        toast('That photo is no longer stored in this browser.', true);
+        toast(SY.status().on ? 'That photo is on the device it was added on: syncing photos is coming next.' : 'That photo is no longer stored in this browser.', true);
         return false;
       } finally {
         setBusy(false);
@@ -3242,6 +3242,139 @@
     } else return;
   });
 
+  /* ================= Sync ================= */
+
+  const SY = VST.sync;
+
+  /** "just now", "12 min ago", "at 3:42 PM", or a date. */
+  function ago(t) {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    const d = new Date(t);
+    if (d.toDateString() === new Date().toDateString()) return `at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    return `on ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  }
+
+  function renderSync(st = SY.status()) {
+    $('#sec-sync').hidden = !st.available;
+    $('#sync-off').hidden = st.on;
+    $('#sync-on-box').hidden = !st.on;
+    if (!st.on) {
+      $('#sync-code-box').hidden = true;
+      $('#sync-show').setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const line = $('#sync-status');
+    line.classList.toggle('busy', st.busy);
+    line.classList.toggle('error', !!st.error && !st.busy);
+    const devices = st.devices > 1 ? ` · ${st.devices} devices` : '';
+    $('#sync-status-text').textContent = st.busy
+      ? 'Syncing…'
+      : st.error
+        ? st.error
+        : st.lastSync
+          ? `Synced ${ago(st.lastSync)}${devices}`
+          : 'Not synced yet';
+    // one group per line break at most: wrap only between groups, never inside one
+    const codeEl = $('#sync-code');
+    codeEl.innerHTML = '';
+    st.code.split('-').forEach((g, i, all) => {
+      const span = document.createElement('span');
+      span.className = 'code-group';
+      span.textContent = i < all.length - 1 ? `${g}-` : g;
+      codeEl.appendChild(span);
+    });
+    $('#sync-now').disabled = st.busy;
+  }
+  SY.onStatus(renderSync);
+  // keep "synced 3 min ago" current
+  setInterval(() => SY.status().on && renderSync(), 30000);
+
+  // what another device changed: show it
+  SY.onApplied((changed) => {
+    if (changed.includes('sets') || changed.includes('history')) renderLibrary();
+    if (changed.includes('presets')) renderPresetSelect();
+    if (S.panel === 'log' && (changed.includes('log') || changed.includes('history'))) renderLog();
+  });
+
+  function syncMsg(text, isError = false) {
+    const m = $('#sync-msg');
+    m.textContent = text;
+    m.classList.toggle('error', isError);
+  }
+
+  $('#sync-turn-on').addEventListener('click', async () => {
+    syncMsg('');
+    try {
+      await SY.turnOn();
+      // show the new code straight away: it's needed on the other devices
+      $('#sync-code-box').hidden = false;
+      $('#sync-show').setAttribute('aria-expanded', 'true');
+      syncMsg('Sync is on. Enter the code below on your other devices.');
+    } catch (e) {
+      syncMsg(e.message, true);
+    }
+  });
+  $('#sync-join-open').addEventListener('click', () => {
+    const form = $('#sync-join');
+    form.hidden = !form.hidden;
+    $('#sync-join-open').setAttribute('aria-expanded', String(!form.hidden));
+    if (!form.hidden) $('#sync-code-input').focus();
+  });
+  $('#sync-join').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    syncMsg('');
+    const input = $('#sync-code-input');
+    if (!SY.normalize(input.value)) {
+      input.classList.add('invalid');
+      return syncMsg('That doesn’t look like a sync code: it has 25 letters and digits, in five groups.', true);
+    }
+    input.classList.remove('invalid');
+    try {
+      await SY.join(input.value);
+      input.value = '';
+      $('#sync-join').hidden = true;
+      const st = SY.status();
+      syncMsg(st.error ? '' : 'Joined. This device now has everything from your other devices.');
+    } catch (err) {
+      syncMsg(err.message, true);
+    }
+  });
+  $('#sync-code-input').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+  $('#sync-now').addEventListener('click', () => SY.syncNow());
+  $('#sync-show').addEventListener('click', () => {
+    const box = $('#sync-code-box');
+    box.hidden = !box.hidden;
+    $('#sync-show').setAttribute('aria-expanded', String(!box.hidden));
+  });
+  $('#sync-copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(SY.status().code);
+      toast('Sync code copied.');
+    } catch (e) {
+      toast('Couldn’t copy; select the code and copy it instead.', true);
+    }
+  });
+  if (navigator.share) $('#sync-share').hidden = false;
+  $('#sync-share').addEventListener('click', () => {
+    navigator.share({ title: 'Value Study sync code', text: SY.status().code }).catch(() => {});
+  });
+  $('#sync-stop').addEventListener('click', async () => {
+    if (!confirm('Stop syncing on this device? Everything stays on this device, and your other devices keep syncing.')) return;
+    await SY.turnOff();
+    syncMsg('Sync is off on this device.');
+  });
+  $('#sync-delete').addEventListener('click', async () => {
+    if (!confirm('Delete the synced copy for every device? Each device keeps what it has, but they’ll stop staying in step until sync is turned on again.')) return;
+    try {
+      await SY.turnOff({ removeCopy: true });
+      syncMsg('The synced copy is deleted, and sync is off on this device.');
+    } catch (e) {
+      syncMsg(`Couldn’t delete it: ${e.message}`, true);
+    }
+  });
+
   /* ================= Start up ================= */
 
   syncStudyControls();
@@ -3254,6 +3387,8 @@
   buildMuseumFilter();
   renderLibrary();
   renderPresetSelect();
+  renderSync();
+  SY.resume();
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');

@@ -53,7 +53,7 @@ Smaller ideas raised along the way:
 
 ## Syncing across devices
 
-**Status:** steps 1 (merge rules and local changes) and 2 (the service) are done. The service is deployed at `https://value-study-sync.jeffrey-63e.workers.dev` but not connected to the app yet. The client is next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** steps 1 (merge rules and local changes), 2 (the service, deployed at `https://value-study-sync.jeffrey-63e.workers.dev`) and 3 (the app's sync and its Sync section) are done. Photos and QR codes are next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
 
 ### Why
 
@@ -154,7 +154,12 @@ Moving from the sync code to an account would be one step: sign in on a synced d
 2. **The service.** Built: `sync/worker.js` (with `sync/README.md` and `sync/wrangler.toml`), tested in `tests/sync.test.mjs` against an in-memory R2 bucket (`tests/r2-memory.mjs`); `node tests/sync-dev.mjs` runs it locally. Deployed on 2026-11-08 (R2 bucket and Worker `value-study-sync`, with the owner's OK) and checked live. As planned:
    - `sync/worker.js` with tests against an in-memory R2 stand-in, like `tests/relay-dev.mjs`.
    - Deploying it is outward-facing: ask the owner first.
-3. **The client:** sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
+3. **The client:** done.
+   - `js/sync.js` handles the code (Crockford base 32, 25 characters), the keys (HKDF), AES-GCM encryption, and the sync passes. A pass skips anything unchanged on both sides, and retries with a fresh merge if another device saved in between.
+   - The Sync section in the Images tab has Turn on, Join with a code, the status line, Show my code (Copy, Share), Stop syncing, and Delete the synced copy.
+   - The code is kept on each synced device (`value-study:sync`) so it can keep syncing and show the code again.
+   - Tests: `tests/sync-client.test.mjs` has two simulated devices against the real Worker and an in-memory bucket, and the browser test has two browsers against `tests/sync-dev.mjs`. A live check against the deployed service also passed, and its test data was deleted.
+   - Originally planned: sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
 4. **Photos and QR codes** (fast follows).
 5. **Accounts, later:** a Supabase adapter.
 

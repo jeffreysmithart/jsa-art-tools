@@ -48,7 +48,16 @@ The study image and its toolbar stay in view whichever tab is open. Choosing you
 
 Keyboard (also listed under **Keyboard shortcuts** at the bottom of the Canvas tab): `G` grid, `L` composition guides, `F` flip, `V` view, `C` crop, `T` timer, `K` cycle grayscale / color / main colors, `P` present, `O` overlay my study, `S` add to set, `M` memory mode, `R` staged reveal, `0` all values, `2`–`6` number of values, `Space` start/pause.
 
-Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They don't sync between devices; use Export / Import to move a set. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), so export sets you care about, or add the site to your Home Screen.
+Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They stay on this device unless you turn on **Sync**. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), and a synced copy brings it back.
+
+**Sync** (Images tab): keeps study sets, your presets, history and the practice log the same on your devices.
+- **Turn on sync:** gives you a sync code (25 letters and digits). On another device, **Join with a code** and enter it; from then on they stay in step by themselves: a few seconds after a change, when you come back to the page, and every few minutes.
+- **Encrypted on your device:** everything is encrypted with a key made from the code before it's sent, so the sync service (`sync/`, on Cloudflare) only stores scrambled data. Keep the code private, and don't lose it: it can't be recovered. **Show my code** brings it back on any synced device.
+- **The practice log:** each device keeps its own, and the Log tab adds them up.
+- **What doesn't sync:** settings such as the view and timer, and (for now) your own uploaded photos. Photos and joining with a QR code are next.
+- **Stopping:** **Stop syncing** keeps everything on the device. **Delete the synced copy** removes the online copy for every device.
+
+Export / Import still moves a single set by hand.
 
 ## Running it
 
@@ -94,11 +103,12 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/timer.js`: countdown, chime, screen wake lock
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset
 - `js/log.js`: the practice log (records study time and timed rounds per day)
-- `js/sync-merge.js`: merge rules for syncing across devices (study sets, presets, history, and each device's log); the sync itself is still to come, see PLAN.md
+- `js/sync-merge.js`: merge rules for syncing across devices (study sets, presets, history, and each device's log)
+- `js/sync.js`: syncing with a sync code (keys, encryption, the sync passes); the Sync section is in `js/app.js`
 - `js/library.js`: study sets and history (localStorage, with uploaded photos in IndexedDB)
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it
 - `js/config.js`: site settings (the image relay address)
-- `sync/`: the sync service (a Cloudflare Worker with R2 storage; `node tests/sync-dev.mjs` runs it locally); not deployed or connected to the app yet
+- `sync/`: the sync service (a Cloudflare Worker with R2 storage, at `value-study-sync.jeffrey-63e.workers.dev`; `node tests/sync-dev.mjs` runs it locally), set in `js/config.js` as `syncService`
 - `relay/`: the Cloudflare image relay and its setup steps (`node tests/relay-dev.mjs` runs it locally)
 - `js/app.js`: the interface

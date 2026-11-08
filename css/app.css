@@ -150,7 +150,7 @@ h3 { font-size: 13px; margin: 16px 0 8px; }
 .file-btn { position: relative; overflow: hidden; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
 
-input[type="url"], input[type="search"], input[type="number"], select {
+input[type="url"], input[type="search"], input[type="number"], input[type="text"], select {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -471,7 +471,7 @@ body.presenting .timer-status { font-size: 12px; }
 
 /* ---------- Touch devices: 44px targets, 16px fields (no iOS zoom on focus) ---------- */
 @media (pointer: coarse) {
-  input[type="url"], input[type="search"], input[type="number"], select, .swatch input { font-size: 16px; }
+  input[type="url"], input[type="search"], input[type="number"], input[type="text"], select, .swatch input { font-size: 16px; }
   .btn, .btn.tiny, .card .acts .btn, .side-tabs button, .tabs button, .seg button, select,
   input[type="url"], input[type="search"], input[type="number"] { min-height: 44px; }
   .btn.tiny { padding: 6px 12px; font-size: 13px; }
@@ -659,3 +659,24 @@ body.presenting .timer-main { width: auto; }
 .key-list dt { white-space: nowrap; }
 .key-list dd { margin: 0; color: var(--muted); }
 .pal-stats .stat b { font-size: 15px; text-wrap: balance; }
+
+/* ---------- Sync ---------- */
+.sync-join { margin-top: 10px; }
+.code-input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; text-transform: uppercase; }
+.sync-status { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.sync-status.busy .sync-dot { background: var(--muted); }
+.sync-status.error { color: var(--danger); }
+.sync-status.error .sync-dot { background: var(--danger); }
+.sync-code-box { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.sync-code {
+  display: block; margin-bottom: 10px; font: 600 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.06em; overflow-wrap: normal; word-break: normal; user-select: all; -webkit-user-select: all;
+}
+.sync-code-box .howto { margin-top: 10px; }
+.sync-code-box .howto .btn { margin-top: 8px; }
+#sec-sync .fine { margin-top: 10px; }
+@media (pointer: coarse) {
+  input[type="text"] { min-height: 44px; }
+}
+.sync-code .code-group { white-space: nowrap; }
