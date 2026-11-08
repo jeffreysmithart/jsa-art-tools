@@ -1057,6 +1057,8 @@ function check(cond, msg) {
     const code = (await mac.pg.textContent('#sync-code')).trim();
     check(/^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(code) && await mac.pg.isVisible('#sync-code-box'), `turning sync on shows a code to use on other devices (${code.slice(0, 5)}-…)`);
     check(/Synced just now/.test(await mac.pg.textContent('#sync-status')), 'the status says it’s synced');
+    const qr = await mac.pg.$eval('#sync-qr', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 50) dark++; return { w: c.width, dark: dark / (c.width * c.height) }; });
+    check(qr.w > 100 && qr.dark > 0.3 && qr.dark < 0.7, `Show my code includes a QR code (${qr.w}px, ${Math.round(qr.dark * 100)}% dark)`);
     // the iPad joins with the code and gets the set
     await ipad.pg.click('#sync-join-open');
     await ipad.pg.fill('#sync-code-input', 'not a code');
@@ -1076,6 +1078,20 @@ function check(cond, msg) {
     await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
     check(true, 'a rename on the iPad shows up on the Mac after syncing');
     await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
+    // a third device joins by opening the QR code's link
+    const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phonePg = await phoneCtx.newPage();
+    aware(phonePg);
+    phonePg.on('pageerror', (e) => errors.push(e.message));
+    let asked = '';
+    phonePg.on('dialog', (d) => { asked = d.message(); d.accept(); });
+    await phonePg.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: syncConfig }));
+    await phonePg.goto(`${BASE}#sync=${code}`);
+    await synced(phonePg);
+    check(/Join sync with the code from this link/.test(asked), 'opening the QR code’s link asks before joining');
+    check(!(await phonePg.evaluate(() => location.hash)), 'and takes the code out of the address bar');
+    check(await phonePg.evaluate(() => window.VST.library.sets().some((s) => s.name.startsWith('Inness'))), 'the phone gets the sets too');
+    await phoneCtx.close();
     // a photo uploaded on the Mac opens on the iPad
     await mac.pg.setInputFiles('#file-input', { name: 'my-sketch.png', mimeType: 'image/png', buffer: png });
     await mac.pg.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.source === 'upload');

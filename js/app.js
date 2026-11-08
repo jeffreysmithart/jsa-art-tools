@@ -3263,6 +3263,30 @@
     return `on ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
   }
 
+  /** A link that opens the app and offers to join with this code (the code is after #, so it's never sent to a server). */
+  function joinLink(code) {
+    return `${location.origin}${location.pathname}#sync=${code}`;
+  }
+
+  /** Draws the join link as a QR code: dark modules on white, with a quiet margin. */
+  function drawSyncQr(code) {
+    const cv = $('#sync-qr');
+    if (!window.qrcode || !code) return;
+    const q = window.qrcode(0, 'M');
+    q.addData(joinLink(code));
+    q.make();
+    const n = q.getModuleCount();
+    const margin = 4;
+    const cell = Math.max(4, Math.floor(336 / (n + margin * 2)));
+    cv.width = cv.height = (n + margin * 2) * cell;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+    cv.dataset.code = code;
+  }
+
   function renderSync(st = SY.status()) {
     $('#sec-sync').hidden = !st.available;
     $('#sync-off').hidden = st.on;
@@ -3283,6 +3307,7 @@
         : st.lastSync
           ? `Synced ${ago(st.lastSync)}${devices}`
           : 'Not synced yet';
+    if ($('#sync-qr').dataset.code !== st.code) drawSyncQr(st.code);
     // one group per line break at most: wrap only between groups, never inside one
     const codeEl = $('#sync-code');
     codeEl.innerHTML = '';
@@ -3318,7 +3343,7 @@
       // show the new code straight away: it's needed on the other devices
       $('#sync-code-box').hidden = false;
       $('#sync-show').setAttribute('aria-expanded', 'true');
-      syncMsg('Sync is on. Enter the code below on your other devices.');
+      syncMsg('Sync is on. Scan the QR code with your other devices, or enter the code there.');
     } catch (e) {
       syncMsg(e.message, true);
     }
@@ -3365,8 +3390,38 @@
   });
   if (navigator.share) $('#sync-share').hidden = false;
   $('#sync-share').addEventListener('click', () => {
-    navigator.share({ title: 'Value Study sync code', text: SY.status().code }).catch(() => {});
+    const code = SY.status().code;
+    navigator.share({ title: 'Value Study sync', text: `Sync code: ${code}`, url: joinLink(code) }).catch(() => {});
   });
+
+  /*
+   * Opened from the QR code (or a shared link): #sync=<code>. Take the code
+   * out of the address bar right away, so it isn't left in history, then
+   * offer to join.
+   */
+  async function joinFromLink() {
+    const m = location.hash.match(/(?:^#|&)sync=([^&]+)/);
+    if (!m) return;
+    const code = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!SY.status().available) return;
+    if (!SY.normalize(code)) return toast('That link’s sync code isn’t complete. Ask for the code again.', true);
+    const st = SY.status();
+    if (st.on && SY.normalize(st.code) === SY.normalize(code)) return toast('This device is already syncing with that code.');
+    const ask = st.on
+      ? 'Switch this device to the sync code from the link? It stops syncing with its current code; everything stays on this device.'
+      : 'Join sync with the code from this link? This device will get the study sets, presets, history and log from your other devices.';
+    if (!confirm(ask)) return;
+    if (st.on) await SY.turnOff();
+    setPanel('images');
+    try {
+      await SY.join(code);
+      syncMsg(SY.status().error ? '' : 'Joined. This device now has everything from your other devices.');
+      toast('Sync is on.');
+    } catch (e) {
+      syncMsg(e.message, true);
+    }
+  }
   $('#sync-stop').addEventListener('click', async () => {
     if (!confirm('Stop syncing on this device? Everything stays on this device, and your other devices keep syncing.')) return;
     await SY.turnOff();
@@ -3395,7 +3450,7 @@
   renderLibrary();
   renderPresetSelect();
   renderSync();
-  SY.resume();
+  SY.resume().then(joinFromLink);
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');

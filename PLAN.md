@@ -53,7 +53,7 @@ Smaller ideas raised along the way:
 
 ## Syncing across devices
 
-**Status:** steps 1 (merge rules and local changes), 2 (the service, deployed at `https://value-study-sync.jeffrey-63e.workers.dev`) and 3 (the app's sync and its Sync section) are done. Photos and QR codes are next. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
+**Status:** steps 1 (merge rules and local changes), 2 (the service, deployed at `https://value-study-sync.jeffrey-63e.workers.dev`) 3 (the app's sync and its Sync section) and 4 (photos and QR codes) are done. Real accounts are the remaining step, later. For the owner's own iPad, Mac and iPhone first (a beta), with real accounts designed for but not built yet.
 
 ### Why
 
@@ -160,7 +160,10 @@ Moving from the sync code to an account would be one step: sign in on a synced d
    - The code is kept on each synced device (`value-study:sync`) so it can keep syncing and show the code again.
    - Tests: `tests/sync-client.test.mjs` has two simulated devices against the real Worker and an in-memory bucket, and the browser test has two browsers against `tests/sync-dev.mjs`. A live check against the deployed service also passed, and its test data was deleted.
    - Originally planned: sync code, encryption, the sync loop, the Sync section in the Images tab, and browser tests with a stand-in server.
-4. **Photos and QR codes** (fast follows).
+4. **Photos and QR codes:** done.
+   - **Photos:** a device that has one encrypts it and stores it once, named by an HMAC of its bytes with the code's naming key. Items record that name as `photo`, and the merge rules keep it whichever copy wins. Other devices fetch it when it's opened, and photos nobody uses are removed after a day.
+   - **QR codes:** qrcode-generator 2.0.4 (MIT) is vendored unchanged as `js/vendor/qrcode.js`, after the owner's OK and a check for network or storage calls. The QR code holds a link with `#sync=<code>`; opening it asks before joining and removes the code from the address bar.
+   - **Deployment:** the Worker was redeployed with photo storage (the owner's OK; the existing synced copy was untouched).
 5. **Accounts, later:** a Supabase adapter.
 
 ## Notes for a new session

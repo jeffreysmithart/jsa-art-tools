@@ -51,10 +51,11 @@ Keyboard (also listed under **Keyboard shortcuts** at the bottom of the Canvas t
 Settings, study sets, history, the session list and a practice log (which images you studied, on which days, for how long, and completed timed rounds) are remembered in this browser (uploaded photos are stored too). They stay on this device unless you turn on **Sync**. Some browsers clear a site's storage after long disuse (Safari after about 7 days without visiting), and a synced copy brings it back.
 
 **Sync** (Images tab): keeps study sets, your presets, history and the practice log the same on your devices.
-- **Turn on sync:** gives you a sync code (25 letters and digits). On another device, **Join with a code** and enter it; from then on they stay in step by themselves: a few seconds after a change, when you come back to the page, and every few minutes.
+- **Turn on sync:** gives you a sync code (25 letters and digits) and a QR code. Scan the QR code with another device's camera (it opens the app and asks to join), or choose **Join with a code** there and enter it. From then on they stay in step by themselves: a few seconds after a change, when you come back to the page, and every few minutes.
 - **Encrypted on your device:** everything is encrypted with a key made from the code before it's sent, so the sync service (`sync/`, on Cloudflare) only stores scrambled data. Keep the code private, and don't lose it: it can't be recovered. **Show my code** brings it back on any synced device.
 - **The practice log:** each device keeps its own, and the Log tab adds them up.
-- **What doesn't sync:** settings such as the view and timer, and (for now) your own uploaded photos. Photos and joining with a QR code are next.
+- **Your own photos sync too:** each is encrypted and uploaded once, and another device fetches it the first time it's opened there. Photos no set or history entry uses are removed from the synced copy after a day.
+- **What doesn't sync:** settings such as the view and timer.
 - **Stopping:** **Stop syncing** keeps everything on the device. **Delete the synced copy** removes the online copy for every device.
 
 Export / Import still moves a single set by hand.
@@ -104,7 +105,8 @@ node tests/smoke.e2e.js              # browser test of both modes (museum respon
 - `js/presets.js`: built-in and saved presets, and rendering an image with a preset
 - `js/log.js`: the practice log (records study time and timed rounds per day)
 - `js/sync-merge.js`: merge rules for syncing across devices (study sets, presets, history, and each device's log)
-- `js/sync.js`: syncing with a sync code (keys, encryption, the sync passes); the Sync section is in `js/app.js`
+- `js/sync.js`: syncing with a sync code (keys, encryption, the sync passes, photos); the Sync section and QR code are in `js/app.js`
+- `js/vendor/qrcode.js`: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4 by Kazuhiko Arase, unchanged, MIT license (`js/vendor/qrcode.LICENSE`)
 - `js/library.js`: study sets and history (localStorage, with uploaded photos in IndexedDB)
 - `js/museum.js`: museum collection search for all six museums (more sources can be added here)
 - `data/nga-paintings.json`, `tools/build_nga_index.py`: the National Gallery of Art paintings index and the script that builds it

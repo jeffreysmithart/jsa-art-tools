@@ -449,6 +449,8 @@
 
   /** Stops syncing on this device. With `removeCopy`, also deletes the synced copy for every device. */
   async function turnOff({ removeCopy = false } = {}) {
+    // let a pass that's under way finish first, so it doesn't write after this
+    if (running) await running.catch(() => {});
     if (removeCopy && keys && base()) await service(base(), keys).removeAll();
     state = null;
     keys = null;
