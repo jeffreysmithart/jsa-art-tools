@@ -120,3 +120,18 @@ test('two quick changes keep their order, even in the same millisecond', () => {
     assert.deepEqual(merged.sets[0].items.map((i) => i.id), ['a'], 'added back after removing: it stays');
   });
 });
+
+test('an image’s crop is saved with it, and reopening it keeps the crop', () => {
+  const ls = browser();
+  on(ls, () => {
+    L.record({ id: 'aic-1', source: 'aic', title: 'A' });
+    const s = L.createSet('S');
+    L.addToSet(s.id, { id: 'aic-1', source: 'aic', title: 'A' });
+    L.setCrop('aic-1', { x: 0.1, y: 0, w: 0.5, h: 1, preset: '8x10', landscape: false });
+    assert.equal(L.cropFor('aic-1').w, 0.5);
+    assert.equal(L.getSet(s.id).items[0].crop.preset, '8x10', 'on the copy in the set too');
+    // opening it again (from a search result that knows nothing of the crop) keeps it
+    L.record({ id: 'aic-1', source: 'aic', title: 'A' });
+    assert.equal(L.history()[0].crop.w, 0.5);
+  });
+});

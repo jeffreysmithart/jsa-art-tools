@@ -108,3 +108,15 @@ test('log: clearing it on one device clears the others’ days up to then', () =
   assert.equal(days['2026-11-01'], undefined);
   assert.equal(days['2026-11-09'].items.a.secs, 90);
 });
+
+test('sets and history: the latest crop wins, and a synced photo name is kept', () => {
+  const crop = (at, w) => ({ x: 0, y: 0, w, h: 1, preset: 'free', at });
+  const ipad = { sets: [set('s1', 100, [item('a', 110, { crop: crop(500, 0.5) })])], deleted: {} };
+  const mac = { sets: [set('s1', 100, [item('a', 110, { photo: 'f'.repeat(64), crop: crop(300, 0.8) })])], deleted: {} };
+  const m = M.mergeSets(ipad, mac).sets[0].items[0];
+  assert.equal(m.crop.w, 0.5, 'the iPad cropped later');
+  assert.equal(m.photo, 'f'.repeat(64));
+  laws(M.mergeSets, ipad, mac);
+  const h = M.mergeHistory({ items: [{ id: 'a', viewed: 900 }] }, { items: [{ id: 'a', viewed: 100, crop: crop(200, 0.6) }] });
+  assert.equal(h.items[0].crop.w, 0.6, 'a crop survives even when the other copy was viewed later');
+});

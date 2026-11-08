@@ -54,6 +54,22 @@
     return JSON.stringify(a) <= JSON.stringify(b) ? a : b;
   }
 
+  /**
+   * Things a device adds to an item without making it "newer":
+   *   photo  an uploaded photo's synced name, added by the device that has it
+   *   crop   the image's crop, { x, y, w, h (fractions), preset, landscape, at }:
+   *          the most recently set one wins
+   * Keep them whichever device's copy of the item wins.
+   */
+  function withPhoto(item, x, y) {
+    const out = { ...item };
+    const photo = item.photo || (x && x.photo) || (y && y.photo);
+    if (photo) out.photo = photo;
+    const crops = [item.crop, x && x.crop, y && y.crop].filter(Boolean);
+    if (crops.length) out.crop = crops.reduce((p, q) => ((q.at || 0) > (p.at || 0) || ((q.at || 0) === (p.at || 0) && JSON.stringify(q) < JSON.stringify(p)) ? q : p));
+    return out;
+  }
+
   /* ---------- study sets ---------- */
 
   const itemTime = (it, set) => it.at || it.added || (set && set.created) || 0;
@@ -82,7 +98,7 @@
       const y = ib.get(id);
       const pick = !x ? y : !y ? x : itemTime(x, a) === itemTime(y, b) ? newer(x, y, 'at') : itemTime(x, a) > itemTime(y, b) ? x : y;
       const at = Math.max(x ? itemTime(x, a) : 0, y ? itemTime(y, b) : 0);
-      if (at > (removed[id] || 0)) items.push({ ...pick, at });
+      if (at > (removed[id] || 0)) items.push(withPhoto({ ...pick, at }, x, y));
     }
     // oldest first, as they were added; ties by id so both devices agree
     items.sort((p, q) => p.at - q.at || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0));
@@ -141,7 +157,7 @@
       const y = hb.get(id);
       const pick = newer(x, y, 'viewed');
       const viewed = Math.max((x && x.viewed) || 0, (y && y.viewed) || 0);
-      if (viewed > clearedAt && viewed > (removed[id] || 0)) items.push({ ...pick, viewed });
+      if (viewed > clearedAt && viewed > (removed[id] || 0)) items.push(withPhoto({ ...pick, viewed }, x, y));
     }
     items.sort((p, q) => q.viewed - p.viewed || (p.id < q.id ? -1 : 1));
     return { items: items.slice(0, max), removed, clearedAt };

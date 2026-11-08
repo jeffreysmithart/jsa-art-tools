@@ -75,7 +75,7 @@
     spaceUnused: false, // color space: also show the colors the picture doesn't use
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
-    palRange: true, // color space: show what the palette can mix
+    palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
     settingsVersion: 3,
   };
 
@@ -282,6 +282,33 @@
     el.classList.toggle('error', !!isError);
   }
 
+  /*
+   * An image's crop is saved with it (in sets and history, as fractions of
+   * the image, so it fits whatever size the image loads at), so it comes
+   * back when the image is opened again, on this device or another.
+   */
+  function rememberCrop() {
+    if (!img.item || !img.item.id || !img.w) return;
+    const r = img.crop || { x: 0, y: 0, w: img.w, h: img.h };
+    const crop = { x: r.x / img.w, y: r.y / img.h, w: r.w / img.w, h: r.h / img.h, preset: img.cropPreset, landscape: img.cropLandscape };
+    img.item.crop = L.setCrop(img.item.id, crop);
+  }
+  function restoreCrop(item) {
+    const c = item && item.id ? L.cropFor(item.id) || item.crop : null;
+    if (!c || !img.w) return;
+    const full = c.x <= 0.0005 && c.y <= 0.0005 && c.w >= 0.9995 && c.h >= 0.9995;
+    img.crop = full
+      ? null
+      : {
+          x: Math.round(c.x * img.w),
+          y: Math.round(c.y * img.h),
+          w: Math.max(1, Math.min(img.w - Math.round(c.x * img.w), Math.round(c.w * img.w))),
+          h: Math.max(1, Math.min(img.h - Math.round(c.y * img.h), Math.round(c.h * img.h))),
+        };
+    img.cropPreset = c.preset || 'free';
+    img.cropLandscape = c.landscape == null ? null : c.landscape;
+  }
+
   function setImage(el, { name, meta = null, objectUrl = null, item = null }) {
     if (img.url) URL.revokeObjectURL(img.url);
     img.item = item;
@@ -291,6 +318,7 @@
     img.crop = null;
     img.cropPreset = 'free';
     img.cropLandscape = null;
+    restoreCrop(item);
     img.meta = meta;
     img.name = name || 'reference';
     img.url = objectUrl;
@@ -923,6 +951,7 @@
         S.cropCustom = custom; // remembered for the next image
         save();
         buildSource();
+        rememberCrop();
       },
     });
   }
@@ -1215,8 +1244,8 @@
       shell: S.spaceUnused ? shell : [],
       marks,
       stats: colorCache.stats,
-      palette: S.palRange && pal ? ensurePalette().mixes : [],
-      out: S.palRange && pal ? pal.outCells : null,
+      palette: S.palShow && pal ? ensurePalette().mixes : [],
+      out: S.palShow && pal ? pal.outCells : null,
     };
   }
 
@@ -1442,7 +1471,8 @@
       o.textContent = p.name;
       add.appendChild(o);
     }
-    $('#pal-range').checked = S.palRange;
+    $('#pal-range').checked = S.palShow;
+    $('#space-pal').checked = S.palShow;
     const stats = $('#pal-stats');
     const r = paletteReach();
     if (!r) {
@@ -1486,8 +1516,21 @@
   $('#pal-add').addEventListener('change', (e) => {
     if (e.target.value) setPalette([...S.palette, e.target.value]);
   });
+  /** Shows or hides the palette in the color space (in the Color tab and the large view). */
+  function setPalShow(on) {
+    S.palShow = on;
+    $('#pal-range').checked = on;
+    $('#space-pal').checked = on;
+    const d = colorData();
+    if (d && !$('#space-modal').hidden) spaceBig.setData(d);
+  }
+  $('#space-pal').addEventListener('change', (e) => {
+    setPalShow(e.target.checked);
+    renderGamut();
+    save();
+  });
   $('#pal-range').addEventListener('change', (e) => {
-    S.palRange = e.target.checked;
+    setPalShow(e.target.checked);
     renderGamut();
     save();
   });
@@ -2286,7 +2329,14 @@
         renderLibrary();
         return true;
       } catch (e) {
-        toast(SY.status().on ? 'That photo is on the device it was added on: syncing photos is coming next.' : 'That photo is no longer stored in this browser.', true);
+        toast(
+          SY.status().on && item.photo
+            ? 'Couldn’t get that photo from your synced copy. Check the connection and try again.'
+            : SY.status().on
+              ? 'That photo hasn’t synced yet: open the app on the device it was added on, and it will upload.'
+              : 'That photo is no longer stored in this browser.',
+          true
+        );
         return false;
       } finally {
         setBusy(false);
@@ -2299,6 +2349,12 @@
   /** Remembers what's being studied, for history and "Add current image". */
   function remember(item) {
     img.item = item;
+    if (img.crop) {
+      rememberCrop(); // cropped before the image was saved: keep that crop with it
+    } else {
+      restoreCrop(item); // seen before (here or, with sync, elsewhere): bring its crop back
+      if (img.crop) buildSource();
+    }
     L.record(item);
     VST.log.start(item);
     renderLibrary();
@@ -3256,6 +3312,30 @@
     return `on ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
   }
 
+  /** A link that opens the app and offers to join with this code (the code is after #, so it's never sent to a server). */
+  function joinLink(code) {
+    return `${location.origin}${location.pathname}#sync=${code}`;
+  }
+
+  /** Draws the join link as a QR code: dark modules on white, with a quiet margin. */
+  function drawSyncQr(code) {
+    const cv = $('#sync-qr');
+    if (!window.qrcode || !code) return;
+    const q = window.qrcode(0, 'M');
+    q.addData(joinLink(code));
+    q.make();
+    const n = q.getModuleCount();
+    const margin = 4;
+    const cell = Math.max(4, Math.floor(336 / (n + margin * 2)));
+    cv.width = cv.height = (n + margin * 2) * cell;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+    cv.dataset.code = code;
+  }
+
   function renderSync(st = SY.status()) {
     $('#sec-sync').hidden = !st.available;
     $('#sync-off').hidden = st.on;
@@ -3276,6 +3356,7 @@
         : st.lastSync
           ? `Synced ${ago(st.lastSync)}${devices}`
           : 'Not synced yet';
+    if ($('#sync-qr').dataset.code !== st.code) drawSyncQr(st.code);
     // one group per line break at most: wrap only between groups, never inside one
     const codeEl = $('#sync-code');
     codeEl.innerHTML = '';
@@ -3311,7 +3392,7 @@
       // show the new code straight away: it's needed on the other devices
       $('#sync-code-box').hidden = false;
       $('#sync-show').setAttribute('aria-expanded', 'true');
-      syncMsg('Sync is on. Enter the code below on your other devices.');
+      syncMsg('Sync is on. Scan the QR code with your other devices, or enter the code there.');
     } catch (e) {
       syncMsg(e.message, true);
     }
@@ -3358,8 +3439,38 @@
   });
   if (navigator.share) $('#sync-share').hidden = false;
   $('#sync-share').addEventListener('click', () => {
-    navigator.share({ title: 'Value Study sync code', text: SY.status().code }).catch(() => {});
+    const code = SY.status().code;
+    navigator.share({ title: 'Value Study sync', text: `Sync code: ${code}`, url: joinLink(code) }).catch(() => {});
   });
+
+  /*
+   * Opened from the QR code (or a shared link): #sync=<code>. Take the code
+   * out of the address bar right away, so it isn't left in history, then
+   * offer to join.
+   */
+  async function joinFromLink() {
+    const m = location.hash.match(/(?:^#|&)sync=([^&]+)/);
+    if (!m) return;
+    const code = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!SY.status().available) return;
+    if (!SY.normalize(code)) return toast('That link’s sync code isn’t complete. Ask for the code again.', true);
+    const st = SY.status();
+    if (st.on && SY.normalize(st.code) === SY.normalize(code)) return toast('This device is already syncing with that code.');
+    const ask = st.on
+      ? 'Switch this device to the sync code from the link? It stops syncing with its current code; everything stays on this device.'
+      : 'Join sync with the code from this link? This device will get the study sets, presets, history and log from your other devices.';
+    if (!confirm(ask)) return;
+    if (st.on) await SY.turnOff();
+    setPanel('images');
+    try {
+      await SY.join(code);
+      syncMsg(SY.status().error ? '' : 'Joined. This device now has everything from your other devices.');
+      toast('Sync is on.');
+    } catch (e) {
+      syncMsg(e.message, true);
+    }
+  }
   $('#sync-stop').addEventListener('click', async () => {
     if (!confirm('Stop syncing on this device? Everything stays on this device, and your other devices keep syncing.')) return;
     await SY.turnOff();
@@ -3388,7 +3499,7 @@
   renderLibrary();
   renderPresetSelect();
   renderSync();
-  SY.resume();
+  SY.resume().then(joinFromLink);
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');

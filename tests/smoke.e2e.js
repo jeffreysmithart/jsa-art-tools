@@ -126,6 +126,7 @@ function check(cond, msg) {
   await page.uncheck('#space-unused');
   await page.screenshot({ path: path.join(OUT, '2c-color-space.png') });
   // tap to open it large: turn, zoom, slice by value, tap a dot to read it
+  check(!(await page.isChecked('#pal-range')), 'the palette isn’t shown in the color space unless asked for');
   await page.uncheck('#pal-range'); // just the picture's own colors for these checks
   await page.click('#space-open');
   check(await page.isVisible('#space-modal'), 'tapping the color space opens it large');
@@ -1057,6 +1058,8 @@ function check(cond, msg) {
     const code = (await mac.pg.textContent('#sync-code')).trim();
     check(/^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(code) && await mac.pg.isVisible('#sync-code-box'), `turning sync on shows a code to use on other devices (${code.slice(0, 5)}-…)`);
     check(/Synced just now/.test(await mac.pg.textContent('#sync-status')), 'the status says it’s synced');
+    const qr = await mac.pg.$eval('#sync-qr', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 50) dark++; return { w: c.width, dark: dark / (c.width * c.height) }; });
+    check(qr.w > 100 && qr.dark > 0.3 && qr.dark < 0.7, `Show my code includes a QR code (${qr.w}px, ${Math.round(qr.dark * 100)}% dark)`);
     // the iPad joins with the code and gets the set
     await ipad.pg.click('#sync-join-open');
     await ipad.pg.fill('#sync-code-input', 'not a code');
@@ -1076,9 +1079,62 @@ function check(cond, msg) {
     await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
     check(true, 'a rename on the iPad shows up on the Mac after syncing');
     await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
+    // a third device joins by opening the QR code's link
+    const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phonePg = await phoneCtx.newPage();
+    aware(phonePg);
+    phonePg.on('pageerror', (e) => errors.push(e.message));
+    let asked = '';
+    phonePg.on('dialog', (d) => { asked = d.message(); d.accept(); });
+    await phonePg.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: syncConfig }));
+    await phonePg.goto(`${BASE}#sync=${code}`);
+    await synced(phonePg);
+    check(/Join sync with the code from this link/.test(asked), 'opening the QR code’s link asks before joining');
+    check(!(await phonePg.evaluate(() => location.hash)), 'and takes the code out of the address bar');
+    check(await phonePg.evaluate(() => window.VST.library.sets().some((s) => s.name.startsWith('Inness'))), 'the phone gets the sets too');
+    await phoneCtx.close();
+    // a photo uploaded on the Mac opens on the iPad
+    await mac.pg.setInputFiles('#file-input', { name: 'my-sketch.png', mimeType: 'image/png', buffer: png });
+    await mac.pg.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.source === 'upload');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload'));
+    await mac.pg.click('#sync-now');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.photo), null, { timeout: 8000 });
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const opened = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      if (!it) return 'no item';
+      const ok = await window.VST.app.openItem(it);
+      return ok && window.VST.app.work.w > 0 ? `${window.VST.app.work.w}x${window.VST.app.work.h}` : 'not opened';
+    });
+    check(/^\d+x\d+$/.test(opened), `a photo uploaded on the Mac opens on the iPad (${opened})`);
+    // a crop made on the Mac is applied on the iPad
+    await mac.pg.click('#btn-crop');
+    await mac.pg.selectOption('#crop-preset', '8x10');
+    await mac.pg.click('#crop-apply');
+    const macAspect = await mac.pg.evaluate(() => window.VST.app.work.w / window.VST.app.work.h);
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.crop));
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const ipadAspect = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(macAspect - 1.25) < 0.02 && Math.abs(ipadAspect - macAspect) < 0.02, `a crop made on the Mac is applied on the iPad (${macAspect.toFixed(2)} → ${ipadAspect.toFixed(2)})`);
+    // and on the Mac, reopening the image keeps its crop
+    const reopened = await mac.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(reopened - macAspect) < 0.02, 'reopening an image keeps its crop');
     // stop syncing: the data stays on the device
     await ipad.pg.click('#sync-stop');
-    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1), 'stopping sync keeps this device’s data');
+    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1 && window.VST.library.history().length >= 1), 'stopping sync keeps this device’s data');
     await mac.ctx.close();
     await ipad.ctx.close();
   } finally {

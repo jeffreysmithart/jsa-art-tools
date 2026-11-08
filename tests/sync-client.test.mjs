@@ -166,3 +166,59 @@ test('a wrong code is refused, and turning off can delete the synced copy', asyn
     assert.ok(L.sets() !== null, 'this device keeps its own data');
   });
 });
+
+test('photos: the device that has one uploads it; the other fetches it when it’s opened', async () => {
+  env = { SYNC: memoryBucket() };
+  const ipad = browser();
+  const mac = browser();
+  const A = syncModule();
+  const B = syncModule();
+  // the iPad has a photo (IndexedDB isn't in Node, so photos are held here)
+  const photo = new Uint8Array(4096).map((_, i) => (i * 37) % 256);
+  const held = { ipad: { 'up-1': new Blob([photo]) }, mac: {} };
+  let who = 'ipad';
+  const realPhotoBlob = L.photoBlob;
+  L.photoBlob = async (blobId) => held[who][blobId] || null;
+  try {
+    const setId = await as(ipad, async () => {
+      const s = L.createSet('Sketches');
+      L.addToSet(s.id, { id: 'up-1', source: 'upload', title: 'My sketch', blobId: 'up-1' });
+      await A.turnOn();
+      return s.id;
+    });
+    const item = await as(ipad, () => L.getSet(setId).items[0]);
+    assert.match(item.photo || '', /^[0-9a-f]{64}$/, 'the item records its synced photo name');
+    const stored = [...env.SYNC.store.keys()].filter((k) => k.includes('/photo/'));
+    assert.equal(stored.length, 1, 'the photo is stored once');
+    const sealed = env.SYNC.store.get(stored[0]).bytes;
+    assert.ok(sealed.byteLength > photo.byteLength && !Buffer.from(sealed).includes(Buffer.from(photo.slice(0, 64))), 'and only encrypted');
+    // the Mac joins: the set arrives with the photo's name, and the photo is fetched when needed
+    who = 'mac';
+    const code = await as(ipad, () => A.status().code);
+    const macItem = await as(mac, async () => {
+      await B.join(code);
+      return L.getSet(setId).items[0];
+    });
+    assert.equal(macItem.photo, item.photo);
+    const blob = await as(mac, () => B.fetchPhoto(macItem));
+    assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), photo, 'the same photo, decrypted');
+    // a second pass doesn't upload it again
+    who = 'ipad';
+    const puts = env.SYNC.store.size;
+    await as(ipad, () => A.syncNow());
+    assert.equal(env.SYNC.store.size, puts);
+    // once nothing uses it, it's removed, but only after a day
+    await as(ipad, async () => {
+      L.removeFromSet(setId, 'up-1');
+      L.clearHistory();
+      await A.syncNow();
+    });
+    assert.equal([...env.SYNC.store.keys()].filter((k) => k.includes('/photo/')).length, 1, 'kept for a day, in case another device just linked it');
+    const key = [...env.SYNC.store.keys()].find((k) => k.includes('/photo/'));
+    env.SYNC.store.get(key).uploaded = new Date(Date.now() - A.PHOTO_GRACE - 60000);
+    await as(ipad, () => A.syncNow());
+    assert.equal([...env.SYNC.store.keys()].filter((k) => k.includes('/photo/')).length, 0, 'then removed');
+  } finally {
+    L.photoBlob = realPhotoBlob;
+  }
+});

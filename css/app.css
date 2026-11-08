@@ -680,3 +680,8 @@ body.presenting .timer-main { width: auto; }
   input[type="text"] { min-height: 44px; }
 }
 .sync-code .code-group { white-space: nowrap; }
+
+/* the sync QR code: dark on white, the way cameras read best */
+.sync-qr { margin: 0 0 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sync-qr canvas { width: 168px; height: 168px; border-radius: 6px; image-rendering: pixelated; }
+.sync-qr figcaption { font-size: 12px; color: var(--muted); text-align: center; }
