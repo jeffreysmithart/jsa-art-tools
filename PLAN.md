@@ -45,7 +45,18 @@ Nothing is in progress. The owner picks what's next; these are the ideas so far,
 
 1. **Real accounts** for sync (the last step of the sync plan): probably Supabase, through the same adapter in `js/sync.js`. See [Real accounts, later](#real-accounts-later).
 2. **Diagonal construction grid** (below), once the composition guides have been tried on real photos.
-3. **Palette follow-ups:** match a paint's color or strength to a brand, named palettes, recipes for the study's swatches, a mixing chart.
+3. **Palette follow-ups,** refocused by the owner on exploring how a limited palette fits a particular painting:
+   - **Done:** which paint to add or drop for this picture, and **Compare palettes** (the picture painted with every palette, by reach).
+   - **Next:** a flat gamut-overlap wheel (the picture's colors and the palette's range as outlines, the gap marked); then artists' palettes (Richard Schmid, Daniel Keys, Kevin Macpherson, Scott Christensen, Joe Paquet, Marc Hanson, "as commonly described", with sources) and your own named palettes (syncing them needs a `palettes` document in the sync Worker and a redeploy, with the owner's OK).
+   - **Dropped for now:** a mixing chart and matching paints to a brand (the owner mixes by eye well; not worth the complexity).
+   - **Artists' palettes, research so far** (from search summaries; this environment's network blocks most of these sites, so check the sources before building):
+     - **Kevin Macpherson:** cadmium yellow light, alizarin crimson, ultramarine blue, titanium white, later adding cadmium red light and phthalo green (Artists Network interview); his Gamblin plein air set adds Portland grays and chromatic black.
+     - **Joe Paquet:** lead white, cadmium yellow light, cadmium yellow, cadmium orange, cadmium scarlet, cadmium red, alizarin crimson, manganese blue, cobalt blue, ultramarine blue, ivory black; raw umber for toning (Artists Network, "11 Tips for Painting en Plein Air"). He teaches a "prismatic palette".
+     - **Marc Hanson:** a three-color plein air palette of cadmium yellow light, Rembrandt permanent red medium and ultramarine, with white (secondhand, WetCanvas).
+     - **Richard Schmid:** his site's Tools & Materials page (richardschmid.com) lists his current palette; read it directly, the search summary of it looked incomplete.
+     - **Daniel Keys:** his supply list at danieljkeys.com/supply-list (Winsor & Newton, Rembrandt, Michael Harding and Williamsburg colors); read it directly.
+     - **Scott Christensen:** a limited palette of primaries plus white and premixed grays (secondhand); the Plein Air Podcast episode on his palette is the best source.
+     - Paints these would add: cadmium lemon / yellow deep / scarlet, cobalt blue, manganese blue, terra rosa or Venetian red, transparent oxide red/brown, permanent red medium, and grays.
 4. **Color space follow-ups:** a gamut mask.
 
 Done, for reference:

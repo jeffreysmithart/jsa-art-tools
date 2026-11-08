@@ -1213,7 +1213,7 @@
       }
     }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
   }
-  ['#crop-modal', '#square-modal', '#tryon-modal', '#space-modal'].forEach((sel) => manageFocus($(sel)));
+  ['#crop-modal', '#square-modal', '#tryon-modal', '#space-modal', '#palcmp-modal'].forEach((sel) => manageFocus($(sel)));
 
 
   /* ================= Color tab: the color space ================= */
@@ -1465,15 +1465,47 @@
    */
   const palState = { key: '', model: null, reachKey: '', reach: null };
 
+  // what each palette mixes, kept for the palettes tried lately (suggestions and the compare sheet)
+  const palModels = new Map();
+  function paletteModel(ids) {
+    if (!window.spectral) return null;
+    const key = PAL.paintsFor(ids).map((p) => p.id).join(',');
+    let m = palModels.get(key);
+    if (m) {
+      palModels.delete(key); // most recent last
+    } else {
+      m = PAL.build(ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]));
+      if (palModels.size >= 48) palModels.delete(palModels.keys().next().value);
+    }
+    palModels.set(key, m);
+    return m;
+  }
+
   function ensurePalette() {
     const key = S.palette.join(',');
     if (palState.key !== key) {
       palState.key = key;
-      palState.model = window.spectral ? PAL.build(S.palette, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0])) : null;
+      palState.model = paletteModel(S.palette);
       palState.reachKey = '';
     }
     return palState.model;
   }
+
+  /** "Blue-greens and blues": the one or two hue families that make up most of some colors. */
+  function hueFamilies(cells) {
+    const families = new Map();
+    let total = 0;
+    for (const c of cells) {
+      const m = CS.munsell(c.L, c.a, c.b);
+      const name = m.hue === 'N' ? (c.L < 50 ? 'dark grays' : 'light grays') : `${m.hueName}s`;
+      families.set(name, (families.get(name) || 0) + c.share);
+      total += c.share;
+    }
+    const ranked = [...families.entries()].sort((p, q) => q[1] - p[1]);
+    return ranked.filter(([, v], i) => i === 0 || (i === 1 && v >= total * 0.25)).map(([n]) => n).join(' and ');
+  }
+  const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const pctLabel = (v) => (v > 0 && v < 0.01 ? '<1' : Math.round(v * 100));
 
   /** How much of the current picture the palette reaches (cached per image and palette). */
   function paletteReach() {
@@ -1504,30 +1536,7 @@
       P.renderColor(lab, out);
       return null;
     }
-    const counts = new Map();
-    const w = width || n;
-    // thin diagonal lines over what the palette can't reach, sized to the image,
-    // light on dark mixes and dark on light ones, so the mix still reads between them
-    const period = Math.max(8, Math.round(w / 70));
-    const line = Math.max(2, Math.round(period * 0.28));
-    for (let i = 0, j = 0; i < n; i++, j += 4) {
-      const hit = PAL.nearestCached(model, lab.L[i], lab.A[i], lab.B[i]);
-      const m = model.mixes[hit.i];
-      counts.set(hit.i, (counts.get(hit.i) || 0) + 1);
-      let r = m.rgb[0];
-      let g = m.rgb[1];
-      let b = m.rgb[2];
-      if (S.palMark && hit.d > PAL.REACH && ((i % w) + ((i / w) | 0)) % period < line) {
-        const ink = m.L > 55 ? 0 : 255;
-        r = r * 0.35 + ink * 0.65;
-        g = g * 0.35 + ink * 0.65;
-        b = b * 0.35 + ink * 0.65;
-      }
-      out[j] = r;
-      out[j + 1] = g;
-      out[j + 2] = b;
-      out[j + 3] = 255;
-    }
+    const counts = PAL.paint(model, lab, out, width, { mark: S.palMark });
     // swatches: the mixes that cover the most, light to dark
     return [...counts.entries()]
       .sort((p, q) => q[1] - p[1])
@@ -1570,26 +1579,106 @@
     const r = paletteReach();
     if (!r) {
       stats.innerHTML = '';
+      $('#pal-suggest').hidden = true;
+      sugg.token++;
       return;
     }
     const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
     // name the one or two hue families that make up most of what's out of reach
     // (an average hue of, say, greens and blues would name neither)
-    let outLabel = 'Nothing';
-    if (r.outShare >= 0.005) {
-      const families = new Map();
-      for (const c of r.outCells) {
-        const m = CS.munsell(c.L, c.a, c.b);
-        const name = m.hue === 'N' ? (c.L < 50 ? 'dark grays' : 'light grays') : `${m.hueName}s`;
-        families.set(name, (families.get(name) || 0) + c.share);
+    const outLabel = r.outShare >= 0.005 ? capFirst(hueFamilies(r.outCells)) : 'Nothing';
+    stats.innerHTML = stat(`${pctLabel(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pctLabel(r.outShare)}%)` : 'it can’t mix');
+    suggestPaints(r);
+  }
+
+  /*
+   * Which paint would help this picture: the palette is tried with each
+   * other paint added and each of its own taken out, a few at a time so the
+   * page stays responsive, and the biggest gains and smallest losses shown.
+   */
+  const sugg = { key: '', token: 0, result: null };
+  function suggestPaints(base) {
+    const box = $('#pal-suggest');
+    const key = palState.reachKey;
+    if (sugg.key === key && sugg.result) return renderSuggestions(sugg.result);
+    const token = ++sugg.token;
+    box.hidden = false;
+    box.innerHTML = '<p class="pal-sg-wait">Trying other paints on this picture…</p>';
+    const vars = PAL.variations(S.palette);
+    const cells = colorCache.cells;
+    const tried = [];
+    let i = 0;
+    const step = () => {
+      if (token !== sugg.token) return;
+      const t0 = performance.now();
+      while (i < vars.length && performance.now() - t0 < 25) {
+        const v = vars[i++];
+        const rr = PAL.reach(paletteModel(v.ids), cells);
+        tried.push({ kind: v.kind, id: v.id, reached: rr.reached, outCells: rr.outCells });
       }
-      const ranked = [...families.entries()].sort((p, q) => q[1] - p[1]);
-      const named = ranked.filter(([, v], i) => i === 0 || (i === 1 && v >= r.outShare * 0.25)).map(([n]) => n);
-      const text = named.join(' and ');
-      outLabel = text.charAt(0).toUpperCase() + text.slice(1);
+      if (i < vars.length) return setTimeout(step, 0);
+      sugg.key = key;
+      sugg.result = PAL.rank(base, tried);
+      renderSuggestions(sugg.result);
+    };
+    setTimeout(step, 50);
+  }
+
+  function renderSuggestions({ adds, drops }) {
+    const box = $('#pal-suggest');
+    box.hidden = false;
+    box.innerHTML = '';
+    const row = (label, list, empty) => {
+      const div = document.createElement('div');
+      div.className = 'pal-sg-row';
+      div.innerHTML = `<span class="pal-sg-label">${label}</span>`;
+      if (!list.length) {
+        const p = document.createElement('span');
+        p.className = 'pal-sg-none';
+        p.textContent = empty;
+        div.appendChild(p);
+      }
+      for (const { id, text, why, title, apply } of list) {
+        const p = PAL.byId.get(id);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pal-sg';
+        b.title = title;
+        b.innerHTML = `<i style="background:${p.hex}"></i><span class="nm"></span>${text ? '<b></b>' : ''}${why ? '<small></small>' : ''}`;
+        b.querySelector('.nm').textContent = p.name;
+        if (text) b.querySelector('b').textContent = text;
+        if (why) b.querySelector('small').textContent = why;
+        b.addEventListener('click', apply);
+        div.appendChild(b);
+      }
+      box.appendChild(div);
+    };
+    const useful = adds.filter((a) => a.gain >= 0.01).slice(0, 3);
+    row(
+      'Add for this picture',
+      useful.map((a) => ({
+        id: a.id,
+        text: `+${pctLabel(a.gain)}%`,
+        why: a.gained.length ? hueFamilies(a.gained) : '',
+        title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of this picture`,
+        apply: () => setPalette([...S.palette, a.id]),
+      })),
+      'No one paint adds much to this picture.'
+    );
+    if (S.palette.length > 1) {
+      const spare = drops.filter((d) => d.loss < 0.03).slice(0, 2);
+      row(
+        'Least needed here',
+        spare.map((d) => ({
+          id: d.id,
+          text: d.loss < 0.005 ? '' : `−${pctLabel(d.loss)}%`,
+          why: d.loss < 0.005 ? 'not needed here' : '',
+          title: `Take out ${PAL.byId.get(d.id).name.toLowerCase()}: the palette would reach ${d.loss < 0.005 ? 'about the same' : `${pctLabel(d.loss)}% less`} of this picture`,
+          apply: () => setPalette(S.palette.filter((x) => x !== d.id)),
+        })),
+        'Every paint is doing work here.'
+      );
     }
-    const pct = (v) => (v > 0 && v < 0.01 ? '<1' : Math.round(v * 100));
-    stats.innerHTML = stat(`${pct(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pct(r.outShare)}%)` : 'it can’t mix');
   }
 
   /** A new set of paints: rebuild what it mixes and repaint what shows it. */
@@ -1638,6 +1727,160 @@
     setPanel('study');
   });
   $('#pal-choose').addEventListener('click', () => setPanel('color'));
+
+  /*
+   * Compare palettes: this picture painted with each palette (yours and the
+   * presets), how much of it each reaches and what it can't mix, the one
+   * that reaches the most first. Tap one to paint the study with it.
+   */
+  const palcmp = { token: 0, small: null, smallFor: null };
+
+  /** The working image at a tile's size (Lab averaged over blocks), made once per image. */
+  function smallLab(max = 360) {
+    if (palcmp.smallFor === work.lab) return palcmp.small;
+    const k = Math.max(1, Math.ceil(Math.max(work.w, work.h) / max));
+    const w = Math.max(1, Math.floor(work.w / k));
+    const h = Math.max(1, Math.floor(work.h / k));
+    const L = new Float32Array(w * h);
+    const A = new Float32Array(w * h);
+    const B = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sl = 0;
+        let sa = 0;
+        let sb = 0;
+        for (let dy = 0; dy < k; dy++) {
+          const row = (y * k + dy) * work.w + x * k;
+          for (let dx = 0; dx < k; dx++) {
+            sl += work.lab.L[row + dx];
+            sa += work.lab.A[row + dx];
+            sb += work.lab.B[row + dx];
+          }
+        }
+        const i = y * w + x;
+        const n = k * k;
+        L[i] = sl / n;
+        A[i] = sa / n;
+        B[i] = sb / n;
+      }
+    }
+    palcmp.small = { lab: { L, A, B }, w, h };
+    palcmp.smallFor = work.lab;
+    return palcmp.small;
+  }
+
+  function comparePalettes() {
+    const mine = PAL.paintsFor(S.palette).map((p) => p.id);
+    const list = [];
+    const preset = PAL.PRESETS.find((x) => samePaints(x.paints, mine));
+    if (!preset) list.push({ name: 'My palette', ids: mine });
+    for (const p of PAL.PRESETS) list.push({ name: p.name.replace(/ \(.*\)$/, ''), full: p.name, ids: PAL.paintsFor(p.paints).map((x) => x.id) });
+    return list.map((p) => ({ ...p, current: samePaints(p.ids, mine) }));
+  }
+
+  function renderPalCompare() {
+    const grid = $('#palcmp-grid');
+    const token = ++palcmp.token;
+    grid.innerHTML = '<p class="pal-sg-wait">Mixing each palette…</p>';
+    const list = comparePalettes();
+    const small = smallLab();
+    let i = 0;
+    // build and measure a palette at a time, so the page stays responsive
+    const step = () => {
+      if (token !== palcmp.token) return;
+      const t0 = performance.now();
+      while (i < list.length && performance.now() - t0 < 30) {
+        const p = list[i++];
+        p.model = paletteModel(p.ids);
+        p.reach = PAL.reach(p.model, colorCache.cells);
+      }
+      if (i < list.length) return setTimeout(step, 0);
+      list.sort((p, q) => q.reach.reached - p.reach.reached);
+      grid.innerHTML = '';
+      for (const p of list) grid.appendChild(palTile(p, small));
+    };
+    setTimeout(step, 30);
+  }
+
+  function palTile(p, small) {
+    const fig = document.createElement('figure');
+    fig.className = 'tryon-tile pal-tile' + (p.current ? ' current' : '');
+    fig.tabIndex = 0;
+    fig.setAttribute('role', 'button');
+    const c = document.createElement('canvas');
+    c.width = small.w;
+    c.height = small.h;
+    if (S.flip) c.style.transform = 'scaleX(-1)';
+    const ctx = c.getContext('2d');
+    const data = ctx.createImageData(small.w, small.h);
+    PAL.paint(p.model, small.lab, data.data, small.w, { mark: S.palMark });
+    ctx.putImageData(data, 0, 0);
+    const box = document.createElement('div');
+    box.className = 'tt-img';
+    box.appendChild(c);
+    fig.appendChild(box);
+    const cap = document.createElement('figcaption');
+    const name = document.createElement('div');
+    name.className = 'pt-name';
+    name.textContent = p.name;
+    if (p.full) name.title = p.full;
+    const dots = document.createElement('div');
+    dots.className = 'pt-dots';
+    for (const paint of PAL.paintsFor(p.ids)) {
+      const d = document.createElement('i');
+      d.style.background = paint.hex;
+      d.title = paint.name;
+      dots.appendChild(d);
+    }
+    if (p.current) {
+      const tag = document.createElement('span');
+      tag.className = 'pt-yours';
+      tag.textContent = 'Yours';
+      dots.appendChild(tag);
+    }
+    const reach = document.createElement('div');
+    reach.className = 'pt-reach';
+    const r = p.reach;
+    reach.innerHTML = `<b>${pctLabel(r.reached)}%</b> `;
+    reach.append(r.outShare >= 0.005 ? `· can’t mix ${hueFamilies(r.outCells)}` : '· mixes it all');
+    cap.append(name, dots, reach);
+    fig.appendChild(cap);
+    const names = PAL.paintsFor(p.ids).map((x) => x.name.toLowerCase()).join(', ');
+    fig.setAttribute('aria-label', `${p.name}${p.current ? ' (your palette)' : ''}: ${names}. Reaches ${pctLabel(r.reached)}% of the picture.`);
+    const use = () => {
+      closePalCompare();
+      setPalette(p.ids);
+      setTone('palette');
+    };
+    fig.addEventListener('click', use);
+    fig.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), use()));
+    return fig;
+  }
+
+  function openPalCompare() {
+    if (!img.el || !work.lab) return toast('Load an image first.');
+    if (!ensurePalette()) return toast('Mixing isn’t available in this browser.');
+    if (colorCache.lab !== work.lab) colorData();
+    $('#palcmp-mark').checked = S.palMark;
+    $('#palcmp-modal').hidden = false;
+    renderPalCompare();
+  }
+  function closePalCompare() {
+    $('#palcmp-modal').hidden = true;
+    palcmp.token++;
+  }
+  $('#pal-compare').addEventListener('click', openPalCompare);
+  $('#palcmp-close').addEventListener('click', closePalCompare);
+  $('#palcmp-mark').addEventListener('change', (e) => {
+    S.palMark = e.target.checked;
+    $('#pal-mark').checked = S.palMark;
+    if (S.tone === 'palette') requestStudy();
+    save();
+    renderPalCompare();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (!$('#palcmp-modal').hidden && e.key === 'Escape') closePalCompare();
+  });
   PAL.PRESETS.forEach((p) => {
     const o = document.createElement('option');
     o.value = p.id;
@@ -3362,7 +3605,7 @@
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
-    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || !$('#space-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || !$('#space-modal').hidden || !$('#palcmp-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     // changing the study by hand ends a staged reveal (and gives back your settings) first
     if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
