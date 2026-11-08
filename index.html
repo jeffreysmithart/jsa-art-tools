@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-08l">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-08m">
 </head>
 <body>
   <header class="topbar">
@@ -302,6 +302,21 @@
         <div class="pal-paints" id="pal-paints" aria-label="Paints in this palette"></div>
         <select id="pal-add" aria-label="Add a paint"></select>
         <div class="log-stats pal-stats" id="pal-stats"></div>
+        <div class="overlap" id="pal-overlap" hidden>
+          <div class="seg small" id="overlap-band" role="radiogroup" aria-label="Values shown on the wheel">
+            <button data-band="all" role="radio" title="All values">All</button>
+            <button data-band="darks" role="radio" title="Values 0 to 3.5">Darks</button>
+            <button data-band="middles" role="radio" title="Values 3.5 to 6.5">Middles</button>
+            <button data-band="lights" role="radio" title="Values 6.5 to 10">Lights</button>
+          </div>
+          <canvas id="overlap-wheel" class="overlap-wheel" role="img"></canvas>
+          <ul class="overlap-key" aria-hidden="true">
+            <li><i class="k-pal"></i>What the palette can mix</li>
+            <li><i class="k-pic"></i>The picture’s colors (bigger where they cover more)</li>
+            <li><i class="k-gap"></i>Colors it needs but can’t mix</li>
+          </ul>
+          <p class="hint" id="overlap-note" aria-live="polite"></p>
+        </div>
         <div class="pal-suggest" id="pal-suggest" hidden aria-live="polite" aria-label="Paints to add or take out, for this picture"></div>
         <label class="check"><input type="checkbox" id="pal-range"> Show it in the color space</label>
         <p class="hint" id="pal-out-hint" hidden>The faint cloud is what the palette can mix; faded dots are colors in the picture it can’t.</p>
@@ -677,27 +692,28 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-08l"></script>
-  <script src="js/process.js?v=2026-11-08l"></script>
-  <script src="js/config.js?v=2026-11-08l"></script>
-  <script src="js/museum.js?v=2026-11-08l"></script>
-  <script src="js/sync-merge.js?v=2026-11-08l"></script>
-  <script src="js/library.js?v=2026-11-08l"></script>
-  <script src="js/presets.js?v=2026-11-08l"></script>
-  <script src="js/log.js?v=2026-11-08l"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-08l"></script>
-  <script src="js/sync.js?v=2026-11-08l"></script>
-  <script src="js/timer.js?v=2026-11-08l"></script>
-  <script src="js/compose.js?v=2026-11-08l"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-08l"></script>
-  <script src="js/palette.js?v=2026-11-08l"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-08l"></script>
-  <script src="js/munsell.js?v=2026-11-08l"></script>
-  <script src="js/colorspace.js?v=2026-11-08l"></script>
-  <script src="js/gamut.js?v=2026-11-08l"></script>
-  <script src="js/crop.js?v=2026-11-08l"></script>
-  <script src="js/warp.js?v=2026-11-08l"></script>
-  <script src="js/squareup.js?v=2026-11-08l"></script>
-  <script src="js/app.js?v=2026-11-08l"></script>
+  <script src="js/color.js?v=2026-11-08m"></script>
+  <script src="js/process.js?v=2026-11-08m"></script>
+  <script src="js/config.js?v=2026-11-08m"></script>
+  <script src="js/museum.js?v=2026-11-08m"></script>
+  <script src="js/sync-merge.js?v=2026-11-08m"></script>
+  <script src="js/library.js?v=2026-11-08m"></script>
+  <script src="js/presets.js?v=2026-11-08m"></script>
+  <script src="js/log.js?v=2026-11-08m"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-08m"></script>
+  <script src="js/sync.js?v=2026-11-08m"></script>
+  <script src="js/timer.js?v=2026-11-08m"></script>
+  <script src="js/compose.js?v=2026-11-08m"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-08m"></script>
+  <script src="js/palette.js?v=2026-11-08m"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-08m"></script>
+  <script src="js/munsell.js?v=2026-11-08m"></script>
+  <script src="js/colorspace.js?v=2026-11-08m"></script>
+  <script src="js/overlap.js?v=2026-11-08m"></script>
+  <script src="js/gamut.js?v=2026-11-08m"></script>
+  <script src="js/crop.js?v=2026-11-08m"></script>
+  <script src="js/warp.js?v=2026-11-08m"></script>
+  <script src="js/squareup.js?v=2026-11-08m"></script>
+  <script src="js/app.js?v=2026-11-08m"></script>
 </body>
 </html>

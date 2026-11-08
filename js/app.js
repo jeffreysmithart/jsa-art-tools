@@ -76,6 +76,7 @@
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
     palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
+    overlapBand: 'all', // gamut overlap wheel: 'all' | 'darks' | 'middles' | 'lights'
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
@@ -1588,8 +1589,50 @@
     // (an average hue of, say, greens and blues would name neither)
     const outLabel = r.outShare >= 0.005 ? capFirst(hueFamilies(r.outCells)) : 'Nothing';
     stats.innerHTML = stat(`${pctLabel(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pctLabel(r.outShare)}%)` : 'it can’t mix');
+    renderOverlap();
     suggestPaints(r);
   }
+
+  /*
+   * The gamut overlap wheel: the picture's colors (outlined) over what the
+   * palette can mix (in color), with what it needs but can't mix striped,
+   * for all values or just the darks, middles or lights.
+   */
+  const OV = VST.overlap;
+  const ov = { model: null, small: null, band: '', data: null };
+  const BAND_NAMES = { darks: 'darks', middles: 'middle values', lights: 'lights' };
+  function renderOverlap() {
+    const box = $('#pal-overlap');
+    const model = ensurePalette();
+    box.hidden = !model || !work.lab;
+    if (box.hidden) return;
+    const band = OV.BANDS[S.overlapBand] ? S.overlapBand : 'all';
+    setSeg($('#overlap-band'), 'band', band);
+    const small = smallLab();
+    if (ov.model !== model || ov.small !== small || ov.band !== band) {
+      ov.data = OV.compute(small.lab, model, (L, a, b) => PAL.nearestCached(model, L, a, b), { band, reach: PAL.REACH, toRgb: (L, a, b) => toRgb(L, a, b) });
+      Object.assign(ov, { model, small, band });
+    }
+    const o = ov.data;
+    OV.draw($('#overlap-wheel'), o, CS.HUES);
+    const pct = (v) => `${pctLabel(v)}%`;
+    let note;
+    if (band === 'all') note = o.outShare >= 0.005 ? `Striped: colors the picture needs that this palette can’t mix (${pct(o.outShare)} of the picture).` : 'The palette can mix all of the picture’s colors.';
+    else if (o.shareIn < 0.01) note = `Almost none of the picture is in the ${BAND_NAMES[band]}.`;
+    else note = `The ${BAND_NAMES[band]} are ${pct(o.shareIn)} of the picture; the palette ${o.outShare >= 0.005 ? `can’t mix ${pct(o.outShare)} of them` : 'can mix them all'}.`;
+    $('#overlap-note').textContent = note;
+    $('#overlap-wheel').setAttribute('aria-label', `Hue and chroma wheel of the picture’s colors and what ${paletteName()} can mix. ${note}`);
+  }
+  $('#overlap-band').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.overlapBand = b.dataset.band;
+    save();
+    renderOverlap();
+  });
+  window.addEventListener('resize', () => {
+    if (ov.data && $('#overlap-wheel').clientWidth) OV.draw($('#overlap-wheel'), ov.data, CS.HUES);
+  });
 
   /*
    * Which paint would help this picture: the palette is tried with each
