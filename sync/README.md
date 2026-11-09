@@ -12,7 +12,7 @@ Keeps study sets, presets, history, your named palettes, saved gamut masks and t
 
 ## Current deployment
 
-- **Service:** runs at `https://value-study-sync.jeffrey-63e.workers.dev`, as the Worker `value-study-sync`, with the R2 bucket `value-study-sync` bound as `SYNC`. It was deployed on 2026-11-08 through the Cloudflare API, with `sync/worker.js` unchanged, and redeployed on 2026-11-09 to accept the `palettes` document (named palettes).
+- **Service:** runs at `https://value-study-sync.jeffrey-63e.workers.dev`, as the Worker `value-study-sync`, with the R2 bucket `value-study-sync` bound as `SYNC`. It was deployed on 2026-11-08 through the Cloudflare API, with `sync/worker.js` unchanged, and redeployed on 2026-11-09 to accept the `palettes` document (named palettes), and again the same day for the `masks` document (saved gamut masks).
 - **Checked live:**
   - a request from the site with nothing stored gets an empty list;
   - other sites are refused;
