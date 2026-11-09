@@ -580,6 +580,10 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .pal-remove:disabled { visibility: hidden; }
 #pal-preset, #pal-add { width: 100%; }
 .pal-source { margin: 6px 0 0; }
+#sec-palette .preset-bar #pal-preset { flex: 1; min-width: 0; width: auto; }
+.pal-mine-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pal-mine-row:not(:has(> :not([hidden]))) { display: none; }
+.pal-update { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* gamut overlap wheel */
 .overlap { margin: 12px 0 4px; }
 .overlap .seg button { flex: 1; }

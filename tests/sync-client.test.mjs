@@ -18,14 +18,14 @@ function browser() {
 
 // the app's modules, shared by both "devices" (each device is its own localStorage)
 globalThis.VST = { config: { syncService: SERVICE } };
-for (const f of ['color', 'process', 'sync-merge', 'library', 'presets', 'log']) require(`../js/${f}.js`);
+for (const f of ['color', 'process', 'sync-merge', 'library', 'presets', 'my-palettes', 'log']) require(`../js/${f}.js`);
 /** A separate copy of the sync module per device, since it keeps its own state. */
 function syncModule() {
   delete require.cache[require.resolve('../js/sync.js')];
   require('../js/sync.js');
   return globalThis.VST.sync;
 }
-const { library: L, presets: PR, log: LOG } = globalThis.VST;
+const { library: L, presets: PR, myPalettes: MP, log: LOG } = globalThis.VST;
 
 let env;
 let requests = 0;
@@ -221,4 +221,35 @@ test('photos: the device that has one uploads it; the other fetches it when itâ€
   } finally {
     L.photoBlob = realPhotoBlob;
   }
+});
+
+test('named palettes sync: saved, renamed and deleted on one device, the same on the other', async () => {
+  env = { SYNC: memoryBucket() };
+  const ipad = browser();
+  const mac = browser();
+  const A = syncModule();
+  const B = syncModule();
+  const ids = await as(ipad, async () => {
+    const a = MP.save('Summer landscape', ['cadmium-lemon', 'ultramarine', 'titanium-white']);
+    const b = MP.save('Portraits', ['yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white']);
+    await A.turnOn();
+    return [a.id, b.id];
+  });
+  const code = await as(ipad, () => A.status().code);
+  await as(mac, async () => {
+    await B.join(code);
+    assert.deepEqual(MP.all().map((p) => p.name), ['Portraits', 'Summer landscape']);
+    assert.deepEqual(MP.get(ids[0]).paints, ['cadmium-lemon', 'ultramarine', 'titanium-white']);
+    // the Mac renames one and changes its paints, and deletes the other
+    MP.rename(ids[0], 'Summer, high key');
+    MP.setPaints(ids[0], ['cadmium-lemon', 'cobalt-blue', 'titanium-white']);
+    MP.remove(ids[1]);
+    await B.syncNow();
+  });
+  await as(ipad, async () => {
+    await A.syncNow();
+    assert.deepEqual(MP.all().map((p) => p.name), ['Summer, high key'], 'the deletion sticks, the rename arrives');
+    assert.deepEqual(MP.get(ids[0]).paints, ['cadmium-lemon', 'cobalt-blue', 'titanium-white']);
+  });
+  for (const [, o] of env.SYNC.store) assert.ok(!new TextDecoder().decode(o.bytes).includes('Summer'), 'palette names are encrypted too');
 });

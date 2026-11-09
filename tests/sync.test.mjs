@@ -97,6 +97,7 @@ test('names, ids and sizes are checked', async () => {
   const env = { SYNC: memoryBucket() };
   const put = (path, body = 'x') => call(env, 'PUT', path, { body, headers: { 'If-None-Match': '*' } });
   assert.equal((await put(`/v1/${ID}/doc/log/d-mac-1`)).status, 200, 'a device log');
+  assert.equal((await put(`/v1/${ID}/doc/palettes`)).status, 200, 'named palettes');
   assert.equal((await put(`/v1/${ID}/doc/secrets`)).status, 400, 'unknown name');
   assert.equal((await put(`/v1/${ID}/doc/..%2Fmeta`)).status, 400, 'no escaping the folder');
   assert.equal((await put(`/v1/not-an-id/doc/sets`)).status, 400);

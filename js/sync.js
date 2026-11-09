@@ -184,10 +184,12 @@
     const L = VST.library;
     const PR = VST.presets;
     const M = VST.syncMerge;
+    const MP = VST.myPalettes;
     return [
       { name: 'sets', local: () => L.setsDoc(), merge: M.mergeSets, apply: (d) => L.applySetsDoc(d), empty: { sets: [], deleted: {} } },
       { name: 'presets', local: () => PR.syncDoc(), merge: M.mergePresets, apply: (d) => PR.applySyncDoc(d), empty: { presets: [], deleted: {} } },
       { name: 'history', local: () => L.historyDoc(), merge: M.mergeHistory, apply: (d) => L.applyHistoryDoc(d), empty: { items: [], removed: {}, clearedAt: 0 } },
+      ...(MP ? [{ name: 'palettes', local: () => MP.syncDoc(), merge: M.mergePalettes, apply: (d) => MP.applySyncDoc(d), empty: { palettes: [], deleted: {} } }] : []),
     ];
   }
 
