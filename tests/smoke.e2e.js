@@ -310,6 +310,22 @@ function check(cond, msg) {
   await settle(page);
   const partway = await studyStats();
   check(partway.chroma > maskedStats.chroma && partway.chroma < unmasked.chroma, 'a lower strength moves them only part of the way');
+  // paints for the mask: how much your palette covers, suggestions, and a palette built for it
+  await page.evaluate(() => document.querySelector('#mask-fit').scrollIntoView());
+  const fitBefore = parseInt((await page.textContent('#mask-fit-note')).match(/can mix (\d+)%/)[1], 10);
+  check(await page.isVisible('#mask-fit') && fitBefore >= 0, `it says how much of the picture in the mask your palette can mix (${await page.textContent('#mask-fit-note')})`);
+  await page.waitForSelector('#mask-suggest .pal-sg-row', { timeout: 20000 });
+  check(/Add for this mask/.test(await page.textContent('#mask-suggest')), 'and suggests paints to add or take out for the mask');
+  await page.selectOption('#mask-build-n', '3');
+  await page.click('#mask-build');
+  await page.waitForSelector('#mask-build-out button', { timeout: 30000 });
+  const built = await page.$$eval('#mask-build-out .mb-paints span', (els) => els.map((e) => e.textContent));
+  const builtReach = parseInt((await page.textContent('#mask-build-out .mb-steps')).match(/Mixes (\d+)%/)[1], 10);
+  check(built.includes('Titanium white') && built.length >= 2 && built.length <= 4 && builtReach >= fitBefore, `Build makes a palette of up to 3 colors and white for the mask (${built.join(', ')}: ${builtReach}%)`);
+  await page.click('#mask-build-out button');
+  await page.waitForFunction((r) => { const m = document.querySelector('#mask-fit-note').textContent.match(/can mix (\d+)%/); return m && parseInt(m[1], 10) === r; }, builtReach, { timeout: 5000 }).catch(() => {});
+  check(parseInt((await page.textContent('#mask-fit-note')).match(/can mix (\d+)%/)[1], 10) === builtReach && (await page.$$('#pal-paints .pal-chip')).length === built.length, 'Use this palette chooses it, and the coverage matches');
+  await page.selectOption('#pal-preset', 'pov');
   await page.uncheck('#mask-on');
   await settle(page);
   check((await studyStats()).sum === unmasked.sum, 'turning it off brings the colors back');

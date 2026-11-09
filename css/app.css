@@ -599,6 +599,17 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .mask-wheel { cursor: grab; touch-action: none; }
 .mask-wheel:active { cursor: grabbing; }
 #mask-note { margin: 6px 0 8px; }
+.mask-fit { margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.mask-fit > .label { margin: 0 0 4px; }
+#mask-fit-note { margin: 0 0 6px; }
+.mask-build-row { margin-top: 12px; }
+.mask-build-row .label { display: block; margin-bottom: 6px; }
+#mask-build-n { flex: 1; min-width: 0; }
+.mask-build-out { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mask-build-out .mb-paints { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.mask-build-out .mb-paints span { display: inline-flex; align-items: center; gap: 5px; }
+.mask-build-out .mb-paints i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--hairline); }
+.mask-build-out .mb-steps { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 /* paints that would help this picture */
 .pal-suggest { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .pal-sg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
