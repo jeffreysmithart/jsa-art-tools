@@ -21,7 +21,7 @@
  * Every request needs "Authorization: Bearer <token>". The first write to
  * an id records a hash of its token; after that, the token must match.
  *
- * Document names: sets, presets, history, palettes, or log/<deviceId>. Photo names are
+ * Document names: sets, presets, history, palettes, masks, or log/<deviceId>. Photo names are
  * 64 hex characters, made on the device from the photo and the sync code's
  * key, so they say nothing about the photo.
  * Bindings: SYNC (an R2 bucket). Optional: ALLOWED_ORIGINS (comma-separated).
@@ -42,7 +42,7 @@ const RATE = { perMinute: 120 }; // requests per id per minute (per Worker insta
 
 const ID = /^[0-9a-f]{64}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
-const NAME = /^(sets|presets|history|palettes|log\/d-[a-z0-9-]{1,40})$/;
+const NAME = /^(sets|presets|history|palettes|masks|log\/d-[a-z0-9-]{1,40})$/;
 const PHOTO = /^[0-9a-f]{64}$/;
 
 function origins(env) {

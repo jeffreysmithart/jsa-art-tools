@@ -132,3 +132,11 @@ test('named palettes merge like presets: newest edit wins, deletions stick unles
   const gone = M.mergePalettes(m, { palettes: [], deleted: { p1: 10 } });
   assert.deepEqual(gone.palettes.map((p) => p.id), ['p2']);
 });
+
+test('saved masks merge like palettes', () => {
+  const M = globalThis.VST.syncMerge;
+  const a = { masks: [{ id: 'm1', name: 'Cool', points: [[0, 0], [1, 0], [0, 1]], updated: 2 }], deleted: {} };
+  const b = { masks: [], deleted: { m1: 1, m2: 5 } };
+  assert.deepEqual(M.mergeMasks(a, b).masks.map((m) => m.id), ['m1'], 'edited after its deletion, so it stays');
+  assert.deepEqual(M.mergeMasks(a, { masks: [], deleted: { m1: 3 } }).masks, [], 'deleted after its last edit');
+});

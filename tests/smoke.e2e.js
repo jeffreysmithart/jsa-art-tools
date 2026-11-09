@@ -315,6 +315,29 @@ function check(cond, msg) {
   const heading1 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
   check(Math.abs(((heading1 - heading0 + 540) % 360) - 180) > 5, `arrow keys turn it (${Math.round(heading0)}° -> ${Math.round(heading1)}°)`);
   await page.click('#mask-shape [data-shape="triad"]');
+  // saved masks: save, change and save back, choose, rename, delete
+  check((await page.$eval('#mask-saved', (s) => s.disabled)) && /No saved masks yet/.test(await page.textContent('#mask-saved')), 'with nothing saved, the saved-masks menu says so');
+  page.once('dialog', (d) => d.accept('Warm triad'));
+  await page.click('#mask-save');
+  check((await page.$eval('#mask-saved', (s) => s.selectedOptions[0].textContent)) === 'Warm triad' && await page.isVisible('#mask-rename'), 'Save… names the mask and shows it as chosen');
+  const savedPoints = await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points));
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  check(/Save this shape to “Warm triad”/.test(await page.textContent('#mask-update')) && await page.isVisible('#mask-update'), 'turning it offers to save the new shape back');
+  const turned = await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points));
+  await page.selectOption('#mask-saved', { label: 'Warm triad' });
+  check((await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points))) === savedPoints, 'choosing it from the menu brings back the saved shape');
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  await page.click('#mask-update');
+  check((await page.evaluate(() => JSON.stringify(window.VST.myMasks.all()[0].points))) === turned, 'saving back updates it');
+  page.once('dialog', (d) => d.accept('Warm triad, turned'));
+  await page.click('#mask-rename');
+  check((await page.$eval('#mask-saved', (s) => s.selectedOptions[0].textContent)) === 'Warm triad, turned', 'Rename… renames it');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#mask-delete');
+  check((await page.evaluate(() => window.VST.myMasks.all().length)) === 0 && (await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points))) === turned, 'Delete removes the saved mask and keeps the one on the wheel');
+  await page.click('#mask-shape [data-shape="triad"]');
   // the palette's range on the mask wheel: a dashed gold outline
   const goldPx = () => page.$eval('#mask-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 160 && d[i + 1] < 215 && d[i + 2] < 120) n++; return n; });
   const goldOff = await goldPx();
@@ -323,7 +346,7 @@ function check(cond, msg) {
   check(goldOn > goldOff + 200 && /Dashed gold: what .* can mix/.test(await page.textContent('#mask-note')), `Show my palette outlines its range on the mask wheel (${goldOff} -> ${goldOn} gold px)`);
   await page.uncheck('#mask-pal');
   check((await goldPx()) <= goldOff + 20, 'and unchecking it takes the outline away');
-  const studyStats = () => page.$eval('#cv-study', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let y = 0, chroma = 0, n = 0; for (let i = 0; i < d.length; i += 16) { y += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; chroma += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); n++; } return { y: y / n, chroma: chroma / n, sum: [...d.slice(0, 4000)].join() }; });
+  const studyStats = () => page.$eval('#cv-study', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let y = 0, chroma = 0, n = 0; for (let i = 0; i < d.length; i += 16) { y += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; chroma += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); n++; } let h = 0; for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 7 + d[i + 1] * 3 + d[i + 2]) >>> 0; return { y: y / n, chroma: chroma / n, sum: h }; });
   await page.evaluate(() => window.VST.app.setPanel('study'));
   await page.click('#tone-seg [data-tone="color"]');
   await settle(page);
@@ -1270,6 +1293,12 @@ function check(cond, msg) {
     await mac.pg.evaluate(() => window.VST.app.setPanel('color'));
     await mac.pg.waitForFunction(() => [...document.querySelectorAll('#pal-preset optgroup[label="My palettes"] option')].some((o) => o.textContent === 'Summer plein air'), null, { timeout: 4000 });
     check(true, 'a palette saved on the iPad shows up in the Mac’s palette menu after syncing');
+    await ipad.pg.evaluate(() => window.VST.myMasks.save('Cool complement', { shape: 'complement', points: [[-40, -20], [5, 10], [40, 20], [-5, -10]] }));
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    check(await mac.pg.evaluate(() => window.VST.myMasks.all().some((m) => m.name === 'Cool complement')), 'a mask saved on the iPad shows up on the Mac after syncing');
     await mac.pg.evaluate(() => window.VST.app.setPanel('images'));
     await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
     // a third device joins by opening the QR code's link
