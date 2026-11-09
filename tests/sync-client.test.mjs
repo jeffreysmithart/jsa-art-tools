@@ -18,14 +18,14 @@ function browser() {
 
 // the app's modules, shared by both "devices" (each device is its own localStorage)
 globalThis.VST = { config: { syncService: SERVICE } };
-for (const f of ['color', 'process', 'sync-merge', 'library', 'presets', 'my-palettes', 'log']) require(`../js/${f}.js`);
+for (const f of ['color', 'process', 'sync-merge', 'library', 'presets', 'saved', 'log']) require(`../js/${f}.js`);
 /** A separate copy of the sync module per device, since it keeps its own state. */
 function syncModule() {
   delete require.cache[require.resolve('../js/sync.js')];
   require('../js/sync.js');
   return globalThis.VST.sync;
 }
-const { library: L, presets: PR, myPalettes: MP, log: LOG } = globalThis.VST;
+const { library: L, presets: PR, myPalettes: MP, myMasks: MM, log: LOG } = globalThis.VST;
 
 let env;
 let requests = 0;
@@ -252,4 +252,30 @@ test('named palettes sync: saved, renamed and deleted on one device, the same on
     assert.deepEqual(MP.get(ids[0]).paints, ['cadmium-lemon', 'cobalt-blue', 'titanium-white']);
   });
   for (const [, o] of env.SYNC.store) assert.ok(!new TextDecoder().decode(o.bytes).includes('Summer'), 'palette names are encrypted too');
+});
+
+test('saved gamut masks sync too', async () => {
+  env = { SYNC: memoryBucket() };
+  const ipad = browser();
+  const mac = browser();
+  const A = syncModule();
+  const B = syncModule();
+  const id = await as(ipad, async () => {
+    const m = MM.save('Warm triad', { shape: 'triad', points: [[40, 30], [-20, 25], [-10, -30]] });
+    await A.turnOn();
+    return m.id;
+  });
+  const code = await as(ipad, () => A.status().code);
+  await as(mac, async () => {
+    await B.join(code);
+    assert.deepEqual(MM.all().map((m) => m.name), ['Warm triad']);
+    assert.deepEqual(MM.get(id).points, [[40, 30], [-20, 25], [-10, -30]]);
+    MM.setMask(id, { shape: 'custom', points: [[50, 30], [-20, 25], [-10, -30]] });
+    await B.syncNow();
+  });
+  await as(ipad, async () => {
+    await A.syncNow();
+    assert.deepEqual(MM.get(id).points[0], [50, 30], 'a reshaped mask arrives');
+    assert.equal(MM.get(id).shape, 'custom');
+  });
 });

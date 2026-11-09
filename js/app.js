@@ -82,6 +82,7 @@
     maskOn: false, // paint the study inside the mask
     maskStrength: 100, // how far colors outside move toward the mask (percent)
     maskShowPal: false, // gamut mask wheel: outline what the palette can mix
+    maskMine: null, // the saved mask last chosen or saved, so changes to it can be saved back
     maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
@@ -1784,6 +1785,76 @@
    * inside to move, outside to turn. The study can be painted inside it.
    */
   const mk = { o: null, small: null, scale: 0, drag: null };
+  const MM = VST.myMasks;
+
+  /* ---------- saved masks (they sync, with sync on) ---------- */
+
+  const samePoints = (p, q) => p.length === q.length && p.every((x, i) => Math.abs(x[0] - q[i][0]) < 0.05 && Math.abs(x[1] - q[i][1]) < 0.05);
+  /** The saved mask with exactly this shape, if any. */
+  const maskMatch = (m) => MM.all().find((x) => samePoints(x.points, m.points)) || null;
+
+  function renderMaskSaved() {
+    const sel = $('#mask-saved');
+    const m = ensureMask();
+    const list = MM.all();
+    const mine = maskMatch(m);
+    if (mine) S.maskMine = mine.id;
+    sel.innerHTML = '';
+    const opt = (value, text, disabled) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      o.disabled = !!disabled;
+      sel.appendChild(o);
+    };
+    opt('', list.length ? (mine ? 'Saved masks' : 'This mask isn’t saved') : 'No saved masks yet', true);
+    for (const x of list) opt(x.id, x.name);
+    sel.value = mine ? mine.id : '';
+    sel.disabled = !list.length;
+    $('#mask-rename').hidden = !mine;
+    $('#mask-delete').hidden = !mine;
+    const edited = !mine && S.maskMine ? MM.get(S.maskMine) : null;
+    $('#mask-update').hidden = !edited;
+    if (edited) $('#mask-update').textContent = `Save this shape to “${edited.name}”`;
+  }
+  $('#mask-saved').addEventListener('change', (e) => {
+    const x = MM.get(e.target.value);
+    if (!x) return;
+    S.maskMine = x.id;
+    setMask({ shape: x.shape, points: x.points.map((p) => [p[0], p[1]]) });
+  });
+  $('#mask-save').addEventListener('click', () => {
+    const shapeName = MK.SHAPES[ensureMask().shape] ? MK.SHAPES[ensureMask().shape].name : 'My mask';
+    const name = prompt('Name this mask:', maskMatch(S.mask) ? '' : shapeName);
+    if (name == null) return;
+    const x = MM.save(name, S.mask);
+    S.maskMine = x.id;
+    save();
+    renderMaskSaved();
+    toast(`Saved the mask “${x.name}”.`);
+  });
+  $('#mask-update').addEventListener('click', () => {
+    const x = S.maskMine && MM.setMask(S.maskMine, S.mask);
+    if (!x) return;
+    renderMaskSaved();
+    toast(`Saved the shape to “${x.name}”.`);
+  });
+  $('#mask-rename').addEventListener('click', () => {
+    const x = maskMatch(S.mask);
+    if (!x) return;
+    const name = prompt('Rename this mask:', x.name);
+    if (name == null || !name.trim()) return;
+    MM.rename(x.id, name);
+    renderMaskSaved();
+  });
+  $('#mask-delete').addEventListener('click', () => {
+    const x = maskMatch(S.mask);
+    if (!x || !confirm(`Delete the saved mask “${x.name}”? The mask on the wheel stays.`)) return;
+    MM.remove(x.id);
+    S.maskMine = null;
+    save();
+    renderMaskSaved();
+  });
   function ensureMask() {
     S.mask = MK.valid(S.mask) || MK.make('triad', 60, 60);
     return S.mask;
@@ -1843,7 +1914,10 @@
     }
     if (palModel) note += ` Dashed gold: what ${paletteName()} can mix.`;
     $('#mask-note').textContent = note;
-    if (!mk.drag) renderMaskFit();
+    if (!mk.drag) {
+      renderMaskSaved();
+      renderMaskFit();
+    }
     cv.setAttribute('aria-label', `Gamut mask: ${MK.SHAPES[m.shape] ? MK.SHAPES[m.shape].name : 'your own shape'}, pointing at ${CS.munsell(50, 20 * Math.cos((MK.heading(m) * Math.PI) / 180), 20 * Math.sin((MK.heading(m) * Math.PI) / 180)).hueName}. ${note} Arrow keys turn it.`);
   }
 
@@ -4320,6 +4394,7 @@
   SY.onApplied((changed) => {
     if (changed.includes('sets') || changed.includes('history')) renderLibrary();
     if (changed.includes('presets')) renderPresetSelect();
+    if (changed.includes('masks') && $('#mask-wheel').clientWidth) renderMaskSaved();
     if (changed.includes('palettes')) {
       buildPaletteSelect();
       renderPaletteUi();

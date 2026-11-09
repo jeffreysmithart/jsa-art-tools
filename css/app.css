@@ -621,6 +621,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .overlap-key .k-gap { width: 10px; border-radius: 50%; background: repeating-linear-gradient(135deg, #fff 0 1.5px, #7a8fb8 1.5px 4px); box-shadow: 0 0 0 1px #fff; }
 #overlap-note { margin: 6px 0 0; }
 #sec-mask .seg button { flex: 1; }
+.mask-saved-bar { margin-top: 10px; }
+#mask-saved { flex: 1; min-width: 0; }
 .mask-wheel { cursor: grab; touch-action: none; }
 .mask-wheel:active { cursor: grabbing; }
 #mask-note { margin: 6px 0 8px; }

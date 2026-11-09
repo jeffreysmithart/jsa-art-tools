@@ -148,6 +148,8 @@
   const mergePresets = (a, b) => mergeNamed('presets', a, b);
   /** Your named palettes: the same rules as presets. */
   const mergePalettes = (a, b) => mergeNamed('palettes', a, b);
+  /** Your saved gamut masks: the same rules. */
+  const mergeMasks = (a, b) => mergeNamed('masks', a, b);
 
   /* ---------- history ---------- */
 
@@ -211,5 +213,5 @@
     return days;
   }
 
-  VST.syncMerge = { stamp, maxMap, mergeSets, mergePresets, mergePalettes, mergeHistory, combineLogs, HISTORY_MAX };
+  VST.syncMerge = { stamp, maxMap, mergeSets, mergePresets, mergePalettes, mergeMasks, mergeHistory, combineLogs, HISTORY_MAX };
 })(typeof window !== 'undefined' ? window : globalThis);
