@@ -1730,8 +1730,106 @@
       note = out.outShare < 0.005 ? 'All of the picture’s colors are inside this mask.' : `${pctLabel(out.outShare)}% of the picture is outside this mask (mostly ${hueFamilies(out.outCells)}).`;
     }
     $('#mask-note').textContent = note;
+    if (!mk.drag) renderMaskFit();
     cv.setAttribute('aria-label', `Gamut mask: ${MK.SHAPES[m.shape] ? MK.SHAPES[m.shape].name : 'your own shape'}, pointing at ${CS.munsell(50, 20 * Math.cos((MK.heading(m) * Math.PI) / 180), 20 * Math.sin((MK.heading(m) * Math.PI) / 180)).hueName}. ${note} Arrow keys turn it.`);
   }
+
+  /*
+   * Paints for the mask: how much of the picture, moved into the mask (what
+   * you'd paint), your palette can mix; which paints to add or take out; and
+   * a palette built for it, a paint at a time.
+   */
+  const maskFit = { key: '', cells: null, sugg: { key: '', token: 0, result: null }, buildToken: 0, built: null };
+  /** The picture moved into the mask (at the strength in use), as color cells, from the small copy. */
+  function maskCells() {
+    const small = smallLab();
+    const strength = S.maskOn ? S.maskStrength / 100 : 1;
+    const key = `${JSON.stringify(S.mask.points)}|${strength}|${small.w}x${small.h}|${work.blurKey}`;
+    if (maskFit.key !== key || maskFit.small !== small) {
+      Object.assign(maskFit, { key, small, cells: CS.sample(MK.apply(small.lab, S.mask, strength)) });
+      if (maskFit.built && maskFit.built.key !== key) maskFit.built = null;
+    }
+    return maskFit.cells;
+  }
+
+  function renderMaskFit() {
+    const box = $('#mask-fit');
+    const model = ensurePalette();
+    box.hidden = !work.lab || !model;
+    if (box.hidden) return;
+    const m = S.mask;
+    const cells = maskCells();
+    const base = PAL.reach(model, cells);
+    $('#mask-fit-note').textContent = `${capFirst(paletteName())} can mix ${pctLabel(base.reached)}% of the picture in this mask${base.outShare >= 0.005 ? `; not ${hueFamilies(base.outCells)}` : ''}.`;
+    suggestFor(maskFit.sugg, { box: $('#mask-suggest'), key: `${maskFit.key}|${palState.key}`, base, cells, what: 'this mask', inside: (a, b) => MK.contains(m.points, a, b) });
+    renderMaskBuilt();
+  }
+
+  function renderMaskBuilt() {
+    const out = $('#mask-build-out');
+    const b = maskFit.built;
+    out.hidden = !b;
+    if (!b) return;
+    out.innerHTML = '';
+    if (b.working) {
+      out.innerHTML = `<p class="pal-sg-wait">Trying paints… ${b.working}</p>`;
+      return;
+    }
+    const paints = document.createElement('div');
+    paints.className = 'mb-paints';
+    for (const p of PAL.paintsFor(b.ids)) {
+      const span = document.createElement('span');
+      span.innerHTML = `<i style="background:${p.hex}"></i>`;
+      span.append(p.name);
+      paints.appendChild(span);
+    }
+    const steps = document.createElement('p');
+    steps.className = 'mb-steps hint';
+    steps.textContent = `Mixes ${pctLabel(b.reached)}% of the picture in this mask. ` + b.steps.map((s) => `+ ${PAL.byId.get(s.id).name.toLowerCase()} ${pctLabel(s.reached)}%`).join(' → ');
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'btn tiny';
+    use.textContent = samePaints(b.ids, PAL.paintsFor(S.palette).map((p) => p.id)) ? 'This is your palette' : 'Use this palette';
+    use.disabled = samePaints(b.ids, PAL.paintsFor(S.palette).map((p) => p.id));
+    use.addEventListener('click', () => {
+      S.palMine = null;
+      setPalette(b.ids);
+      toast('Palette chosen. Save… keeps it under My palettes.');
+    });
+    out.append(paints, steps, use);
+  }
+
+  $('#mask-build').addEventListener('click', () => {
+    if (!work.lab || !window.spectral) return toast('Load an image first.');
+    const colors = +$('#mask-build-n').value;
+    const m = ensureMask();
+    const cells = maskCells();
+    const key = maskFit.key;
+    const token = ++maskFit.buildToken;
+    const g = PAL.grow(cells, { colors, spectral: window.spectral, toLab: (r, gg, b) => C.rgbToLab(r, gg, b, [0, 0, 0]), inside: (a, b) => MK.contains(m.points, a, b) });
+    let tried = 0;
+    const per = PAL.PIGMENTS.length;
+    maskFit.built = { key, working: 'paint 1' };
+    renderMaskBuilt();
+    const step = () => {
+      if (token !== maskFit.buildToken || maskFit.key !== key) return;
+      const t0 = performance.now();
+      let r;
+      while (performance.now() - t0 < 25) {
+        r = g.next();
+        if (r.done) break;
+        tried++;
+      }
+      if (!r.done) {
+        maskFit.built = { key, working: `paint ${Math.min(colors, Math.floor(tried / per) + 1)} of ${colors}` };
+        renderMaskBuilt();
+        return setTimeout(step, 0);
+      }
+      maskFit.built = { key, ...r.value };
+      renderMaskBuilt();
+    };
+    setTimeout(step, 30);
+  });
 
   function drawMaskShape(cv, o, m) {
     const ctx = cv.getContext('2d');
@@ -1863,41 +1961,53 @@
    */
   const sugg = { key: '', token: 0, result: null };
   function suggestPaints(base) {
-    const box = $('#pal-suggest');
-    const key = palState.reachKey;
-    if (sugg.key === key && sugg.result) return renderSuggestions(sugg.result);
-    const token = ++sugg.token;
+    suggestFor(sugg, { box: $('#pal-suggest'), key: palState.reachKey, base, cells: colorCache.cells, what: 'this picture' });
+  }
+
+  /**
+   * Which paints to add or take out, for some colors (`cells`) the palette
+   * reaches as `base`: tried a few at a time so the page stays responsive,
+   * remembered under `key` in `st`, and shown in `box`. With `inside(a, b)`
+   * (a gamut mask), paints whose mixes mostly fall outside it are flagged.
+   */
+  function suggestFor(st, { box, key, base, cells, what, inside }) {
+    if (st.key === key && st.result) return renderSuggestions(st, box, what);
+    const token = ++st.token;
     box.hidden = false;
-    box.innerHTML = '<p class="pal-sg-wait">Trying other paints on this picture…</p>';
-    const cells = colorCache.cells;
+    box.innerHTML = `<p class="pal-sg-wait">Trying other paints on ${what}…</p>`;
     const model = ensurePalette();
     // a paint taken out: the palette's own mixes without it (no new mixing needed);
     // a paint added: mixed afresh, unless the palette already mixes nearly everything
     const vars = PAL.variations(S.palette).filter((v) => v.kind === 'drop' || base.reached < 0.98);
     const tried = [];
+    const stray = new Map();
     let i = 0;
     const step = () => {
-      if (token !== sugg.token) return;
+      if (token !== st.token) return;
       const t0 = performance.now();
       while (i < vars.length && performance.now() - t0 < 25) {
         const v = vars[i++];
-        const rr =
-          v.kind === 'drop'
-            ? PAL.reach(model, cells, PAL.REACH, PAL.without(v.id))
-            : PAL.gain(base, PAL.build(v.ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]), { include: v.id }));
+        let rr;
+        if (v.kind === 'drop') rr = PAL.reach(model, cells, PAL.REACH, PAL.without(v.id));
+        else {
+          const extra = PAL.build(v.ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]), { include: v.id });
+          rr = PAL.gain(base, extra);
+          if (inside) stray.set(v.id, PAL.strayShare(extra, inside));
+        }
         tried.push({ kind: v.kind, id: v.id, reached: rr.reached, outCells: rr.outCells });
       }
       if (i < vars.length) return setTimeout(step, 0);
-      sugg.key = key;
-      sugg.full = base.reached >= 0.98;
-      sugg.result = PAL.rank(base, tried);
-      renderSuggestions(sugg.result);
+      st.key = key;
+      st.full = base.reached >= 0.98;
+      st.result = PAL.rank(base, tried);
+      st.stray = stray;
+      renderSuggestions(st, box, what);
     };
     setTimeout(step, 50);
   }
 
-  function renderSuggestions({ adds, drops }) {
-    const box = $('#pal-suggest');
+  function renderSuggestions(st, box, what) {
+    const { adds, drops } = st.result;
     box.hidden = false;
     box.innerHTML = '';
     const row = (label, list, empty) => {
@@ -1925,17 +2035,18 @@
       }
       box.appendChild(div);
     };
+    const strays = (id) => st.stray && st.stray.get(id) > 0.6;
     const useful = adds.filter((a) => a.gain >= 0.01).slice(0, 3);
     row(
-      'Add for this picture',
+      `Add for ${what}`,
       useful.map((a) => ({
         id: a.id,
         text: `+${pctLabel(a.gain)}%`,
-        why: a.gained.length ? hueFamilies(a.gained) : '',
-        title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of this picture`,
+        why: [a.gained.length ? hueFamilies(a.gained) : '', strays(a.id) ? 'mostly mixes outside the mask' : ''].filter(Boolean).join(' · '),
+        title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of ${what}${strays(a.id) ? '; but most of its mixes fall outside the mask, which makes it easy to stray from the scheme' : ''}`,
         apply: () => setPalette([...S.palette, a.id]),
       })),
-      sugg.full ? 'It already mixes nearly all of this picture.' : 'No one paint adds much to this picture.'
+      st.full ? `It already mixes nearly all of ${what}.` : `No one paint adds much to ${what}.`
     );
     if (S.palette.length > 1) {
       const spare = drops.filter((d) => d.loss < 0.03).slice(0, 2);
@@ -1945,7 +2056,7 @@
           id: d.id,
           text: d.loss < 0.005 ? '' : `−${pctLabel(d.loss)}%`,
           why: d.loss < 0.005 ? 'not needed here' : '',
-          title: `Take out ${PAL.byId.get(d.id).name.toLowerCase()}: the palette would reach ${d.loss < 0.005 ? 'about the same' : `${pctLabel(d.loss)}% less`} of this picture`,
+          title: `Take out ${PAL.byId.get(d.id).name.toLowerCase()}: the palette would reach ${d.loss < 0.005 ? 'about the same' : `${pctLabel(d.loss)}% less`} of ${what}`,
           apply: () => setPalette(S.palette.filter((x) => x !== d.id)),
         })),
         'Every paint is doing work here.'

@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-09c">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-09d">
 </head>
 <body>
   <header class="topbar">
@@ -356,6 +356,25 @@
           <input type="range" id="mask-size" min="15" max="110" step="1" value="60">
         </div>
         <p class="hint" id="mask-note" aria-live="polite"></p>
+        <div class="mask-fit" id="mask-fit" hidden>
+          <p class="label">Paints for this mask</p>
+          <p class="hint" id="mask-fit-note" aria-live="polite"></p>
+          <div class="pal-suggest" id="mask-suggest" aria-live="polite" aria-label="Paints to add or take out, for the picture in this mask"></div>
+          <div class="mask-build-row">
+            <label class="label" for="mask-build-n">Build a palette for this mask</label>
+            <div class="preset-bar">
+              <select id="mask-build-n">
+                <option value="2">2 colors and white</option>
+                <option value="3">3 colors and white</option>
+                <option value="4" selected>4 colors and white</option>
+                <option value="5">5 colors and white</option>
+                <option value="6">6 colors and white</option>
+              </select>
+              <button class="btn tiny" id="mask-build" type="button">Build</button>
+            </div>
+          </div>
+          <div class="mask-build-out" id="mask-build-out" hidden aria-live="polite"></div>
+        </div>
         <label class="check"><input type="checkbox" id="mask-on"> Paint the study inside the mask</label>
         <div class="field" id="mask-strength-ctl" hidden>
           <div class="label-row">
@@ -735,30 +754,30 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-09c"></script>
-  <script src="js/process.js?v=2026-11-09c"></script>
-  <script src="js/config.js?v=2026-11-09c"></script>
-  <script src="js/museum.js?v=2026-11-09c"></script>
-  <script src="js/sync-merge.js?v=2026-11-09c"></script>
-  <script src="js/library.js?v=2026-11-09c"></script>
-  <script src="js/presets.js?v=2026-11-09c"></script>
-  <script src="js/my-palettes.js?v=2026-11-09c"></script>
-  <script src="js/log.js?v=2026-11-09c"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-09c"></script>
-  <script src="js/sync.js?v=2026-11-09c"></script>
-  <script src="js/timer.js?v=2026-11-09c"></script>
-  <script src="js/compose.js?v=2026-11-09c"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-09c"></script>
-  <script src="js/palette.js?v=2026-11-09c"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-09c"></script>
-  <script src="js/munsell.js?v=2026-11-09c"></script>
-  <script src="js/colorspace.js?v=2026-11-09c"></script>
-  <script src="js/overlap.js?v=2026-11-09c"></script>
-  <script src="js/mask.js?v=2026-11-09c"></script>
-  <script src="js/gamut.js?v=2026-11-09c"></script>
-  <script src="js/crop.js?v=2026-11-09c"></script>
-  <script src="js/warp.js?v=2026-11-09c"></script>
-  <script src="js/squareup.js?v=2026-11-09c"></script>
-  <script src="js/app.js?v=2026-11-09c"></script>
+  <script src="js/color.js?v=2026-11-09d"></script>
+  <script src="js/process.js?v=2026-11-09d"></script>
+  <script src="js/config.js?v=2026-11-09d"></script>
+  <script src="js/museum.js?v=2026-11-09d"></script>
+  <script src="js/sync-merge.js?v=2026-11-09d"></script>
+  <script src="js/library.js?v=2026-11-09d"></script>
+  <script src="js/presets.js?v=2026-11-09d"></script>
+  <script src="js/my-palettes.js?v=2026-11-09d"></script>
+  <script src="js/log.js?v=2026-11-09d"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-09d"></script>
+  <script src="js/sync.js?v=2026-11-09d"></script>
+  <script src="js/timer.js?v=2026-11-09d"></script>
+  <script src="js/compose.js?v=2026-11-09d"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-09d"></script>
+  <script src="js/palette.js?v=2026-11-09d"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-09d"></script>
+  <script src="js/munsell.js?v=2026-11-09d"></script>
+  <script src="js/colorspace.js?v=2026-11-09d"></script>
+  <script src="js/overlap.js?v=2026-11-09d"></script>
+  <script src="js/mask.js?v=2026-11-09d"></script>
+  <script src="js/gamut.js?v=2026-11-09d"></script>
+  <script src="js/crop.js?v=2026-11-09d"></script>
+  <script src="js/warp.js?v=2026-11-09d"></script>
+  <script src="js/squareup.js?v=2026-11-09d"></script>
+  <script src="js/app.js?v=2026-11-09d"></script>
 </body>
 </html>

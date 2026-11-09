@@ -391,6 +391,55 @@
     return { reached, outCells };
   }
 
+  /**
+   * Of a palette's mixes, the share of the colorful ones (chroma over 8)
+   * that fall outside a region (`inside(a, b)`, say a gamut mask): paints
+   * that mostly mix colors outside a mask make it easy to stray from it.
+   */
+  function strayShare(model, inside) {
+    let colorful = 0;
+    let out = 0;
+    for (const m of model.mixes) {
+      if (Math.hypot(m.a, m.b) < 8) continue;
+      colorful++;
+      if (!inside(m.a, m.b)) out++;
+    }
+    return colorful ? out / colorful : 0;
+  }
+
+  /**
+   * Builds a palette for some colors (cells: { L, a, b, share }), a paint at a
+   * time: starting from `start` (white), it adds whichever paint reaches the
+   * most more of them, up to `colors` paints besides white. With `inside`,
+   * paints that mostly mix outside it lose close calls. A generator: it
+   * yields after each paint it tries (so a page can run it a little at a
+   * time) and returns { ids, reached, steps: [{ id, reached }] }.
+   */
+  function* grow(cells, { colors = 4, spectral, toLab, inside, start = ['titanium-white'], candidates } = {}) {
+    const ids = start.slice();
+    let base = reach(build(ids, spectral, toLab), cells);
+    const steps = [];
+    const pool = candidates || PIGMENTS.filter((p) => !p.role || p.role === 'black').map((p) => p.id);
+    for (let k = 0; k < colors; k++) {
+      let best = null;
+      for (const id of pool) {
+        if (ids.includes(id)) continue;
+        if (byId.get(id).role === 'black' && ids.some((x) => byId.get(x).role === 'black')) continue;
+        const extra = build([...ids, id], spectral, toLab, { include: id });
+        const g = gain(base, extra);
+        const stray = inside ? strayShare(extra, inside) : 0;
+        const score = g.reached - 0.03 * stray;
+        if (!best || score > best.score) best = { id, score, reached: g.reached };
+        yield;
+      }
+      if (!best || best.reached - base.reached < 0.002) break; // nothing helps any more
+      ids.push(best.id);
+      base = reach(build(ids, spectral, toLab), cells);
+      steps.push({ id: best.id, reached: base.reached });
+    }
+    return { ids: paintsFor(ids).map((p) => p.id), reached: base.reached, steps };
+  }
+
   /** A skip rule for nearest() and reach(): leave out every mix that uses this paint. */
   const without = (id) => (m) => m.parts.some(([p]) => p === id);
 
@@ -440,5 +489,5 @@
     return out.join(', ');
   }
 
-  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, paint, variations, rank, recipe };
+  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, paint, variations, rank, recipe };
 })(typeof window !== 'undefined' ? window : globalThis);

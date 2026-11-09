@@ -158,3 +158,33 @@ test('gain() from just the new paint’s mixes matches rebuilding the whole pale
     assert.equal(full.outCells.size, quick.outCells.size);
   }
 });
+
+test('grow() builds a palette for some colors, a paint at a time', () => {
+  // a warm, earthy picture: ochres, siennas, a muted blue-gray and light grays
+  const cells = ['#C9A46A', '#8A4A2A', '#B07040', '#6E7A8A', '#E9E2D2', '#5A4632'].map((hex, i, all) => ({ L: lab(hex)[0], a: lab(hex)[1], b: lab(hex)[2], share: 1 / all.length }));
+  const run = (opts) => {
+    const g = PAL.grow(cells, { spectral, toLab, ...opts });
+    let r = g.next();
+    while (!r.done) r = g.next();
+    return r.value;
+  };
+  const four = run({ colors: 4 });
+  assert.ok(four.ids.includes('titanium-white'), 'it starts from white');
+  assert.ok(four.ids.length <= 5 && four.steps.length >= 2, four.ids.join(', '));
+  assert.ok(four.reached >= 0.95, `it reaches nearly all of them (${four.reached})`);
+  assert.ok(four.steps.every((s, i) => i === 0 || s.reached >= four.steps[i - 1].reached), 'each paint adds reach');
+  const two = run({ colors: 2 });
+  assert.ok(two.ids.length <= 3 && two.reached <= four.reached + 1e-9, 'fewer paints, no more reach');
+  // a mask around warm hues only: paints that mostly mix outside it lose close calls
+  const warm = (a, b) => b > -5 && a > -10;
+  const masked = run({ colors: 3, inside: warm });
+  assert.ok(masked.ids.every((id) => !['phthalo-green', 'phthalo-blue', 'viridian', 'emerald-green'].includes(id)), masked.ids.join(', '));
+});
+
+test('strayShare() counts the colorful mixes outside a region', () => {
+  const model = PAL.build(['vermilion', 'phthalo-green', 'titanium-white'], spectral, toLab);
+  const reds = (a, b) => a > 10;
+  const share = PAL.strayShare(model, reds);
+  assert.ok(share > 0.2 && share < 0.9, `some of its mixes are greens (${share})`);
+  assert.equal(PAL.strayShare(model, () => true), 0);
+});
