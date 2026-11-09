@@ -32,56 +32,17 @@
    */
   function compute(lab, model, nearest, { band = 'all', n = 72, reach = 10, toRgb } = {}) {
     const [lo, hi] = BANDS[band] || BANDS.all;
-    const len = lab.L.length;
     // how far out to draw: what the picture and the palette reach, within limits
     let maxC = 0;
     for (const m of model.mixes) if (m.L >= lo && m.L < hi) maxC = Math.max(maxC, Math.hypot(m.a, m.b));
-    const chroma = [];
-    for (let i = 0; i < len; i += 7) if (lab.L[i] >= lo && lab.L[i] < hi) chroma.push(Math.hypot(lab.A[i], lab.B[i]));
-    chroma.sort((p, q) => p - q);
-    if (chroma.length) maxC = Math.max(maxC, chroma[Math.floor(chroma.length * 0.995)]);
-    const scale = Math.max(30, Math.min(115, maxC * 1.08));
+    const scale = Math.max(30, Math.min(115, Math.max(maxC, pictureChroma(lab, band)) * 1.08));
+    const g = grid(lab, { band, n, scale, toRgb, outside: (L, a, b) => nearest(L, a, b).d > reach });
     const size = (2 * scale) / n;
     const cell = (a, b) => {
       const col = Math.floor((a + scale) / size);
       const row = Math.floor((scale - b) / size);
       return col < 0 || row < 0 || col >= n || row >= n ? -1 : row * n + col;
     };
-    const count = new Float64Array(n * n);
-    const out = new Float64Array(n * n);
-    const sum = new Float64Array(n * n * 3);
-    let inBand = 0;
-    let outAll = 0;
-    for (let i = 0; i < len; i++) {
-      const L = lab.L[i];
-      if (L < lo || L >= hi) continue;
-      inBand++;
-      const k = cell(lab.A[i], lab.B[i]);
-      const far = nearest(L, lab.A[i], lab.B[i]).d > reach;
-      if (far) outAll++;
-      if (k < 0) continue;
-      count[k]++;
-      if (far) out[k]++;
-      sum[k * 3] += L;
-      sum[k * 3 + 1] += lab.A[i];
-      sum[k * 3 + 2] += lab.B[i];
-    }
-    const pic = new Uint8Array(n * n);
-    const gap = new Uint8Array(n * n);
-    const share = new Float32Array(n * n);
-    const picRgb = new Uint8ClampedArray(n * n * 3);
-    const min = Math.max(1, inBand * MIN_SHARE);
-    for (let k = 0; k < n * n; k++) {
-      if (count[k] < min) continue;
-      pic[k] = 1;
-      share[k] = count[k] / inBand;
-      if (out[k] >= min) gap[k] = 1;
-      if (toRgb) {
-        const c = count[k];
-        const rgb = toRgb(sum[k * 3] / c, sum[k * 3 + 1] / c, sum[k * 3 + 2] / c);
-        picRgb.set(rgb, k * 3);
-      }
-    }
     // the palette: every mix in the band, spread a little so the samples join up
     const pal = new Int16Array(n * n * 3).fill(-1);
     const best = new Float32Array(n * n).fill(-1);
@@ -110,7 +71,79 @@
         }
       }
     }
-    return { n, scale, pic, gap, share, pal, picRgb, shareIn: len ? inBand / len : 0, outShare: inBand ? outAll / inBand : 0 };
+    return { ...g, pal };
+  }
+
+  /** The chroma that only the strongest 0.5% of the picture (in the band) goes beyond. */
+  function pictureChroma(lab, band = 'all') {
+    const [lo, hi] = BANDS[band] || BANDS.all;
+    const chroma = [];
+    for (let i = 0; i < lab.L.length; i += 7) if (lab.L[i] >= lo && lab.L[i] < hi) chroma.push(Math.hypot(lab.A[i], lab.B[i]));
+    chroma.sort((p, q) => p - q);
+    return chroma.length ? chroma[Math.floor(chroma.length * 0.995)] : 0;
+  }
+
+  /**
+   * The picture on the wheel's grid: which cells it uses (pic), how much
+   * (share), their average color (picRgb), and which have part of the
+   * picture that `outside(L, a, b)` says is out (gap). Also the band's share
+   * of the picture (shareIn) and the share of it that's out (outShare).
+   * Returns { n, scale, pic, gap, share, picRgb, pal (none), shareIn, outShare }.
+   */
+  function grid(lab, { band = 'all', n = 72, scale = 60, toRgb, outside }) {
+    const [lo, hi] = BANDS[band] || BANDS.all;
+    const len = lab.L.length;
+    const size = (2 * scale) / n;
+    const cell = (a, b) => {
+      const col = Math.floor((a + scale) / size);
+      const row = Math.floor((scale - b) / size);
+      return col < 0 || row < 0 || col >= n || row >= n ? -1 : row * n + col;
+    };
+    const count = new Float64Array(n * n);
+    const out = new Float64Array(n * n);
+    const sum = new Float64Array(n * n * 3);
+    let inBand = 0;
+    let outAll = 0;
+    for (let i = 0; i < len; i++) {
+      const L = lab.L[i];
+      if (L < lo || L >= hi) continue;
+      inBand++;
+      const k = cell(lab.A[i], lab.B[i]);
+      const far = outside ? outside(L, lab.A[i], lab.B[i]) : false;
+      if (far) outAll++;
+      if (k < 0) continue;
+      count[k]++;
+      if (far) out[k]++;
+      sum[k * 3] += L;
+      sum[k * 3 + 1] += lab.A[i];
+      sum[k * 3 + 2] += lab.B[i];
+    }
+    const pic = new Uint8Array(n * n);
+    const gap = new Uint8Array(n * n);
+    const share = new Float32Array(n * n);
+    const picRgb = new Uint8ClampedArray(n * n * 3);
+    const min = Math.max(1, inBand * MIN_SHARE);
+    for (let k = 0; k < n * n; k++) {
+      if (count[k] < min) continue;
+      pic[k] = 1;
+      share[k] = count[k] / inBand;
+      if (out[k] >= min) gap[k] = 1;
+      if (toRgb) {
+        const c = count[k];
+        picRgb.set(toRgb(sum[k * 3] / c, sum[k * 3 + 1] / c, sum[k * 3 + 2] / c), k * 3);
+      }
+    }
+    return { n, scale, pic, gap, share, picRgb, pal: new Int16Array(n * n * 3).fill(-1), shareIn: len ? inBand / len : 0, outShare: inBand ? outAll / inBand : 0 };
+  }
+
+  /** Where the wheel sits on a canvas: its center, radius and pixel ratio, and a, b to canvas pixels. */
+  function geometry(canvas, o) {
+    const dpr = root.devicePixelRatio || 1;
+    const W = canvas.width;
+    const pad = 22 * dpr;
+    const R = W / 2 - pad;
+    const cx = W / 2;
+    return { cx, R, dpr, toPx: (a, b) => [cx + (a / o.scale) * R, cx - (b / o.scale) * R], toAb: (x, y) => [((x - cx) / R) * o.scale, ((cx - y) / R) * o.scale] };
   }
 
   /**
@@ -231,5 +264,5 @@
     }
   }
 
-  VST.overlap = { compute, draw, BANDS };
+  VST.overlap = { compute, grid, draw, geometry, pictureChroma, BANDS };
 })(typeof window !== 'undefined' ? window : globalThis);

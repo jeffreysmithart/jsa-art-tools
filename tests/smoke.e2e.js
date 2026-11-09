@@ -280,6 +280,43 @@ function check(cond, msg) {
   await page.selectOption('#pal-preset', 'pov');
 
 
+  // gamut mask: a shape on the wheel, and the study painted inside it
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.evaluate(() => document.querySelector('#sec-mask').scrollIntoView());
+  const maskInk = await page.$eval('#mask-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  check(maskInk > 5000 && /% of the picture is outside this mask|All of the picture/.test(await page.textContent('#mask-note')), `the gamut mask wheel shows how the picture fits (${await page.textContent('#mask-note')})`);
+  await page.click('#mask-shape [data-shape="complement"]');
+  check((await page.evaluate(() => window.VST.app.settings.mask.shape)) === 'complement', 'choosing a shape makes that mask');
+  const heading0 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  const heading1 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
+  check(Math.abs(((heading1 - heading0 + 540) % 360) - 180) > 5, `arrow keys turn it (${Math.round(heading0)}° -> ${Math.round(heading1)}°)`);
+  await page.click('#mask-shape [data-shape="triad"]');
+  const studyStats = () => page.$eval('#cv-study', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let y = 0, chroma = 0, n = 0; for (let i = 0; i < d.length; i += 16) { y += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; chroma += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); n++; } return { y: y / n, chroma: chroma / n, sum: [...d.slice(0, 4000)].join() }; });
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.click('#tone-seg [data-tone="color"]');
+  await settle(page);
+  const unmasked = await studyStats();
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.check('#mask-on');
+  await settle(page);
+  const maskedStats = await studyStats();
+  check(/in a gamut mask/.test(await page.textContent('#study-caption')), `the caption says the study is in a gamut mask (${await page.textContent('#study-caption')})`);
+  check(maskedStats.sum !== unmasked.sum && maskedStats.chroma < unmasked.chroma, `painting inside the mask changes the colors, and the colors outside get quieter (chroma ${unmasked.chroma.toFixed(1)} -> ${maskedStats.chroma.toFixed(1)})`);
+  check(Math.abs(maskedStats.y - unmasked.y) < 3, `but not the values (brightness ${unmasked.y.toFixed(1)} vs ${maskedStats.y.toFixed(1)})`);
+  await page.fill('#mask-strength', '30');
+  await page.dispatchEvent('#mask-strength', 'input');
+  await settle(page);
+  const partway = await studyStats();
+  check(partway.chroma > maskedStats.chroma && partway.chroma < unmasked.chroma, 'a lower strength moves them only part of the way');
+  await page.uncheck('#mask-on');
+  await settle(page);
+  check((await studyStats()).sum === unmasked.sum, 'turning it off brings the colors back');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.click('#tone-seg [data-tone="gray"]');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+
   // composition guides: rule of thirds, golden section, diagonals, crossings
   const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
   const gridInk = await inkOn(page);

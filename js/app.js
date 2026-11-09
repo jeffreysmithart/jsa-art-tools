@@ -78,6 +78,9 @@
     palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
     overlapBand: 'all', // gamut overlap wheel: 'all' | 'darks' | 'middles' | 'lights'
     palMine: null, // the palette of your own last chosen or saved, so changes to it can be saved back
+    mask: null, // gamut mask: { shape, points: [[a, b], …] } (made when first shown)
+    maskOn: false, // paint the study inside the mask
+    maskStrength: 100, // how far colors outside move toward the mask (percent)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
@@ -410,10 +413,33 @@
     return P.bandLevels('average', S.bands, thresholds, hist).map((L) => Math.round(L / 5) * 5);
   }
 
+  /*
+   * The gamut mask, applied to the study: each color outside the mask
+   * moves toward the nearest color inside, at the same value. Only the
+   * study (and its downloads) change; the analysis tools see the picture.
+   */
+  const MK = VST.mask;
+  /** What the mask does to the study right now, as a key ('' when it does nothing). */
+  function maskKey() {
+    if (!S.maskOn || !MK.valid(S.mask) || S.tone === 'gray') return '';
+    return `${JSON.stringify(S.mask.points)}|${S.maskStrength}`;
+  }
+  function masked(lab) {
+    return maskKey() ? MK.apply(lab, S.mask, S.maskStrength / 100) : lab;
+  }
+  const maskCache = { lab: null, key: '', out: null };
+  /** The picture the study is painted from: the working picture, moved into the mask when that's on. */
+  function studyLab() {
+    const key = maskKey();
+    if (!key) return work.lab;
+    if (maskCache.lab !== work.lab || maskCache.key !== key) Object.assign(maskCache, { lab: work.lab, key, out: masked(work.lab) });
+    return maskCache.out;
+  }
+
   function ensureCentroids() {
-    const key = `${work.blurKey}|${S.posterK}`;
+    const key = `${work.blurKey}|${S.posterK}|${maskKey()}`;
     if (work.centroids && work.centroidKey === key) return;
-    work.centroids = P.kmeans(work.lab, S.posterK);
+    work.centroids = P.kmeans(studyLab(), S.posterK);
     work.centroidKey = key;
   }
 
@@ -448,7 +474,7 @@
     }
     if (S.tone === 'poster') ensureCentroids();
     const imageData = ctxStudy.createImageData(work.w, work.h);
-    const bands = produceStudy(work.lab, work.hist, imageData.data, work.w);
+    const bands = produceStudy(studyLab(), work.hist, imageData.data, work.w);
     ctxStudy.putImageData(imageData, 0, 0);
     renderSwatches(bands);
     renderMine();
@@ -585,6 +611,7 @@
     let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors`, palette: `Palette · ${paletteName()}` }[S.tone];
     if (grouped()) text += ` · ${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`;
     if (S.blur) text += ' · squint';
+    if (maskKey()) text += ' · in a gamut mask';
     const comparing = S.view === 'compare' && mine.el;
     const overlay = comparing && S.mineOverlay;
     $('#study-caption').textContent = overlay ? `Reference with my study on top · ${text}` : comparing ? `Reference · ${text}` : text;
@@ -1286,6 +1313,7 @@
   function renderGamut() {
     if (!$('#space-small').clientWidth) return; // hidden
     renderPaletteUi();
+    renderMask();
     const d = colorData();
     $('#gamut-empty').hidden = !!d;
     spaceSmall.setShowUnused(S.spaceUnused);
@@ -1648,6 +1676,184 @@
   });
   window.addEventListener('resize', () => {
     if (ov.data && $('#overlap-wheel').clientWidth) OV.draw($('#overlap-wheel'), ov.data, CS.HUES);
+  });
+
+  /*
+   * Gamut mask (Color tab): the picture's colors on the wheel with the mask
+   * over them, filled with the colors it allows; drag a corner to reshape,
+   * inside to move, outside to turn. The study can be painted inside it.
+   */
+  const mk = { o: null, small: null, scale: 0, drag: null };
+  function ensureMask() {
+    S.mask = MK.valid(S.mask) || MK.make('triad', 60, 60);
+    return S.mask;
+  }
+  const maskReach = (m) => Math.max(...m.points.map(([a, b]) => Math.hypot(a, b)));
+
+  function renderMask() {
+    const cv = $('#mask-wheel');
+    if (!cv.clientWidth) return; // hidden
+    const m = ensureMask();
+    setSeg($('#mask-shape'), 'shape', m.shape);
+    $('#mask-on').checked = S.maskOn;
+    $('#mask-strength-ctl').hidden = !S.maskOn;
+    $('#mask-strength').value = S.maskStrength;
+    $('#mask-strength-out').textContent = `${S.maskStrength}%`;
+    const reachNow = Math.round(maskReach(m));
+    $('#mask-size').value = Math.max(15, Math.min(110, reachNow));
+    $('#mask-size-out').textContent = `chroma ≈ ${Math.round(reachNow / 5)}`;
+    const have = work.lab ? smallLab() : null;
+    // the wheel's extent: the picture's strongest colors or the mask, whichever reaches further
+    // (kept while dragging, so the wheel doesn't change under the pointer)
+    if (!mk.drag) mk.scale = Math.max(40, Math.min(115, Math.max(have ? OV.pictureChroma(have.lab) : 0, reachNow) * 1.1));
+    const scale = mk.scale;
+    const empty = { L: new Float32Array(0), A: new Float32Array(0), B: new Float32Array(0) };
+    const o = OV.grid(have ? have.lab : empty, { scale, toRgb: (L, a, b) => toRgb(L, a, b), outside: (L, a, b) => !MK.contains(m.points, a, b) });
+    // inside the mask: the colors it allows, at a middle value
+    const size = (2 * scale) / o.n;
+    for (let k = 0; k < o.n * o.n; k++) {
+      const a = -scale + ((k % o.n) + 0.5) * size;
+      const b = scale - (Math.floor(k / o.n) + 0.5) * size;
+      if (!MK.contains(m.points, a, b)) continue;
+      const rgb = toRgb(62, a, b);
+      o.pal[k * 3] = rgb[0];
+      o.pal[k * 3 + 1] = rgb[1];
+      o.pal[k * 3 + 2] = rgb[2];
+    }
+    mk.o = o;
+    OV.draw(cv, o, CS.HUES);
+    drawMaskShape(cv, o, m);
+    let note = 'Load an image to see how its colors fit.';
+    if (have) {
+      if (colorCache.lab !== work.lab) colorData();
+      const out = MK.outside(m.points, colorCache.cells || []);
+      note = out.outShare < 0.005 ? 'All of the picture’s colors are inside this mask.' : `${pctLabel(out.outShare)}% of the picture is outside this mask (mostly ${hueFamilies(out.outCells)}).`;
+    }
+    $('#mask-note').textContent = note;
+    cv.setAttribute('aria-label', `Gamut mask: ${MK.SHAPES[m.shape] ? MK.SHAPES[m.shape].name : 'your own shape'}, pointing at ${CS.munsell(50, 20 * Math.cos((MK.heading(m) * Math.PI) / 180), 20 * Math.sin((MK.heading(m) * Math.PI) / 180)).hueName}. ${note} Arrow keys turn it.`);
+  }
+
+  function drawMaskShape(cv, o, m) {
+    const ctx = cv.getContext('2d');
+    const g = OV.geometry(cv, o);
+    const px = m.points.map(([a, b]) => g.toPx(a, b));
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    px.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 4 * g.dpr;
+    ctx.stroke();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2 * g.dpr;
+    ctx.stroke();
+    for (const [x, y] of px) {
+      ctx.beginPath();
+      ctx.arc(x, y, 6 * g.dpr, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.lineWidth = 1.5 * g.dpr;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** A changed mask: redraw it, and the study if it's painted inside the mask. */
+  function setMask(m) {
+    S.mask = m;
+    renderMask();
+    if (S.maskOn) requestStudy();
+    save();
+  }
+
+  {
+    const cv = $('#mask-wheel');
+    const toAb = (e) => {
+      const r = cv.getBoundingClientRect();
+      const g = OV.geometry(cv, mk.o);
+      return g.toAb(((e.clientX - r.left) / r.width) * cv.width, ((e.clientY - r.top) / r.height) * cv.height);
+    };
+    cv.addEventListener('pointerdown', (e) => {
+      if (!mk.o) return;
+      const m = ensureMask();
+      const [a, b] = toAb(e);
+      const g = OV.geometry(cv, mk.o);
+      const r = cv.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * cv.width;
+      const y = ((e.clientY - r.top) / r.height) * cv.height;
+      // a corner within reach of a finger, else move (inside) or turn (outside)
+      const reach = (e.pointerType === 'touch' ? 22 : 12) * g.dpr;
+      let corner = -1;
+      let best = reach;
+      m.points.forEach(([pa, pb], i) => {
+        const [px, py] = g.toPx(pa, pb);
+        const d = Math.hypot(px - x, py - y);
+        if (d < best) {
+          best = d;
+          corner = i;
+        }
+      });
+      const kind = corner >= 0 ? 'corner' : MK.contains(m.points, a, b) ? 'move' : 'turn';
+      mk.drag = { kind, corner, start: [a, b], mask: m, angle: Math.atan2(b, a) };
+      cv.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!mk.drag) return;
+      const [a, b] = toAb(e);
+      const d = mk.drag;
+      const lim = (v) => Math.max(-mk.scale, Math.min(mk.scale, v));
+      if (d.kind === 'corner') S.mask = MK.setCorner(d.mask, d.corner, lim(a), lim(b));
+      else if (d.kind === 'move') S.mask = MK.move(d.mask, a - d.start[0], b - d.start[1]);
+      else S.mask = MK.rotate(d.mask, ((Math.atan2(b, a) - d.angle) * 180) / Math.PI);
+      renderMask();
+    });
+    const end = () => {
+      if (!mk.drag) return;
+      mk.drag = null;
+      setMask(S.mask);
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('keydown', (e) => {
+      const turn = { ArrowLeft: 10, ArrowRight: -10, ArrowUp: 10, ArrowDown: -10 }[e.key];
+      if (!turn) return;
+      e.preventDefault();
+      setMask(MK.rotate(ensureMask(), e.shiftKey ? turn / 5 : turn));
+    });
+  }
+  $('#mask-shape').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const m = ensureMask();
+    setMask(MK.make(b.dataset.shape, MK.heading(m), Math.max(30, maskReach(m))));
+  });
+  $('#mask-size').addEventListener('input', (e) => {
+    const m = ensureMask();
+    const now = maskReach(m) || 1;
+    S.mask = MK.scale(m, +e.target.value / now);
+    renderMask();
+  });
+  $('#mask-size').addEventListener('change', () => setMask(S.mask));
+  $('#mask-on').addEventListener('change', (e) => {
+    S.maskOn = e.target.checked;
+    // the mask changes colors, not values: show it in color if the study is in grays
+    if (S.maskOn && S.tone === 'gray') setTone('color');
+    renderMask();
+    syncStudyControls();
+    requestStudy();
+    save();
+  });
+  $('#mask-strength').addEventListener('input', (e) => {
+    S.maskStrength = +e.target.value;
+    $('#mask-strength-out').textContent = `${S.maskStrength}%`;
+    requestStudy();
+    save();
+  });
+  window.addEventListener('resize', () => {
+    if (mk.o && $('#mask-wheel').clientWidth) renderMask();
   });
 
   /*
@@ -2204,7 +2410,7 @@
     const src = document.createElement('canvas');
     const sctx = src.getContext('2d', { willReadFrequently: true });
     const rgba = drawSource(sctx, w, h);
-    const lab = P.blurLab(P.computeLab(rgba, w * h), w, h, blurSigma(w, h));
+    const lab = masked(P.blurLab(P.computeLab(rgba, w * h), w, h, blurSigma(w, h)));
     const hist = P.histogram(lab.L);
     ensureLab();
     if (S.tone === 'poster') ensureCentroids(); // same palette as the preview
