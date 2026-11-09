@@ -1,6 +1,6 @@
 # Sync service (Cloudflare Worker + R2)
 
-Keeps study sets, presets, history and the practice log in step across your devices. See PLAN.md, "Syncing across devices", for how it works.
+Keeps study sets, presets, history, your named palettes and the practice log in step across your devices. See PLAN.md, "Syncing across devices", for how it works.
 
 - **It never sees anything readable.** Devices encrypt everything with a key made from the sync code before sending it. The service stores encrypted bytes, a storage id and a hash of the write token, all made from the code.
 - **Only the app's site can use it** (`https://jeffreysmithdesigner.com`, with or without `www.`, and `https://jeffreysmithart.github.io`, plus `localhost` for testing). Change the list with an `ALLOWED_ORIGINS` variable, comma-separated.
@@ -12,7 +12,7 @@ Keeps study sets, presets, history and the practice log in step across your devi
 
 ## Current deployment
 
-- **Service:** runs at `https://value-study-sync.jeffrey-63e.workers.dev`, as the Worker `value-study-sync`, with the R2 bucket `value-study-sync` bound as `SYNC`. It was deployed on 2026-11-08 through the Cloudflare API, with `sync/worker.js` unchanged.
+- **Service:** runs at `https://value-study-sync.jeffrey-63e.workers.dev`, as the Worker `value-study-sync`, with the R2 bucket `value-study-sync` bound as `SYNC`. It was deployed on 2026-11-08 through the Cloudflare API, with `sync/worker.js` unchanged, and redeployed on 2026-11-09 to accept the `palettes` document (named palettes).
 - **Checked live:**
   - a request from the site with nothing stored gets an empty list;
   - other sites are refused;
@@ -33,7 +33,7 @@ Keeps study sets, presets, history and the practice log in step across your devi
 | `PUT /v1/<id>/doc/<name>` | Store a document. Send `If-Match: <version>` to replace one, or `If-None-Match: *` for a new one. If it changed meanwhile: `412` with the current version. |
 | `DELETE /v1/<id>` | Delete everything for this sync code (turning sync off) |
 
-Every request needs `Authorization: Bearer <token>`. Names: `sets`, `presets`, `history`, `log/<deviceId>`.
+Every request needs `Authorization: Bearer <token>`. Names: `sets`, `presets`, `history`, `palettes`, `log/<deviceId>`.
 
 ## Set it up
 

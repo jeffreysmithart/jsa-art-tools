@@ -77,6 +77,7 @@
     palMark: true, // Palette study: stripe what the palette can't reach
     palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
     overlapBand: 'all', // gamut overlap wheel: 'all' | 'darks' | 'middles' | 'lights'
+    palMine: null, // the palette of your own last chosen or saved, so changes to it can be saved back
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
@@ -1524,7 +1525,12 @@
   function samePaints(a, b) {
     return a.length === b.length && a.every((id) => b.includes(id));
   }
+  const MP = VST.myPalettes;
+  /** Your own palette with exactly these paints, if any (preferred over a preset of the same paints). */
+  const myMatch = (ids) => MP.all().find((x) => samePaints(PAL.paintsFor(x.paints).map((p) => p.id), PAL.paintsFor(ids).map((p) => p.id))) || null;
   function paletteName() {
+    const mine = myMatch(S.palette);
+    if (mine) return mine.name;
     const p = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
     return p ? p.name.replace(/ \(.*\)$/, '') : 'my palette';
   }
@@ -1548,10 +1554,18 @@
 
   function renderPaletteUi() {
     const sel = $('#pal-preset');
-    const match = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
-    sel.value = match ? match.id : 'custom';
+    const mine = myMatch(S.palette);
+    if (mine) S.palMine = mine.id;
+    const match = mine ? null : PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
+    sel.value = mine ? `mine:${mine.id}` : match ? match.id : 'custom';
     $('#pal-source').hidden = !(match && match.source);
     $('#pal-source').textContent = match && match.source ? match.source : '';
+    $('#pal-rename').hidden = !mine;
+    $('#pal-delete').hidden = !mine;
+    // changed the paints of one of yours: offer to save them back to it
+    const edited = !mine && S.palMine ? MP.get(S.palMine) : null;
+    $('#pal-update').hidden = !edited;
+    if (edited) $('#pal-update').textContent = `Save these paints to “${edited.name}”`;
     const box = $('#pal-paints');
     box.innerHTML = '';
     for (const p of PAL.paintsFor(S.palette)) {
@@ -1744,8 +1758,58 @@
     save();
   }
   $('#pal-preset').addEventListener('change', (e) => {
-    const p = PAL.PRESETS.find((x) => x.id === e.target.value);
-    if (p) setPalette(p.paints);
+    const v = e.target.value;
+    if (v.startsWith('mine:')) {
+      const mine = MP.get(v.slice(5));
+      if (mine) {
+        S.palMine = mine.id;
+        setPalette(mine.paints);
+      }
+      return;
+    }
+    const p = PAL.PRESETS.find((x) => x.id === v);
+    if (p) {
+      S.palMine = null;
+      setPalette(p.paints);
+    }
+  });
+
+  /* your own named palettes (they sync, with sync on) */
+  $('#pal-save').addEventListener('click', () => {
+    const suggestion = myMatch(S.palette) ? '' : paletteName() === 'my palette' ? '' : `${paletteName()}, mine`;
+    const name = prompt('Name this palette:', suggestion);
+    if (name == null) return;
+    const p = MP.save(name, PAL.paintsFor(S.palette).map((x) => x.id));
+    S.palMine = p.id;
+    save();
+    buildPaletteSelect();
+    renderPaletteUi();
+    toast(`Saved the palette “${p.name}”.`);
+  });
+  $('#pal-update').addEventListener('click', () => {
+    const p = S.palMine && MP.setPaints(S.palMine, PAL.paintsFor(S.palette).map((x) => x.id));
+    if (!p) return;
+    buildPaletteSelect();
+    renderPaletteUi();
+    toast(`Saved the paints to “${p.name}”.`);
+  });
+  $('#pal-rename').addEventListener('click', () => {
+    const mine = myMatch(S.palette);
+    if (!mine) return;
+    const name = prompt('Rename this palette:', mine.name);
+    if (name == null || !name.trim()) return;
+    MP.rename(mine.id, name);
+    buildPaletteSelect();
+    renderPaletteUi();
+  });
+  $('#pal-delete').addEventListener('click', () => {
+    const mine = myMatch(S.palette);
+    if (!mine || !confirm(`Delete the palette “${mine.name}”? The paints stay chosen.`)) return;
+    MP.remove(mine.id);
+    S.palMine = null;
+    save();
+    buildPaletteSelect();
+    renderPaletteUi();
   });
   $('#pal-add').addEventListener('change', (e) => {
     if (e.target.value) setPalette([...S.palette, e.target.value]);
@@ -1825,7 +1889,9 @@
     const mine = PAL.paintsFor(S.palette).map((p) => p.id);
     const list = [];
     const preset = PAL.PRESETS.find((x) => samePaints(x.paints, mine));
-    if (!preset) list.push({ name: 'My palette', ids: mine });
+    const own = MP.all().map((p) => ({ name: p.name, ids: PAL.paintsFor(p.paints).map((x) => x.id) }));
+    if (!preset && !own.some((p) => samePaints(p.ids, mine))) list.push({ name: 'My palette', ids: mine });
+    list.push(...own);
     for (const p of PAL.PRESETS) list.push({ name: p.name.replace(/ \(.*\)$/, ''), full: p.name, ids: PAL.paintsFor(p.paints).map((x) => x.id) });
     return list.map((p) => ({ ...p, current: samePaints(p.ids, mine) }));
   }
@@ -1933,28 +1999,33 @@
   window.addEventListener('keydown', (e) => {
     if (!$('#palcmp-modal').hidden && e.key === 'Escape') closePalCompare();
   });
-  {
-    const groups = { '': $('#pal-preset') };
-    const og = document.createElement('optgroup');
-    og.label = 'Artists’ palettes';
-    groups.artist = og;
-    const base = document.createElement('optgroup');
-    base.label = 'Palettes';
-    $('#pal-preset').appendChild(base);
-    groups[''] = base;
-    $('#pal-preset').appendChild(og);
-    PAL.PRESETS.forEach((p) => {
+  /** The palette menu: your palettes, the presets, the artists' palettes, and "My palette" for any other mix. */
+  function buildPaletteSelect() {
+    const sel = $('#pal-preset');
+    sel.innerHTML = '';
+    const group = (label) => {
+      const g = document.createElement('optgroup');
+      g.label = label;
+      sel.appendChild(g);
+      return g;
+    };
+    const option = (parent, value, text) => {
       const o = document.createElement('option');
-      o.value = p.id;
-      o.textContent = p.name;
-      groups[p.group || ''].appendChild(o);
-    });
+      o.value = value;
+      o.textContent = text;
+      parent.appendChild(o);
+      return o;
+    };
+    const mine = MP.all();
+    if (mine.length) {
+      const g = group('My palettes');
+      for (const p of mine) option(g, `mine:${p.id}`, p.name);
+    }
+    const groups = { '': group('Palettes'), artist: group('Artists’ palettes') };
+    for (const p of PAL.PRESETS) option(groups[p.group || ''], p.id, p.name);
+    option(sel, 'custom', 'My palette').disabled = true;
   }
-  const customOpt = document.createElement('option');
-  customOpt.value = 'custom';
-  customOpt.textContent = 'My palette';
-  customOpt.disabled = true;
-  $('#pal-preset').appendChild(customOpt);
+  buildPaletteSelect();
 
   /* ================= Log tab ================= */
 
@@ -3775,6 +3846,10 @@
   SY.onApplied((changed) => {
     if (changed.includes('sets') || changed.includes('history')) renderLibrary();
     if (changed.includes('presets')) renderPresetSelect();
+    if (changed.includes('palettes')) {
+      buildPaletteSelect();
+      renderPaletteUi();
+    }
     if (S.panel === 'log' && (changed.includes('log') || changed.includes('history'))) renderLog();
   });
 

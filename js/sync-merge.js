@@ -129,18 +129,25 @@
 
   /* ---------- presets ---------- */
 
-  function mergePresets(a = {}, b = {}) {
+  /**
+   * Named things kept as a list under `key` ({ [key]: [{ id, updated }], deleted }):
+   * the newest edit of each wins, and a deletion sticks unless it was edited later.
+   */
+  function mergeNamed(key, a = {}, b = {}) {
     const deleted = maxMap(a.deleted, b.deleted);
-    const pa = byId(a.presets);
-    const pb = byId(b.presets);
-    const presets = [];
+    const pa = byId(a[key]);
+    const pb = byId(b[key]);
+    const list = [];
     for (const id of new Set([...pa.keys(), ...pb.keys()])) {
       const p = newer(pa.get(id), pb.get(id), 'updated');
-      if ((p.updated || 0) > (deleted[id] || 0) || !(id in deleted)) presets.push(p);
+      if ((p.updated || 0) > (deleted[id] || 0) || !(id in deleted)) list.push(p);
     }
-    presets.sort((p, q) => (p.updated || 0) - (q.updated || 0) || (p.id < q.id ? -1 : 1));
-    return { presets, deleted };
+    list.sort((p, q) => (p.updated || 0) - (q.updated || 0) || (p.id < q.id ? -1 : 1));
+    return { [key]: list, deleted };
   }
+  const mergePresets = (a, b) => mergeNamed('presets', a, b);
+  /** Your named palettes: the same rules as presets. */
+  const mergePalettes = (a, b) => mergeNamed('palettes', a, b);
 
   /* ---------- history ---------- */
 
@@ -204,5 +211,5 @@
     return days;
   }
 
-  VST.syncMerge = { stamp, maxMap, mergeSets, mergePresets, mergeHistory, combineLogs, HISTORY_MAX };
+  VST.syncMerge = { stamp, maxMap, mergeSets, mergePresets, mergePalettes, mergeHistory, combineLogs, HISTORY_MAX };
 })(typeof window !== 'undefined' ? window : globalThis);

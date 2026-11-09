@@ -120,3 +120,15 @@ test('sets and history: the latest crop wins, and a synced photo name is kept', 
   const h = M.mergeHistory({ items: [{ id: 'a', viewed: 900 }] }, { items: [{ id: 'a', viewed: 100, crop: crop(200, 0.6) }] });
   assert.equal(h.items[0].crop.w, 0.6, 'a crop survives even when the other copy was viewed later');
 });
+
+test('named palettes merge like presets: newest edit wins, deletions stick unless edited later', () => {
+  const M = globalThis.VST.syncMerge;
+  const a = { palettes: [{ id: 'p1', name: 'Old name', paints: ['a'], updated: 1 }, { id: 'p2', name: 'Keep', paints: ['b'], updated: 5 }], deleted: {} };
+  const b = { palettes: [{ id: 'p1', name: 'New name', paints: ['a', 'c'], updated: 3 }], deleted: { p2: 4, p3: 9 } };
+  const m = M.mergePalettes(a, b);
+  assert.deepEqual(m.palettes.map((p) => p.name), ['New name', 'Keep'], 'p2 was edited after its deletion, so it stays');
+  assert.deepEqual(M.mergePalettes(b, a), m, 'order doesn’t matter');
+  assert.deepEqual(M.mergePalettes(m, m), m, 'safe to repeat');
+  const gone = M.mergePalettes(m, { palettes: [], deleted: { p1: 10 } });
+  assert.deepEqual(gone.palettes.map((p) => p.id), ['p2']);
+});

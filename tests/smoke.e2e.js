@@ -258,6 +258,25 @@ function check(cond, msg) {
   await page.click('#palcmp-grid .pal-tile:has-text("Zorn")');
   check(!(await page.isVisible('#palcmp-modal')) && (await page.$eval('#pal-preset', (e) => e.value)) === 'zorn' && await page.evaluate(() => window.VST.app.settings.tone === 'palette'), 'tapping a palette paints the study with it');
   await page.keyboard.press('k');
+  // your own named palettes: save, change and save back, rename, delete
+  await page.selectOption('#pal-preset', 'zorn');
+  page.once('dialog', (d) => d.accept('Portrait warm'));
+  await page.click('#pal-save');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].parentElement.label + ' / ' + s.selectedOptions[0].textContent)) === 'My palettes / Portrait warm', 'Save… names the palette and lists it under My palettes');
+  check(await page.isVisible('#pal-rename') && await page.isVisible('#pal-delete') && !(await page.isVisible('#pal-update')), 'your own palette can be renamed or deleted');
+  await page.selectOption('#pal-add', 'cobalt-blue');
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'custom' && /Save these paints to “Portrait warm”/.test(await page.textContent('#pal-update')), 'changing its paints offers to save them back');
+  await page.click('#pal-update');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].textContent)) === 'Portrait warm' && (await page.evaluate(() => window.VST.myPalettes.all()[0].paints.includes('cobalt-blue'))), 'saving back updates the palette');
+  page.once('dialog', (d) => d.accept('Portrait, warm and cool'));
+  await page.click('#pal-rename');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].textContent)) === 'Portrait, warm and cool', 'Rename… renames it');
+  await page.selectOption('#pal-preset', 'pov');
+  await page.selectOption('#pal-preset', { label: 'Portrait, warm and cool' });
+  check((await page.$$('#pal-paints .pal-chip')).length === 5, 'choosing it from the menu brings back its paints');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#pal-delete');
+  check((await page.evaluate(() => window.VST.myPalettes.all().length)) === 0 && !(await page.$('#pal-preset optgroup[label="My palettes"]')), 'Delete removes it (and the empty group)');
   await page.selectOption('#pal-preset', 'pov');
 
 
@@ -1143,6 +1162,16 @@ function check(cond, msg) {
     await synced(mac.pg);
     await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
     check(true, 'a rename on the iPad shows up on the Mac after syncing');
+    // a palette saved on the iPad shows up on the Mac
+    await ipad.pg.evaluate(() => window.VST.myPalettes.save('Summer plein air', ['cadmium-lemon', 'cobalt-blue', 'permanent-red', 'titanium-white']));
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await mac.pg.evaluate(() => window.VST.app.setPanel('color'));
+    await mac.pg.waitForFunction(() => [...document.querySelectorAll('#pal-preset optgroup[label="My palettes"] option')].some((o) => o.textContent === 'Summer plein air'), null, { timeout: 4000 });
+    check(true, 'a palette saved on the iPad shows up in the Mac’s palette menu after syncing');
+    await mac.pg.evaluate(() => window.VST.app.setPanel('images'));
     await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
     // a third device joins by opening the QR code's link
     const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
