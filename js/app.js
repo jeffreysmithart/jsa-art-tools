@@ -1620,6 +1620,7 @@
     }
     $('#pal-range').checked = S.palShow;
     $('#space-pal').checked = S.palShow;
+    renderStandins();
     const stats = $('#pal-stats');
     const r = paletteReach();
     if (!r) {
@@ -1635,6 +1636,60 @@
     stats.innerHTML = stat(`${pctLabel(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pctLabel(r.outShare)}%)` : 'it can’t mix');
     renderOverlap();
     suggestPaints(r);
+  }
+
+  /*
+   * What stands in for each hue: the palette's strongest color in each of
+   * the ten hue families, with how strong it is and, tapped, its recipe and
+   * Munsell notation. Shows what a palette (say, phthalo green, dioxazine
+   * violet and cad orange) uses for its red, yellow and blue.
+   */
+  const stand = { key: '', list: null, pick: null };
+  function renderStandins() {
+    const box = $('#pal-standins');
+    const model = ensurePalette();
+    box.hidden = !model;
+    if (!model) return;
+    if (stand.key !== palState.key) {
+      stand.key = palState.key;
+      stand.list = PAL.standIns(model, CS.HUES);
+      stand.pick = null;
+    }
+    const grid = $('#standin-grid');
+    grid.innerHTML = '';
+    for (const st of stand.list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'standin';
+      b.setAttribute('aria-pressed', String(stand.pick === st.code));
+      const munsellChroma = st.mix ? munsellOf(st.mix.L, st.mix.a, st.mix.b).chroma : 0;
+      b.innerHTML = `<span class="sw${st.mix ? '' : ' none'}"></span><span class="bar"><i></i></span><span class="cd"></span>`;
+      if (st.mix) b.querySelector('.sw').style.background = `rgb(${st.mix.rgb.join(',')})`;
+      b.querySelector('.bar i').style.width = `${Math.min(100, (munsellChroma / 16) * 100)}%`;
+      b.querySelector('.cd').textContent = st.code;
+      b.setAttribute('aria-label', st.mix ? `${st.name}: chroma ${munsellChroma}` : `${st.name}: none`);
+      b.addEventListener('click', () => {
+        stand.pick = stand.pick === st.code ? null : st.code;
+        renderStandins();
+      });
+      grid.appendChild(b);
+    }
+    $('#standin-detail').textContent = standinText();
+  }
+  function standinText() {
+    const list = stand.list;
+    const pick = list.find((s) => s.code === stand.pick);
+    if (pick) {
+      if (!pick.mix) return `${capFirst(pick.name)}: nothing. The palette can’t mix a ${pick.name} with any strength; the colors around it would have to suggest one.`;
+      const m = munsellOf(pick.mix.L, pick.mix.a, pick.mix.b);
+      const weak = m.chroma < 4 ? ' A weak stand-in: let the colors around it push it.' : '';
+      return `${capFirst(pick.name)}: ${PAL.recipe(pick.mix.parts)} (${m.exact ? m.notation : `chroma ≈ ${m.chroma}`}, ${m.name}).${weak}`;
+    }
+    const ranked = list.map((s) => ({ ...s, c: s.mix ? munsellOf(s.mix.L, s.mix.a, s.mix.b).chroma : 0 })).sort((p, q) => q.c - p.c);
+    const names = (xs) => xs.map((x) => `${x.name}s`).join(' and ');
+    const none = ranked.filter((x) => !x.c);
+    const weakest = none.length ? none.slice(0, 2) : ranked.slice(-2).reverse();
+    return `Strongest: ${names(ranked.slice(0, 2))}. ${none.length ? 'None' : 'Weakest'}: ${names(weakest)}. Tap a hue for its mix.`;
   }
 
   /*

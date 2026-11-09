@@ -584,6 +584,23 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .pal-mine-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .pal-mine-row:not(:has(> :not([hidden]))) { display: none; }
 .pal-update { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* what stands in for each hue */
+.standins { margin: 12px 0 4px; }
+.standins > .label { margin: 0 0 6px; }
+.standin-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.standin {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 5px; min-height: 44px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted);
+  font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.standin:hover { border-color: var(--line-strong); }
+.standin[aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
+.standin .sw { height: 22px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--hairline); }
+.standin .sw.none { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--line) 4px 5px); }
+.standin .bar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.standin .bar i { display: block; height: 100%; background: var(--text); opacity: 0.7; }
+.standin .cd { text-align: center; font-weight: 600; }
+#standin-detail { margin: 6px 0 0; }
 /* gamut overlap wheel */
 .overlap { margin: 12px 0 4px; }
 .overlap .seg button { flex: 1; }

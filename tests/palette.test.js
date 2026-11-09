@@ -188,3 +188,18 @@ test('strayShare() counts the colorful mixes outside a region', () => {
   assert.ok(share > 0.2 && share < 0.9, `some of its mixes are greens (${share})`);
   assert.equal(PAL.strayShare(model, () => true), 0);
 });
+
+test('stand-ins: the strongest color a palette mixes in each hue family', () => {
+  require(path.join(__dirname, '../js/colorspace.js'));
+  const HUES = globalThis.VST.colorspace.HUES;
+  const byCode = (list) => Object.fromEntries(list.map((s) => [s.code, s]));
+  const secondary = byCode(PAL.standIns(PAL.build(PAL.PRESETS.find((p) => p.id === 'secondary').paints, spectral, toLab), HUES));
+  const warm = byCode(PAL.standIns(PAL.build(['cadmium-yellow', 'cadmium-red', 'ultramarine', 'titanium-white'], spectral, toLab), HUES));
+  assert.equal(Object.keys(secondary).length, 10);
+  // phthalo green, dioxazine violet and cad orange: weak reds, strong greens and violets
+  assert.ok(secondary.R.chroma < warm.R.chroma / 2, `its red is weak (${secondary.R.chroma} vs ${warm.R.chroma})`);
+  assert.ok(secondary.G.chroma > warm.G.chroma, 'its greens are stronger than warm primaries’');
+  assert.ok(secondary.P.mix && !warm.P.mix, 'it mixes purples; warm primaries don’t');
+  assert.ok(secondary.R.mix.parts.some(([id]) => id === 'dioxazine-purple'), 'its red stands in as orange and violet');
+  for (const s of Object.values(secondary)) if (s.mix) assert.ok(s.chroma >= 6);
+});

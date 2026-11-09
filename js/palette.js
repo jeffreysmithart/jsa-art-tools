@@ -75,6 +75,8 @@
     { id: 'cool-primaries', name: 'Cool primaries (cad yellow, quin rose, phthalo blue)', paints: ['cadmium-yellow', 'quinacridone-rose', 'phthalo-blue', 'titanium-white'] },
     { id: 'earth', name: 'Earth palette (ochre, sienna, umber, ultramarine)', paints: ['yellow-ochre', 'burnt-sienna', 'burnt-umber', 'ultramarine', 'titanium-white'] },
     { id: 'split', name: 'Split primaries (two yellows, two reds, two blues)', paints: ['cadmium-yellow', 'yellow-ochre', 'cadmium-red', 'alizarin', 'ultramarine', 'phthalo-blue', 'titanium-white'] },
+    { id: 'secondary', name: 'Secondary triad (phthalo green, dioxazine violet, cadmium orange)', paints: ['phthalo-green', 'dioxazine-purple', 'cadmium-orange', 'titanium-white'] },
+    { id: 'two-color', name: 'Ultramarine and burnt sienna', paints: ['ultramarine', 'burnt-sienna', 'titanium-white'] },
     // artists' palettes, as each artist lists them; `source` says where (brands vary, so the
     // paints are typical colors, and two alizarins or similar duplicates count once)
     { id: 'schmid', group: 'artist', name: 'Richard Schmid', source: 'His main palette, as listed on richardschmid.com (Tools & Materials).', paints: ['cadmium-lemon', 'cadmium-yellow-light', 'cadmium-yellow-deep', 'cadmium-orange', 'cadmium-red-medium', 'alizarin', 'terra-rosa', 'yellow-ochre-pale', 'transparent-oxide-red', 'transparent-oxide-brown', 'viridian', 'phthalo-green', 'cobalt-blue', 'ultramarine-deep', 'titanium-white'] },
@@ -440,6 +442,33 @@
     return { ids: paintsFor(ids).map((p) => p.id), reached: base.reached, steps };
   }
 
+  /**
+   * What stands in for each hue: for every hue family (`hues`, [[code, name,
+   * Lab angle], …], nearest angle wins), the strongest color the palette can
+   * mix there, or null if it mixes nothing colorful (chroma 6 or more) in
+   * that family. Returns [{ code, name, mix, chroma }].
+   */
+  function standIns(model, hues) {
+    const best = new Map();
+    for (const m of model.mixes) {
+      const chroma = Math.hypot(m.a, m.b);
+      if (chroma < 6) continue;
+      const h = ((Math.atan2(m.b, m.a) * 180) / Math.PI + 360) % 360;
+      let fam = hues[0];
+      let bd = Infinity;
+      for (const q of hues) {
+        const d = Math.min(Math.abs(h - q[2]), 360 - Math.abs(h - q[2]));
+        if (d < bd) {
+          bd = d;
+          fam = q;
+        }
+      }
+      const cur = best.get(fam[0]);
+      if (!cur || chroma > cur.chroma) best.set(fam[0], { mix: m, chroma });
+    }
+    return hues.map(([code, name]) => ({ code, name, mix: best.has(code) ? best.get(code).mix : null, chroma: best.has(code) ? best.get(code).chroma : 0 }));
+  }
+
   /** A skip rule for nearest() and reach(): leave out every mix that uses this paint. */
   const without = (id) => (m) => m.parts.some(([p]) => p === id);
 
@@ -489,5 +518,5 @@
     return out.join(', ');
   }
 
-  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, paint, variations, rank, recipe };
+  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, standIns, paint, variations, rank, recipe };
 })(typeof window !== 'undefined' ? window : globalThis);
