@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-09b">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-09c">
 </head>
 <body>
   <header class="topbar">
@@ -335,6 +335,40 @@
           <summary>How mixing is worked out</summary>
           <p>Mixes are simulated with <a href="https://github.com/rvanwijnen/spectral.js" target="_blank" rel="noopener">spectral.js</a> (Kubelka–Munk: how paint absorbs and scatters light) from typical colors of each paint, up to three at a time, with white and black where the palette has them. Brands vary, so treat it as a guide.</p>
           <p>“Can mix” means within ΔE 10, a small but visible difference.</p>
+        </details>
+      </section>
+
+      <section class="group" id="sec-mask">
+        <h2>Gamut mask</h2>
+        <p class="hint">A shape on the color wheel. Paint with only the colors inside it, and the whole picture holds together.</p>
+        <div class="seg small" id="mask-shape" role="radiogroup" aria-label="Mask shape">
+          <button data-shape="triad" role="radio" title="Shifted triad: one strong hue and two weaker ones">Triad</button>
+          <button data-shape="complement" role="radio" title="Two opposite hues and the grays between">Complement</button>
+          <button data-shape="analogous" role="radio" title="Neighboring hues, with a touch of their opposite">Analogous</button>
+          <button data-shape="atmospheric" role="radio" title="A small range near gray, for muted, atmospheric schemes">Muted</button>
+        </div>
+        <canvas id="mask-wheel" class="overlap-wheel mask-wheel" tabindex="0" role="img"></canvas>
+        <div class="field">
+          <div class="label-row">
+            <label class="label" for="mask-size">Size</label>
+            <output id="mask-size-out" for="mask-size"></output>
+          </div>
+          <input type="range" id="mask-size" min="15" max="110" step="1" value="60">
+        </div>
+        <p class="hint" id="mask-note" aria-live="polite"></p>
+        <label class="check"><input type="checkbox" id="mask-on"> Paint the study inside the mask</label>
+        <div class="field" id="mask-strength-ctl" hidden>
+          <div class="label-row">
+            <label class="label" for="mask-strength">Strength</label>
+            <output id="mask-strength-out" for="mask-strength"></output>
+          </div>
+          <input type="range" id="mask-strength" min="10" max="100" step="5" value="100">
+        </div>
+        <details class="howto">
+          <summary>How to use a gamut mask</summary>
+          <p>Drag a corner to reshape the mask, drag inside it to move it, or drag outside it to turn it to other hues (arrow keys turn it too). The striped dots are the picture’s colors that fall outside.</p>
+          <p>With <b>Paint the study inside the mask</b>, each color outside moves to the nearest color inside, at the same value, so the values don’t change. <b>Strength</b> moves them only part of the way. It works with Color, Main colors and Palette.</p>
+          <p>The technique was popularized by James Gurney in <i>Color and Light</i>.</p>
         </details>
       </section>
       </div>
@@ -701,29 +735,30 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-09b"></script>
-  <script src="js/process.js?v=2026-11-09b"></script>
-  <script src="js/config.js?v=2026-11-09b"></script>
-  <script src="js/museum.js?v=2026-11-09b"></script>
-  <script src="js/sync-merge.js?v=2026-11-09b"></script>
-  <script src="js/library.js?v=2026-11-09b"></script>
-  <script src="js/presets.js?v=2026-11-09b"></script>
-  <script src="js/my-palettes.js?v=2026-11-09b"></script>
-  <script src="js/log.js?v=2026-11-09b"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-09b"></script>
-  <script src="js/sync.js?v=2026-11-09b"></script>
-  <script src="js/timer.js?v=2026-11-09b"></script>
-  <script src="js/compose.js?v=2026-11-09b"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-09b"></script>
-  <script src="js/palette.js?v=2026-11-09b"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-09b"></script>
-  <script src="js/munsell.js?v=2026-11-09b"></script>
-  <script src="js/colorspace.js?v=2026-11-09b"></script>
-  <script src="js/overlap.js?v=2026-11-09b"></script>
-  <script src="js/gamut.js?v=2026-11-09b"></script>
-  <script src="js/crop.js?v=2026-11-09b"></script>
-  <script src="js/warp.js?v=2026-11-09b"></script>
-  <script src="js/squareup.js?v=2026-11-09b"></script>
-  <script src="js/app.js?v=2026-11-09b"></script>
+  <script src="js/color.js?v=2026-11-09c"></script>
+  <script src="js/process.js?v=2026-11-09c"></script>
+  <script src="js/config.js?v=2026-11-09c"></script>
+  <script src="js/museum.js?v=2026-11-09c"></script>
+  <script src="js/sync-merge.js?v=2026-11-09c"></script>
+  <script src="js/library.js?v=2026-11-09c"></script>
+  <script src="js/presets.js?v=2026-11-09c"></script>
+  <script src="js/my-palettes.js?v=2026-11-09c"></script>
+  <script src="js/log.js?v=2026-11-09c"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-09c"></script>
+  <script src="js/sync.js?v=2026-11-09c"></script>
+  <script src="js/timer.js?v=2026-11-09c"></script>
+  <script src="js/compose.js?v=2026-11-09c"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-09c"></script>
+  <script src="js/palette.js?v=2026-11-09c"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-09c"></script>
+  <script src="js/munsell.js?v=2026-11-09c"></script>
+  <script src="js/colorspace.js?v=2026-11-09c"></script>
+  <script src="js/overlap.js?v=2026-11-09c"></script>
+  <script src="js/mask.js?v=2026-11-09c"></script>
+  <script src="js/gamut.js?v=2026-11-09c"></script>
+  <script src="js/crop.js?v=2026-11-09c"></script>
+  <script src="js/warp.js?v=2026-11-09c"></script>
+  <script src="js/squareup.js?v=2026-11-09c"></script>
+  <script src="js/app.js?v=2026-11-09c"></script>
 </body>
 </html>
