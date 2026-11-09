@@ -193,6 +193,15 @@ function check(cond, msg) {
   const reachOf = async () => parseInt(await page.$eval('#pal-stats .stat b', (e) => e.textContent), 10);
   const povReach = await reachOf();
   check(povReach > 0 && povReach <= 100, `it reports how much of the picture it can mix (${povReach}%)`);
+  // what stands in for each hue: the secondary triad's red is a weak orange-and-violet mix
+  await page.selectOption('#pal-preset', 'secondary');
+  check((await page.$$('#standin-grid .standin')).length === 10, 'the stand-ins chart shows the ten hue families');
+  check(/Weakest: .*reds/.test(await page.textContent('#standin-detail')), `it names the palette's strongest and weakest hues (${await page.textContent('#standin-detail')})`);
+  await page.click('#standin-grid .standin:nth-child(1)');
+  check(/Red: .*cadmium orange.*dioxazine purple|Red: .*dioxazine purple.*cadmium orange/.test(await page.textContent('#standin-detail')), `tapping red shows what stands in for it (${await page.textContent('#standin-detail')})`);
+  await page.selectOption('#pal-preset', 'primaries');
+  check(/None: purples/.test(await page.textContent('#standin-detail')), 'warm primaries can’t mix purples, and it says so');
+  await page.selectOption('#pal-preset', 'pov');
   // the gamut overlap wheel: the picture's colors over what the palette mixes, the gap striped
   check(await page.isVisible('#overlap-wheel'), 'the gamut overlap wheel shows under the palette figures');
   const wheelInk = () => page.$eval('#overlap-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
