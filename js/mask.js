@@ -110,6 +110,28 @@
     return { outShare, outCells };
   }
 
+  /**
+   * Every color inside the mask, as evenly weighted cells ({ L, a, b, share }):
+   * a grid of hue and chroma inside the shape (`step` apart) at each of
+   * `values` (L*), keeping only colors that really exist (`real(L, a, b)`,
+   * for example a screen's range), since strong colors can't be very dark
+   * or very light. For "build a palette for the whole mask".
+   */
+  function sampleInside(points, { step = 5, values = [15, 25, 35, 45, 55, 65, 75, 85, 92], real } = {}) {
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const cells = [];
+    const lo = (v) => Math.floor(v / step) * step;
+    for (let a = lo(Math.min(...xs)); a <= Math.max(...xs); a += step) {
+      for (let b = lo(Math.min(...ys)); b <= Math.max(...ys); b += step) {
+        if (!contains(points, a, b)) continue;
+        for (const L of values) if (!real || real(L, a, b)) cells.push({ L, a, b, share: 0 });
+      }
+    }
+    for (const c of cells) c.share = 1 / cells.length;
+    return cells;
+  }
+
   /* ---------- reshaping ---------- */
 
   const centroid = (points) => [points.reduce((s, p) => s + p[0], 0) / points.length, points.reduce((s, p) => s + p[1], 0) / points.length];
@@ -145,5 +167,5 @@
     return { shape: typeof mask.shape === 'string' ? mask.shape : 'custom', points: mask.points.map((p) => [p[0], p[1]]) };
   }
 
-  VST.mask = { SHAPES, make, contains, nearestInside, apply, outside, rotate, scale, move, setCorner, heading, centroid, valid };
+  VST.mask = { SHAPES, make, contains, nearestInside, apply, outside, sampleInside, rotate, scale, move, setCorner, heading, centroid, valid };
 })(typeof window !== 'undefined' ? window : globalThis);

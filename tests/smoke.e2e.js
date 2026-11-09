@@ -347,6 +347,22 @@ function check(cond, msg) {
   await page.click('#mask-build-out button');
   await page.waitForFunction((r) => { const m = document.querySelector('#mask-fit-note').textContent.match(/can mix (\d+)%/); return m && parseInt(m[1], 10) === r; }, builtReach, { timeout: 5000 }).catch(() => {});
   check(parseInt((await page.textContent('#mask-fit-note')).match(/can mix (\d+)%/)[1], 10) === builtReach && (await page.$$('#pal-paints .pal-chip')).length === built.length, 'Use this palette chooses it, and the coverage matches');
+  // the whole mask instead of the picture in it
+  await page.click('#mask-aim [data-aim="whole"]');
+  check(/of the colors in this mask/.test(await page.textContent('#mask-fit-note')) && (await page.evaluate(() => window.VST.app.settings.maskTarget)) === 'whole', `"The whole mask" aims at every color inside it (${await page.textContent('#mask-fit-note')})`);
+  await page.click('#mask-build');
+  await page.waitForFunction(() => /of the colors in this mask/.test((document.querySelector('#mask-build-out .mb-steps') || {}).textContent || ''), null, { timeout: 30000 });
+  check(true, 'and Build makes a palette for the whole mask');
+  await page.click('#mask-aim [data-aim="picture"]');
+  check(/of the picture in this mask/.test(await page.textContent('#mask-fit-note')), 'switching back aims at the picture again');
+  // with no image, it aims at the whole mask
+  const bare = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  await bare.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await bare.goto(BASE);
+  await bare.evaluate(() => window.VST.app.setPanel('color'));
+  await bare.waitForTimeout(300);
+  check(await bare.isVisible('#mask-fit') && (await bare.$eval('#mask-aim [data-aim="picture"]', (b) => b.disabled)) && /of the colors in this mask/.test(await bare.textContent('#mask-fit-note')), `with no image loaded, paints for the mask aim at the whole mask (${await bare.textContent('#mask-fit-note')})`);
+  await bare.close();
   await page.selectOption('#pal-preset', 'pov');
   await page.uncheck('#mask-on');
   await settle(page);

@@ -81,6 +81,7 @@
     mask: null, // gamut mask: { shape, points: [[a, b], …] } (made when first shown)
     maskOn: false, // paint the study inside the mask
     maskStrength: 100, // how far colors outside move toward the mask (percent)
+    maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
@@ -1838,8 +1839,29 @@
    * a palette built for it, a paint at a time.
    */
   const maskFit = { key: '', cells: null, sugg: { key: '', token: 0, result: null }, buildToken: 0, built: null };
-  /** The picture moved into the mask (at the strength in use), as color cells, from the small copy. */
+  /** What paints for the mask aim at: the picture in it, or (with no picture, or by choice) the whole mask. */
+  const maskAim = () => (work.lab && S.maskTarget !== 'whole' ? 'picture' : 'whole');
+  const AIM_TEXT = { picture: 'the picture in this mask', whole: 'the colors in this mask' };
+  /** A color a screen can show (so a paint could plausibly match it). */
+  function realColor(L, a, b) {
+    const rgb = C.labToRgb8(L, a, b, [0, 0, 0]);
+    const back = C.rgbToLab(rgb[0], rgb[1], rgb[2], [0, 0, 0]);
+    return Math.hypot(back[0] - L, back[1] - a, back[2] - b) < 3;
+  }
+  /**
+   * The colors paints for the mask aim at, as cells: the picture moved into
+   * the mask (at the strength in use, from the small copy), or every color
+   * a screen can show inside the mask, at a range of values.
+   */
   function maskCells() {
+    if (maskAim() === 'whole') {
+      const key = `whole|${JSON.stringify(S.mask.points)}`;
+      if (maskFit.key !== key) {
+        Object.assign(maskFit, { key, small: null, cells: MK.sampleInside(S.mask.points, { real: realColor }) });
+        if (maskFit.built && maskFit.built.key !== key) maskFit.built = null;
+      }
+      return maskFit.cells;
+    }
     const small = smallLab();
     const strength = S.maskOn ? S.maskStrength / 100 : 1;
     const key = `${JSON.stringify(S.mask.points)}|${strength}|${small.w}x${small.h}|${work.blurKey}`;
@@ -1853,12 +1875,20 @@
   function renderMaskFit() {
     const box = $('#mask-fit');
     const model = ensurePalette();
-    box.hidden = !work.lab || !model;
+    box.hidden = !model;
     if (box.hidden) return;
+    const aim = maskAim();
+    setSeg($('#mask-aim'), 'aim', aim);
+    $('#mask-aim [data-aim="picture"]').disabled = !work.lab;
     const m = S.mask;
     const cells = maskCells();
+    if (!cells.length) {
+      $('#mask-fit-note').textContent = 'This mask is too small to hold any colors.';
+      $('#mask-suggest').hidden = true;
+      return;
+    }
     const base = PAL.reach(model, cells);
-    $('#mask-fit-note').textContent = `${capFirst(paletteName())} can mix ${pctLabel(base.reached)}% of the picture in this mask${base.outShare >= 0.005 ? `; not ${hueFamilies(base.outCells)}` : ''}.`;
+    $('#mask-fit-note').textContent = `${capFirst(paletteName())} can mix ${pctLabel(base.reached)}% of ${AIM_TEXT[aim]}${base.outShare >= 0.005 ? `; not ${hueFamilies(base.outCells)}` : ''}.`;
     suggestFor(maskFit.sugg, { box: $('#mask-suggest'), key: `${maskFit.key}|${palState.key}`, base, cells, what: 'this mask', inside: (a, b) => MK.contains(m.points, a, b) });
     renderMaskBuilt();
   }
@@ -1883,7 +1913,7 @@
     }
     const steps = document.createElement('p');
     steps.className = 'mb-steps hint';
-    steps.textContent = `Mixes ${pctLabel(b.reached)}% of the picture in this mask. ` + b.steps.map((s) => `+ ${PAL.byId.get(s.id).name.toLowerCase()} ${pctLabel(s.reached)}%`).join(' → ');
+    steps.textContent = `Mixes ${pctLabel(b.reached)}% of ${AIM_TEXT[b.aim] || AIM_TEXT.picture}. ` + b.steps.map((s) => `+ ${PAL.byId.get(s.id).name.toLowerCase()} ${pctLabel(s.reached)}%`).join(' → ');
     const use = document.createElement('button');
     use.type = 'button';
     use.className = 'btn tiny';
@@ -1897,9 +1927,18 @@
     out.append(paints, steps, use);
   }
 
+  $('#mask-aim').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    S.maskTarget = b.dataset.aim;
+    save();
+    renderMaskFit();
+  });
+
   $('#mask-build').addEventListener('click', () => {
-    if (!work.lab || !window.spectral) return toast('Load an image first.');
+    if (!window.spectral) return toast('Mixing isn’t available in this browser.');
     const colors = +$('#mask-build-n').value;
+    const aim = maskAim();
     const m = ensureMask();
     const cells = maskCells();
     const key = maskFit.key;
@@ -1923,7 +1962,7 @@
         renderMaskBuilt();
         return setTimeout(step, 0);
       }
-      maskFit.built = { key, ...r.value };
+      maskFit.built = { key, aim, ...r.value };
       renderMaskBuilt();
     };
     setTimeout(step, 30);

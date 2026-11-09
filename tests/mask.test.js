@@ -69,3 +69,13 @@ test('settings that aren’t a mask are refused', () => {
   assert.equal(MK.valid({ points: [[0, 0], [1, 1], ['x', 2]] }), null);
   assert.deepEqual(MK.valid(square).points, square.points);
 });
+
+test('every color inside a mask, evenly weighted, only where it can exist', () => {
+  const cells = MK.sampleInside(square.points, { step: 5, values: [30, 70] });
+  assert.equal(cells.length, 9 * 2, 'a 3 × 3 grid at two values');
+  assert.ok(cells.every((c) => MK.contains(square.points, c.a, c.b)));
+  assert.ok(Math.abs(cells.reduce((s, c) => s + c.share, 0) - 1) < 1e-9, 'shares add up to the whole');
+  const realOnly = MK.sampleInside(square.points, { step: 5, values: [30, 70], real: (L, a) => L > 50 || a < 6 });
+  assert.equal(realOnly.length, 9 + 6, 'colors that can’t exist are left out');
+  assert.ok(Math.abs(realOnly[0].share - 1 / 15) < 1e-9);
+});

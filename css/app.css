@@ -626,7 +626,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 #mask-note { margin: 6px 0 8px; }
 .mask-fit { margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 .mask-fit > .label { margin: 0 0 4px; }
-#mask-fit-note { margin: 0 0 6px; }
+#mask-fit-note { margin: 6px 0; }
+#mask-aim button { flex: 1; }
 .mask-build-row { margin-top: 12px; }
 .mask-build-row .label { display: block; margin-bottom: 6px; }
 #mask-build-n { flex: 1; min-width: 0; }
