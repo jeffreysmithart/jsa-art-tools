@@ -579,6 +579,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .pal-remove:hover { color: var(--text); background: var(--panel-2); }
 .pal-remove:disabled { visibility: hidden; }
 #pal-preset, #pal-add { width: 100%; }
+.pal-source { margin: 6px 0 0; }
 /* gamut overlap wheel */
 .overlap { margin: 12px 0 4px; }
 .overlap .seg button { flex: 1; }

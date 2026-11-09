@@ -1550,6 +1550,8 @@
     const sel = $('#pal-preset');
     const match = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
     sel.value = match ? match.id : 'custom';
+    $('#pal-source').hidden = !(match && match.source);
+    $('#pal-source').textContent = match && match.source ? match.source : '';
     const box = $('#pal-paints');
     box.innerHTML = '';
     for (const p of PAL.paintsFor(S.palette)) {
@@ -1567,7 +1569,7 @@
     }
     const add = $('#pal-add');
     add.innerHTML = '<option value="">+ Add a paint…</option>';
-    for (const p of PAL.PIGMENTS) {
+    for (const p of [...PAL.PIGMENTS].sort((x, y) => x.name.localeCompare(y.name))) {
       if (S.palette.includes(p.id)) continue;
       const o = document.createElement('option');
       o.value = p.id;
@@ -1647,8 +1649,11 @@
     const token = ++sugg.token;
     box.hidden = false;
     box.innerHTML = '<p class="pal-sg-wait">Trying other paints on this picture…</p>';
-    const vars = PAL.variations(S.palette);
     const cells = colorCache.cells;
+    const model = ensurePalette();
+    // a paint taken out: the palette's own mixes without it (no new mixing needed);
+    // a paint added: mixed afresh, unless the palette already mixes nearly everything
+    const vars = PAL.variations(S.palette).filter((v) => v.kind === 'drop' || base.reached < 0.98);
     const tried = [];
     let i = 0;
     const step = () => {
@@ -1656,11 +1661,15 @@
       const t0 = performance.now();
       while (i < vars.length && performance.now() - t0 < 25) {
         const v = vars[i++];
-        const rr = PAL.reach(paletteModel(v.ids), cells);
+        const rr =
+          v.kind === 'drop'
+            ? PAL.reach(model, cells, PAL.REACH, PAL.without(v.id))
+            : PAL.gain(base, PAL.build(v.ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]), { include: v.id }));
         tried.push({ kind: v.kind, id: v.id, reached: rr.reached, outCells: rr.outCells });
       }
       if (i < vars.length) return setTimeout(step, 0);
       sugg.key = key;
+      sugg.full = base.reached >= 0.98;
       sugg.result = PAL.rank(base, tried);
       renderSuggestions(sugg.result);
     };
@@ -1706,7 +1715,7 @@
         title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of this picture`,
         apply: () => setPalette([...S.palette, a.id]),
       })),
-      'No one paint adds much to this picture.'
+      sugg.full ? 'It already mixes nearly all of this picture.' : 'No one paint adds much to this picture.'
     );
     if (S.palette.length > 1) {
       const spare = drops.filter((d) => d.loss < 0.03).slice(0, 2);
@@ -1924,12 +1933,23 @@
   window.addEventListener('keydown', (e) => {
     if (!$('#palcmp-modal').hidden && e.key === 'Escape') closePalCompare();
   });
-  PAL.PRESETS.forEach((p) => {
-    const o = document.createElement('option');
-    o.value = p.id;
-    o.textContent = p.name;
-    $('#pal-preset').appendChild(o);
-  });
+  {
+    const groups = { '': $('#pal-preset') };
+    const og = document.createElement('optgroup');
+    og.label = 'Artists’ palettes';
+    groups.artist = og;
+    const base = document.createElement('optgroup');
+    base.label = 'Palettes';
+    $('#pal-preset').appendChild(base);
+    groups[''] = base;
+    $('#pal-preset').appendChild(og);
+    PAL.PRESETS.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      groups[p.group || ''].appendChild(o);
+    });
+  }
   const customOpt = document.createElement('option');
   customOpt.value = 'custom';
   customOpt.textContent = 'My palette';
