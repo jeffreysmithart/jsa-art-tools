@@ -1675,6 +1675,49 @@
       grid.appendChild(b);
     }
     $('#standin-detail').textContent = standinText();
+    renderContrast();
+  }
+
+  /*
+   * Contrast check: the tapped stand-in as the same small square on three
+   * grounds (a gray of the same value, the palette's own complement, and
+   * the picture as this palette would paint it), so simultaneous contrast
+   * shows on screen: a weak red reads redder inside its green.
+   */
+  const contrastPic = { key: '', canvas: null };
+  function renderContrast() {
+    const box = $('#standin-contrast');
+    const pick = stand.list && stand.list.find((s) => s.code === stand.pick);
+    box.hidden = !pick || !pick.mix;
+    if (box.hidden) return;
+    const mix = pick.mix;
+    const rgb = (m) => `rgb(${m.rgb.join(',')})`;
+    box.querySelectorAll('.cc-chip').forEach((c) => (c.style.background = rgb(mix)));
+    const gray = C.lToGray8(mix.L);
+    $('#cc-gray').style.background = `rgb(${gray},${gray},${gray})`;
+    const comp = PAL.complementOf(ensurePalette(), mix);
+    const g = $('#cc-comp');
+    g.classList.toggle('none', !comp);
+    g.style.background = comp ? rgb(comp) : '';
+    $('#cc-comp-cap').textContent = comp ? 'In its complement' : 'No complement in this palette';
+    g.title = comp ? `The palette’s opposite: ${PAL.recipe(comp.parts)}` : '';
+    // the picture, painted with this palette (no stripes), under the square
+    const fig = $('#cc-pic-fig');
+    fig.hidden = !work.lab;
+    if (!work.lab) return;
+    const small = smallLab();
+    const key = `${palState.key}|${small.w}x${small.h}|${work.blurKey}|${S.flip}`;
+    const cv = $('#cc-pic canvas');
+    if (contrastPic.key !== key || contrastPic.small !== small) {
+      cv.width = small.w;
+      cv.height = small.h;
+      const ctx = cv.getContext('2d');
+      const data = ctx.createImageData(small.w, small.h);
+      PAL.paint(ensurePalette(), small.lab, data.data, small.w, { mark: false });
+      ctx.putImageData(data, 0, 0);
+      cv.style.transform = S.flip ? 'scaleX(-1)' : '';
+      Object.assign(contrastPic, { key, small });
+    }
   }
   function standinText() {
     const list = stand.list;

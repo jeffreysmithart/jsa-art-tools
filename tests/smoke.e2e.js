@@ -199,6 +199,19 @@ function check(cond, msg) {
   check(/Weakest: .*reds/.test(await page.textContent('#standin-detail')), `it names the palette's strongest and weakest hues (${await page.textContent('#standin-detail')})`);
   await page.click('#standin-grid .standin:nth-child(1)');
   check(/Red: .*cadmium orange.*dioxazine purple|Red: .*dioxazine purple.*cadmium orange/.test(await page.textContent('#standin-detail')), `tapping red shows what stands in for it (${await page.textContent('#standin-detail')})`);
+  // contrast check: the same square on gray, inside the palette's complement, and in the picture
+  check(await page.isVisible('#standin-contrast'), 'tapping a stand-in shows the contrast check');
+  const grounds = await page.evaluate(() => ['#cc-gray', '#cc-comp'].map((sel) => getComputedStyle(document.querySelector(sel)).backgroundColor));
+  const chips = await page.$$eval('#standin-contrast .cc-chip', (els) => [...new Set(els.map((e) => getComputedStyle(e).backgroundColor))]);
+  const rgbOf = (t) => t.match(/\d+/g).map(Number);
+  const [gr, gg, gb] = rgbOf(grounds[0]);
+  const [cr, cg, cb] = rgbOf(grounds[1]);
+  check(chips.length === 1, 'the same color sits on every ground');
+  check(gr === gg && gg === gb, `the first ground is a true gray (${grounds[0]})`);
+  check(cg > cr && /phthalo green/.test(await page.getAttribute('#cc-comp', 'title')), `the second is the palette's own complement, a phthalo green mix (${grounds[1]})`);
+  check(await page.isVisible('#cc-pic canvas'), 'and the third is the picture as this palette paints it');
+  await page.click('#standin-grid .standin:nth-child(1)');
+  check(!(await page.isVisible('#standin-contrast')), 'tapping it again closes it');
   await page.selectOption('#pal-preset', 'primaries');
   check(/None: purples/.test(await page.textContent('#standin-detail')), 'warm primaries can’t mix purples, and it says so');
   await page.selectOption('#pal-preset', 'pov');

@@ -469,6 +469,32 @@
     return hues.map(([code, name]) => ({ code, name, mix: best.has(code) ? best.get(code).mix : null, chroma: best.has(code) ? best.get(code).chroma : 0 }));
   }
 
+  /**
+   * The palette's own complement for a mix: among its colorful mixes (chroma
+   * 8 or more), the one most nearly opposite on the hue circle, at a similar
+   * value, favoring stronger ones. Null if it mixes nothing opposite (within
+   * 60° of it).
+   */
+  function complementOf(model, mix) {
+    const target = Math.atan2(-mix.b, -mix.a);
+    let best = null;
+    let bestScore = Infinity;
+    for (const m of model.mixes) {
+      const chroma = Math.hypot(m.a, m.b);
+      if (chroma < 8) continue;
+      let d = Math.abs(Math.atan2(m.b, m.a) - target);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      const deg = (d * 180) / Math.PI;
+      if (deg > 60) continue;
+      const score = deg + Math.abs(m.L - mix.L) * 0.6 - chroma * 0.25;
+      if (score < bestScore) {
+        bestScore = score;
+        best = m;
+      }
+    }
+    return best;
+  }
+
   /** A skip rule for nearest() and reach(): leave out every mix that uses this paint. */
   const without = (id) => (m) => m.parts.some(([p]) => p === id);
 
@@ -518,5 +544,5 @@
     return out.join(', ');
   }
 
-  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, standIns, paint, variations, rank, recipe };
+  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, standIns, complementOf, paint, variations, rank, recipe };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -203,3 +203,17 @@ test('stand-ins: the strongest color a palette mixes in each hue family', () => 
   assert.ok(secondary.R.mix.parts.some(([id]) => id === 'dioxazine-purple'), 'its red stands in as orange and violet');
   for (const s of Object.values(secondary)) if (s.mix) assert.ok(s.chroma >= 6);
 });
+
+test('complementOf(): the palette’s own opposite for a color, at a similar value', () => {
+  const model = PAL.build(PAL.PRESETS.find((p) => p.id === 'secondary').paints, spectral, toLab);
+  const red = PAL.standIns(model, globalThis.VST.colorspace.HUES).find((s) => s.code === 'R').mix;
+  const comp = PAL.complementOf(model, red);
+  assert.ok(comp, 'the secondary triad has an opposite for its red');
+  const angle = (m) => ((Math.atan2(m.b, m.a) * 180) / Math.PI + 360) % 360;
+  const diff = 180 - Math.abs(((angle(comp) - angle(red) + 540) % 360) - 180); // how far from exactly opposite
+  assert.ok(diff < 60, `it is across the circle (${Math.round(diff)}° from opposite)`);
+  assert.ok(comp.parts.some(([id]) => id === 'phthalo-green'), 'and it is a phthalo green mix');
+  assert.ok(Math.abs(comp.L - red.L) < 25, 'at a similar value');
+  const grays = PAL.build(['ivory-black', 'titanium-white'], spectral, toLab);
+  assert.equal(PAL.complementOf(grays, red), null, 'a palette of grays has no opposite');
+});
