@@ -193,8 +193,19 @@ function check(cond, msg) {
   const reachOf = async () => parseInt(await page.$eval('#pal-stats .stat b', (e) => e.textContent), 10);
   const povReach = await reachOf();
   check(povReach > 0 && povReach <= 100, `it reports how much of the picture it can mix (${povReach}%)`);
+  // the gamut overlap wheel: the picture's colors over what the palette mixes, the gap striped
+  check(await page.isVisible('#overlap-wheel'), 'the gamut overlap wheel shows under the palette figures');
+  const wheelInk = () => page.$eval('#overlap-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  check((await wheelInk()) > 5000, 'it draws the palette and the picture');
+  const povGap = parseInt((await page.textContent('#overlap-note')).match(/(\d+)% of the picture/)?.[1] || '0', 10);
+  check(Math.abs(povGap - (100 - povReach)) <= 2, `its gap matches what the palette can't mix (${povGap}% vs ${100 - povReach}%)`);
+  await page.click('#overlap-band [data-band="lights"]');
+  check(/^The lights are \d+% of the picture/.test(await page.textContent('#overlap-note')) && (await page.evaluate(() => window.VST.app.settings.overlapBand)) === 'lights', `Lights shows just the light values (${await page.textContent('#overlap-note')})`);
+  await page.click('#overlap-band [data-band="all"]');
   await page.selectOption('#pal-preset', 'zorn');
   await page.waitForFunction((r) => parseInt(document.querySelector('#pal-stats .stat b').textContent, 10) !== r, povReach, { timeout: 3000 }).catch(() => {});
+  const zornGap = parseInt((await page.textContent('#overlap-note')).match(/(\d+)% of the picture/)?.[1] || '0', 10);
+  check(zornGap > povGap, `Zorn's gap on the wheel is bigger (${zornGap}% vs ${povGap}%)`);
   const zornReach = await reachOf();
   const outName = await page.$eval('#pal-stats .stat:nth-child(2) b', (e) => e.textContent);
   check(zornReach < povReach && /green/i.test(outName) && /blue/i.test(outName), `without a blue, Zorn reaches less of this landscape, missing its ${outName.toLowerCase()} (${zornReach}%)`);

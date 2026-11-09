@@ -579,6 +579,18 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .pal-remove:hover { color: var(--text); background: var(--panel-2); }
 .pal-remove:disabled { visibility: hidden; }
 #pal-preset, #pal-add { width: 100%; }
+.pal-source { margin: 6px 0 0; }
+/* gamut overlap wheel */
+.overlap { margin: 12px 0 4px; }
+.overlap .seg button { flex: 1; }
+.overlap-wheel { display: block; width: 100%; aspect-ratio: 1; margin-top: 8px; background: var(--deep); border: 1px solid var(--line); border-radius: var(--radius); }
+.overlap-key { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.overlap-key li { display: flex; align-items: center; gap: 6px; }
+.overlap-key i { width: 14px; height: 10px; border-radius: 2px; flex: none; }
+.overlap-key .k-pal { background: linear-gradient(90deg, #c8643c, #c9a24a, #5a8a5a, #4a6aa8); opacity: 0.8; }
+.overlap-key .k-pic { width: 10px; border-radius: 50%; background: #8a9a6a; box-shadow: 0 0 0 1px rgba(255,255,255,0.7); }
+.overlap-key .k-gap { width: 10px; border-radius: 50%; background: repeating-linear-gradient(135deg, #fff 0 1.5px, #7a8fb8 1.5px 4px); box-shadow: 0 0 0 1px #fff; }
+#overlap-note { margin: 6px 0 0; }
 /* paints that would help this picture */
 .pal-suggest { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .pal-sg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

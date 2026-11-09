@@ -76,6 +76,7 @@
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
     palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
+    overlapBand: 'all', // gamut overlap wheel: 'all' | 'darks' | 'middles' | 'lights'
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
   };
@@ -1549,6 +1550,8 @@
     const sel = $('#pal-preset');
     const match = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
     sel.value = match ? match.id : 'custom';
+    $('#pal-source').hidden = !(match && match.source);
+    $('#pal-source').textContent = match && match.source ? match.source : '';
     const box = $('#pal-paints');
     box.innerHTML = '';
     for (const p of PAL.paintsFor(S.palette)) {
@@ -1566,7 +1569,7 @@
     }
     const add = $('#pal-add');
     add.innerHTML = '<option value="">+ Add a paint…</option>';
-    for (const p of PAL.PIGMENTS) {
+    for (const p of [...PAL.PIGMENTS].sort((x, y) => x.name.localeCompare(y.name))) {
       if (S.palette.includes(p.id)) continue;
       const o = document.createElement('option');
       o.value = p.id;
@@ -1588,8 +1591,50 @@
     // (an average hue of, say, greens and blues would name neither)
     const outLabel = r.outShare >= 0.005 ? capFirst(hueFamilies(r.outCells)) : 'Nothing';
     stats.innerHTML = stat(`${pctLabel(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pctLabel(r.outShare)}%)` : 'it can’t mix');
+    renderOverlap();
     suggestPaints(r);
   }
+
+  /*
+   * The gamut overlap wheel: the picture's colors (outlined) over what the
+   * palette can mix (in color), with what it needs but can't mix striped,
+   * for all values or just the darks, middles or lights.
+   */
+  const OV = VST.overlap;
+  const ov = { model: null, small: null, band: '', data: null };
+  const BAND_NAMES = { darks: 'darks', middles: 'middle values', lights: 'lights' };
+  function renderOverlap() {
+    const box = $('#pal-overlap');
+    const model = ensurePalette();
+    box.hidden = !model || !work.lab;
+    if (box.hidden) return;
+    const band = OV.BANDS[S.overlapBand] ? S.overlapBand : 'all';
+    setSeg($('#overlap-band'), 'band', band);
+    const small = smallLab();
+    if (ov.model !== model || ov.small !== small || ov.band !== band) {
+      ov.data = OV.compute(small.lab, model, (L, a, b) => PAL.nearestCached(model, L, a, b), { band, reach: PAL.REACH, toRgb: (L, a, b) => toRgb(L, a, b) });
+      Object.assign(ov, { model, small, band });
+    }
+    const o = ov.data;
+    OV.draw($('#overlap-wheel'), o, CS.HUES);
+    const pct = (v) => `${pctLabel(v)}%`;
+    let note;
+    if (band === 'all') note = o.outShare >= 0.005 ? `Striped: colors the picture needs that this palette can’t mix (${pct(o.outShare)} of the picture).` : 'The palette can mix all of the picture’s colors.';
+    else if (o.shareIn < 0.01) note = `Almost none of the picture is in the ${BAND_NAMES[band]}.`;
+    else note = `The ${BAND_NAMES[band]} are ${pct(o.shareIn)} of the picture; the palette ${o.outShare >= 0.005 ? `can’t mix ${pct(o.outShare)} of them` : 'can mix them all'}.`;
+    $('#overlap-note').textContent = note;
+    $('#overlap-wheel').setAttribute('aria-label', `Hue and chroma wheel of the picture’s colors and what ${paletteName()} can mix. ${note}`);
+  }
+  $('#overlap-band').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.overlapBand = b.dataset.band;
+    save();
+    renderOverlap();
+  });
+  window.addEventListener('resize', () => {
+    if (ov.data && $('#overlap-wheel').clientWidth) OV.draw($('#overlap-wheel'), ov.data, CS.HUES);
+  });
 
   /*
    * Which paint would help this picture: the palette is tried with each
@@ -1604,8 +1649,11 @@
     const token = ++sugg.token;
     box.hidden = false;
     box.innerHTML = '<p class="pal-sg-wait">Trying other paints on this picture…</p>';
-    const vars = PAL.variations(S.palette);
     const cells = colorCache.cells;
+    const model = ensurePalette();
+    // a paint taken out: the palette's own mixes without it (no new mixing needed);
+    // a paint added: mixed afresh, unless the palette already mixes nearly everything
+    const vars = PAL.variations(S.palette).filter((v) => v.kind === 'drop' || base.reached < 0.98);
     const tried = [];
     let i = 0;
     const step = () => {
@@ -1613,11 +1661,15 @@
       const t0 = performance.now();
       while (i < vars.length && performance.now() - t0 < 25) {
         const v = vars[i++];
-        const rr = PAL.reach(paletteModel(v.ids), cells);
+        const rr =
+          v.kind === 'drop'
+            ? PAL.reach(model, cells, PAL.REACH, PAL.without(v.id))
+            : PAL.gain(base, PAL.build(v.ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]), { include: v.id }));
         tried.push({ kind: v.kind, id: v.id, reached: rr.reached, outCells: rr.outCells });
       }
       if (i < vars.length) return setTimeout(step, 0);
       sugg.key = key;
+      sugg.full = base.reached >= 0.98;
       sugg.result = PAL.rank(base, tried);
       renderSuggestions(sugg.result);
     };
@@ -1663,7 +1715,7 @@
         title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of this picture`,
         apply: () => setPalette([...S.palette, a.id]),
       })),
-      'No one paint adds much to this picture.'
+      sugg.full ? 'It already mixes nearly all of this picture.' : 'No one paint adds much to this picture.'
     );
     if (S.palette.length > 1) {
       const spare = drops.filter((d) => d.loss < 0.03).slice(0, 2);
@@ -1881,12 +1933,23 @@
   window.addEventListener('keydown', (e) => {
     if (!$('#palcmp-modal').hidden && e.key === 'Escape') closePalCompare();
   });
-  PAL.PRESETS.forEach((p) => {
-    const o = document.createElement('option');
-    o.value = p.id;
-    o.textContent = p.name;
-    $('#pal-preset').appendChild(o);
-  });
+  {
+    const groups = { '': $('#pal-preset') };
+    const og = document.createElement('optgroup');
+    og.label = 'Artists’ palettes';
+    groups.artist = og;
+    const base = document.createElement('optgroup');
+    base.label = 'Palettes';
+    $('#pal-preset').appendChild(base);
+    groups[''] = base;
+    $('#pal-preset').appendChild(og);
+    PAL.PRESETS.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      groups[p.group || ''].appendChild(o);
+    });
+  }
   const customOpt = document.createElement('option');
   customOpt.value = 'custom';
   customOpt.textContent = 'My palette';

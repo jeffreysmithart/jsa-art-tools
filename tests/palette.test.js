@@ -115,3 +115,46 @@ test('the paint a picture needs ranks first, and an unused one is least needed',
   assert.ok(drops.filter((d) => d.loss === 0).some((d) => d.id === 'dioxazine-purple'), 'the purple isn’t needed');
   assert.ok(drops.find((d) => d.id === 'titanium-white').loss > 0.2, 'white is');
 });
+
+test('artists’ palettes say where they come from, and have one white at most', () => {
+  const artists = PAL.PRESETS.filter((p) => p.group === 'artist');
+  assert.ok(artists.length >= 8);
+  for (const p of artists) {
+    assert.ok(p.source && p.source.length > 10, `${p.id} has a source`);
+    assert.ok(PAL.paintsFor(p.paints).filter((x) => x.role === 'white').length <= 1, `${p.id}: one white`);
+    assert.equal(new Set(p.paints).size, p.paints.length, `${p.id}: no paint twice`);
+  }
+  assert.equal(new Set(PAL.PRESETS.map((p) => p.id)).size, PAL.PRESETS.length, 'ids are unique');
+  assert.equal(new Set(PAL.PIGMENTS.map((p) => p.id)).size, PAL.PIGMENTS.length, 'paint ids are unique');
+});
+
+test('large palettes are sampled more coarsely, so they stay quick, and still mix well', () => {
+  const schmid = PAL.PRESETS.find((p) => p.id === 'schmid').paints;
+  const t0 = Date.now();
+  const model = PAL.build(schmid, spectral, toLab);
+  const ms = Date.now() - t0;
+  assert.ok(model.mixes.length < 30000, `${model.mixes.length} mixes`);
+  assert.ok(ms < 2000, `built in ${ms} ms`);
+  // a 15-paint palette reaches ordinary colors easily
+  for (const hex of ['#4F7F3A', '#C8443A', '#3F7FD0', '#E9E6DA', '#5A4632']) assert.ok(PAL.nearest(model, ...lab(hex)).d <= PAL.REACH, hex);
+});
+
+test('without() sees the palette as if a paint were taken out', () => {
+  const model = PAL.build(['vermilion', 'ultramarine', 'titanium-white'], spectral, toLab);
+  const cells = [{ L: lab('#3F5FB0')[0], a: lab('#3F5FB0')[1], b: lab('#3F5FB0')[2], share: 1 }];
+  assert.equal(PAL.reach(model, cells).reached, 1, 'the blue is in reach');
+  assert.equal(PAL.reach(model, cells, PAL.REACH, PAL.without('ultramarine')).reached, 0, 'not without ultramarine');
+  assert.equal(PAL.reach(model, cells, PAL.REACH, PAL.without('vermilion')).reached, 1, 'but fine without vermilion');
+});
+
+test('gain() from just the new paint’s mixes matches rebuilding the whole palette', () => {
+  const ids = ['yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'];
+  const cells = ['#4F7F3A', '#3F7FD0', '#C9A46A', '#2BB5A8', '#E9E6DA', '#7A3A8A'].map((hex, i, all) => ({ L: lab(hex)[0], a: lab(hex)[1], b: lab(hex)[2], share: 1 / all.length }));
+  const base = PAL.reach(PAL.build(ids, spectral, toLab), cells);
+  for (const id of ['ultramarine', 'viridian', 'cobalt-violet', 'cadmium-lemon']) {
+    const full = PAL.reach(PAL.build([...ids, id], spectral, toLab), cells);
+    const quick = PAL.gain(base, PAL.build([...ids, id], spectral, toLab, { include: id }));
+    assert.ok(Math.abs(full.reached - quick.reached) < 1e-9, `${id}: ${full.reached} vs ${quick.reached}`);
+    assert.equal(full.outCells.size, quick.outCells.size);
+  }
+});
