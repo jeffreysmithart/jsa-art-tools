@@ -37,22 +37,26 @@
     for (const m of model.mixes) if (m.L >= lo && m.L < hi) maxC = Math.max(maxC, Math.hypot(m.a, m.b));
     const scale = Math.max(30, Math.min(115, Math.max(maxC, pictureChroma(lab, band)) * 1.08));
     const g = grid(lab, { band, n, scale, toRgb, outside: (L, a, b) => nearest(L, a, b).d > reach });
+    const pal = paletteCells(model, { band, n, scale });
+    return { ...g, pal };
+  }
+
+  /**
+   * What a palette can mix, on the wheel's grid: each cell's strongest mix
+   * (RGB, or -1 where it mixes nothing), with every mix in the band spread a
+   * little so the samples join up.
+   */
+  function paletteCells(model, { band = 'all', n = 72, scale = 60 } = {}) {
+    const [lo, hi] = BANDS[band] || BANDS.all;
     const size = (2 * scale) / n;
-    const cell = (a, b) => {
-      const col = Math.floor((a + scale) / size);
-      const row = Math.floor((scale - b) / size);
-      return col < 0 || row < 0 || col >= n || row >= n ? -1 : row * n + col;
-    };
-    // the palette: every mix in the band, spread a little so the samples join up
     const pal = new Int16Array(n * n * 3).fill(-1);
     const best = new Float32Array(n * n).fill(-1);
     const r = Math.max(1, Math.ceil(3.5 / size));
     for (const m of model.mixes) {
       if (m.L < lo || m.L >= hi) continue;
-      const k0 = cell(m.a, m.b);
-      if (k0 < 0) continue;
-      const row = Math.floor(k0 / n);
-      const col = k0 % n;
+      const col = Math.floor((m.a + scale) / size);
+      const row = Math.floor((scale - m.b) / size);
+      if (col < 0 || row < 0 || col >= n || row >= n) continue;
       // each cell shows its strongest mix, so the wheel reads by hue and chroma
       const c = Math.hypot(m.a, m.b);
       for (let dy = -r; dy <= r; dy++) {
@@ -71,7 +75,80 @@
         }
       }
     }
-    return { ...g, pal };
+    return pal;
+  }
+
+  /**
+   * A region of grid cells made solid: grown by `grow` cells, then with every
+   * hole the outside can't reach filled in, so gaps between sampled mixes
+   * don't show as holes or islands. Returns a Uint8Array of flags.
+   */
+  function solid(on, n, grow = 1) {
+    let flags = new Uint8Array(n * n);
+    for (let k = 0; k < n * n; k++) if (on(k)) flags[k] = 1;
+    for (let g = 0; g < grow; g++) {
+      const next = flags.slice();
+      for (let k = 0; k < n * n; k++) {
+        if (flags[k]) continue;
+        const row = Math.floor(k / n);
+        const col = k % n;
+        if ((col > 0 && flags[k - 1]) || (col < n - 1 && flags[k + 1]) || (row > 0 && flags[k - n]) || (row < n - 1 && flags[k + n])) next[k] = 1;
+      }
+      flags = next;
+    }
+    // the outside: every empty cell reachable from the edge
+    const outside = new Uint8Array(n * n);
+    const stack = [];
+    for (let i = 0; i < n; i++) for (const k of [i, (n - 1) * n + i, i * n, i * n + n - 1]) if (!flags[k] && !outside[k]) (outside[k] = 1), stack.push(k);
+    while (stack.length) {
+      const k = stack.pop();
+      const row = Math.floor(k / n);
+      const col = k % n;
+      for (const [r, c] of [[row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]]) {
+        if (r < 0 || c < 0 || r >= n || c >= n) continue;
+        const j = r * n + c;
+        if (flags[j] || outside[j]) continue;
+        outside[j] = 1;
+        stack.push(j);
+      }
+    }
+    const out = new Uint8Array(n * n);
+    for (let k = 0; k < n * n; k++) out[k] = outside[k] ? 0 : 1;
+    return out;
+  }
+
+  /**
+   * Outlines a set of grid cells (`on(k)`) on a drawn wheel: a dashed line
+   * around the region, in `color` (with a dark edge so it reads on any color).
+   */
+  function outline(canvas, o, on, { color = '#e8c15a', dash = [5, 3] } = {}) {
+    const ctx = canvas.getContext('2d');
+    const g = geometry(canvas, o);
+    const px = (g.R * 2) / o.n;
+    const x0 = g.cx - g.R;
+    const has = (row, col) => row >= 0 && col >= 0 && row < o.n && col < o.n && on(row * o.n + col);
+    ctx.save();
+    ctx.beginPath();
+    for (let row = 0; row < o.n; row++) {
+      for (let col = 0; col < o.n; col++) {
+        if (!has(row, col)) continue;
+        const x = x0 + col * px;
+        const y = x0 + row * px;
+        if (!has(row - 1, col)) (ctx.moveTo(x, y), ctx.lineTo(x + px, y));
+        if (!has(row + 1, col)) (ctx.moveTo(x, y + px), ctx.lineTo(x + px, y + px));
+        if (!has(row, col - 1)) (ctx.moveTo(x, y), ctx.lineTo(x, y + px));
+        if (!has(row, col + 1)) (ctx.moveTo(x + px, y), ctx.lineTo(x + px, y + px));
+      }
+    }
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3.5 * g.dpr;
+    ctx.stroke();
+    ctx.setLineDash(dash.map((d) => d * g.dpr));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 * g.dpr;
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** The chroma that only the strongest 0.5% of the picture (in the band) goes beyond. */
@@ -264,5 +341,5 @@
     }
   }
 
-  VST.overlap = { compute, grid, draw, geometry, pictureChroma, BANDS };
+  VST.overlap = { compute, grid, paletteCells, solid, outline, draw, geometry, pictureChroma, BANDS };
 })(typeof window !== 'undefined' ? window : globalThis);
