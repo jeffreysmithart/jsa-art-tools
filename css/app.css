@@ -601,6 +601,14 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .standin .bar i { display: block; height: 100%; background: var(--text); opacity: 0.7; }
 .standin .cd { text-align: center; font-weight: 600; }
 #standin-detail { margin: 6px 0 0; }
+/* contrast check: the same square of color on different grounds */
+.contrast { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.contrast figure { margin: 0; }
+.contrast figcaption { margin-top: 4px; font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.cc-ground { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--hairline); }
+.cc-ground.none { background: repeating-linear-gradient(135deg, var(--bg) 0 5px, var(--line) 5px 6px); }
+.cc-ground canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cc-chip { position: absolute; left: 33%; top: 33%; width: 34%; height: 34%; }
 /* gamut overlap wheel */
 .overlap { margin: 12px 0 4px; }
 .overlap .seg button { flex: 1; }
