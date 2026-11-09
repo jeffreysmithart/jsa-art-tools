@@ -81,6 +81,7 @@
     mask: null, // gamut mask: { shape, points: [[a, b], …] } (made when first shown)
     maskOn: false, // paint the study inside the mask
     maskStrength: 100, // how far colors outside move toward the mask (percent)
+    maskShowPal: false, // gamut mask wheel: outline what the palette can mix
     maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     settingsVersion: 3,
@@ -1804,7 +1805,9 @@
     const have = work.lab ? smallLab() : null;
     // the wheel's extent: the picture's strongest colors or the mask, whichever reaches further
     // (kept while dragging, so the wheel doesn't change under the pointer)
-    if (!mk.drag) mk.scale = Math.max(40, Math.min(115, Math.max(have ? OV.pictureChroma(have.lab) : 0, reachNow) * 1.1));
+    const palModel = S.maskShowPal ? ensurePalette() : null;
+    const palReach = palModel ? palModel.mixes.reduce((mx, x) => Math.max(mx, Math.hypot(x.a, x.b)), 0) : 0;
+    if (!mk.drag) mk.scale = Math.max(40, Math.min(115, Math.max(have ? OV.pictureChroma(have.lab) : 0, reachNow, palReach) * 1.1));
     const scale = mk.scale;
     const empty = { L: new Float32Array(0), A: new Float32Array(0), B: new Float32Array(0) };
     const o = OV.grid(have ? have.lab : empty, { scale, toRgb: (L, a, b) => toRgb(L, a, b), outside: (L, a, b) => !MK.contains(m.points, a, b) });
@@ -1821,6 +1824,16 @@
     }
     mk.o = o;
     OV.draw(cv, o, CS.HUES);
+    $('#mask-pal').checked = S.maskShowPal;
+    if (palModel) {
+      // the palette's range: kept per palette and wheel size, so dragging stays quick
+      const key = `${palState.key}|${scale}|${o.n}`;
+      if (mk.palKey !== key) {
+        const cells = OV.paletteCells(palModel, { n: o.n, scale });
+        Object.assign(mk, { palKey: key, palRegion: OV.solid((k) => cells[k * 3] >= 0, o.n) });
+      }
+      OV.outline(cv, o, (k) => mk.palRegion[k]);
+    }
     drawMaskShape(cv, o, m);
     let note = 'Load an image to see how its colors fit.';
     if (have) {
@@ -1828,6 +1841,7 @@
       const out = MK.outside(m.points, colorCache.cells || []);
       note = out.outShare < 0.005 ? 'All of the picture’s colors are inside this mask.' : `${pctLabel(out.outShare)}% of the picture is outside this mask (mostly ${hueFamilies(out.outCells)}).`;
     }
+    if (palModel) note += ` Dashed gold: what ${paletteName()} can mix.`;
     $('#mask-note').textContent = note;
     if (!mk.drag) renderMaskFit();
     cv.setAttribute('aria-label', `Gamut mask: ${MK.SHAPES[m.shape] ? MK.SHAPES[m.shape].name : 'your own shape'}, pointing at ${CS.munsell(50, 20 * Math.cos((MK.heading(m) * Math.PI) / 180), 20 * Math.sin((MK.heading(m) * Math.PI) / 180)).hueName}. ${note} Arrow keys turn it.`);
@@ -1926,6 +1940,12 @@
     });
     out.append(paints, steps, use);
   }
+
+  $('#mask-pal').addEventListener('change', (e) => {
+    S.maskShowPal = e.target.checked;
+    save();
+    renderMask();
+  });
 
   $('#mask-aim').addEventListener('click', (e) => {
     const b = e.target.closest('button');

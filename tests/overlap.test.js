@@ -62,3 +62,19 @@ test('the wheel reaches as far as the strongest colors, within limits', () => {
   const strong = OV.compute(picture([['#00B5D8', 1]]), zorn, near(zorn));
   assert.ok(strong.scale > 40 && strong.scale <= 115, `strong colors widen it (${strong.scale})`);
 });
+
+test('solid() fills holes inside a region but not open bays', () => {
+  const n = 7;
+  // a ring of cells around the middle (a hole at 3,3) plus a bay open to the edge
+  const ring = new Set();
+  for (let r = 1; r <= 5; r++) for (let c = 1; c <= 5; c++) if (r === 1 || r === 5 || c === 1 || c === 5) ring.add(r * n + c);
+  ring.delete(1 * n + 3); // a gap in the top edge, so the inside is open to the outside at one cell
+  const open = OV.solid((k) => ring.has(k), n, 0);
+  assert.equal(open[3 * n + 3], 0, 'an inside reachable from the outside stays empty');
+  ring.add(1 * n + 3);
+  const closed = OV.solid((k) => ring.has(k), n, 0);
+  assert.equal(closed[3 * n + 3], 1, 'a closed hole is filled');
+  assert.equal(closed[0], 0, 'the outside stays empty');
+  const grown = OV.solid((k) => k === 3 * n + 3, n, 1);
+  assert.deepEqual([grown[3 * n + 3], grown[2 * n + 3], grown[3 * n + 4], grown[2 * n + 2]], [1, 1, 1, 0], 'grown by one cell, across edges only');
+});

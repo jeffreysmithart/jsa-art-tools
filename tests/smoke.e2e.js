@@ -315,6 +315,14 @@ function check(cond, msg) {
   const heading1 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
   check(Math.abs(((heading1 - heading0 + 540) % 360) - 180) > 5, `arrow keys turn it (${Math.round(heading0)}° -> ${Math.round(heading1)}°)`);
   await page.click('#mask-shape [data-shape="triad"]');
+  // the palette's range on the mask wheel: a dashed gold outline
+  const goldPx = () => page.$eval('#mask-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 160 && d[i + 1] < 215 && d[i + 2] < 120) n++; return n; });
+  const goldOff = await goldPx();
+  await page.check('#mask-pal');
+  const goldOn = await goldPx();
+  check(goldOn > goldOff + 200 && /Dashed gold: what .* can mix/.test(await page.textContent('#mask-note')), `Show my palette outlines its range on the mask wheel (${goldOff} -> ${goldOn} gold px)`);
+  await page.uncheck('#mask-pal');
+  check((await goldPx()) <= goldOff + 20, 'and unchecking it takes the outline away');
   const studyStats = () => page.$eval('#cv-study', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let y = 0, chroma = 0, n = 0; for (let i = 0; i < d.length; i += 16) { y += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; chroma += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); n++; } return { y: y / n, chroma: chroma / n, sum: [...d.slice(0, 4000)].join() }; });
   await page.evaluate(() => window.VST.app.setPanel('study'));
   await page.click('#tone-seg [data-tone="color"]');
