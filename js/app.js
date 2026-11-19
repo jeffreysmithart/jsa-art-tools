@@ -77,6 +77,7 @@
     mineOpacity: 50,
     mineStyle: 'blend', // overlay: 'blend' (at a strength), 'flicker' (tap to swap) or 'difference'
     mineDiff: false, // compare: mark where my values differ from the reference's
+    workMode: '', // the way in: 'prepare' (a painting), 'study' (a value study), 'color' (palette), or '' (just the tools)
     spaceUnused: false, // color space: also show the colors the picture doesn't use
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
@@ -117,6 +118,7 @@
     if (saved.method === 'poster') s.tone = 'poster';
     if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
     if (!['blend', 'flicker', 'difference'].includes(s.mineStyle)) s.mineStyle = 'blend';
+    if (!['', 'prepare', 'study', 'color'].includes(s.workMode)) s.workMode = '';
     if (!['gray', 'color', 'poster'].includes(s.tonePrev)) s.tonePrev = 'gray';
     if (!(s.palBands === 0 || (s.palBands >= 2 && s.palBands <= 6))) s.palBands = 0;
     if (!(s.bandsOther === 0 || (s.bandsOther >= 2 && s.bandsOther <= 6))) s.bandsOther = 4;
@@ -163,6 +165,30 @@
   // Present's zoom: z is the magnification, (cx, cy) the picture's point at the center of the frame (0..1)
   const pz = { z: 1, cx: 0.5, cy: 0.5, key: null };
   const flick = { mine: true }; // Compare's Flicker overlay: my study on top (true) or the reference
+  /*
+   * Modes: three ways in. A mode sets things up when you choose it (a
+   * broader preset), then shows its steps at the top of the sidebar and
+   * rings the next one's control. It never hides a tool; any setting can
+   * still be changed. `seen` holds the steps visited for this image.
+   */
+  const MODES = {
+    prepare: { name: 'Prepare a painting', steps: ['image', 'crop', 'values', 'palette', 'grid', 'present', 'check'], optional: ['palette'] },
+    study: { name: 'Value study', steps: ['image', 'values', 'paint', 'check'], optional: [] },
+    color: { name: 'Color and palette', steps: ['image', 'palette', 'explore'], optional: [] },
+  };
+  const STEPS = {
+    image: { name: 'Image', tip: 'Choose a reference: your own photo, a museum painting, or one from a set' },
+    crop: { name: 'Crop', tip: 'Crop it to your canvas size' },
+    values: { name: 'Values', tip: 'Set the number of values and where they split' },
+    palette: { name: 'Palette', tip: 'Choose the paints and see the picture painted with them' },
+    grid: { name: 'Grid', tip: 'A grid for transferring the drawing to the canvas' },
+    present: { name: 'Present', tip: 'Paint from the screen: just the pictures, big' },
+    paint: { name: 'Paint', tip: 'Paint from the screen (Present); the timer is there if you want it' },
+    check: { name: 'Check', tip: 'Photograph your study and compare it with the reference' },
+    explore: { name: 'Explore', tip: 'What stands in for each hue, and the wheel of what it can mix' },
+  };
+  const STEP_TARGET = { crop: '#btn-crop', grid: '#btn-grid', present: '#btn-present', paint: '#btn-present', values: '#ptab-study', palette: '#ptab-color', explore: '#ptab-color', check: '#ptab-study' };
+  const modeState = { seen: new Set() };
   const img = { item: null, el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
@@ -336,6 +362,7 @@
 
   function setImage(el, { name, meta = null, objectUrl = null, item = null }) {
     if (img.url) URL.revokeObjectURL(img.url);
+    modeState.seen.clear();
     img.item = item;
     img.el = el;
     img.w = el.naturalWidth;
@@ -392,6 +419,7 @@
     syncImageTools();
     layout();
     renderStudy();
+    renderSteps();
   }
 
   /** The tools that act on a picture wait until there is one. */
@@ -903,6 +931,7 @@
   function gridChanged() {
     drawOverlays();
     save();
+    renderSteps();
   }
   function toggleGrid(on = !S.grid.on) {
     S.grid.on = on;
@@ -1035,6 +1064,8 @@
   });
   function openCrop() {
     if (!img.el) return toast('Load an image first.');
+    modeState.seen.add('crop');
+    renderSteps();
     cropper.open({
       image: img.el,
       rect: img.crop,
@@ -1320,6 +1351,7 @@
     $('#panels').classList.toggle('overlaying', has && S.mineOverlay);
     setSeg($('#view-seg'), 'view', S.view);
     updateCaption();
+    renderSteps();
   }
 
   function setOverlay(on) {
@@ -1405,8 +1437,11 @@
 
   $$('.side-tabs [role="tab"]').forEach((tab) => {
     tab.addEventListener('click', () => {
+      if (tab.dataset.panel === 'study') modeState.seen.add('values');
+      if (tab.dataset.panel === 'color') modeState.seen.add('palette');
       setPanel(tab.dataset.panel);
       $('.sidebar').scrollTop = 0;
+      renderSteps();
     });
     // arrow keys move between tabs, as in any tab list
     tab.addEventListener('keydown', (e) => {
@@ -1458,6 +1493,10 @@
     el.addEventListener('toggle', () => {
       if (S.folds[key] === el.open) return;
       S.folds[key] = el.open;
+      if (key === 'explore' && el.open) {
+        modeState.seen.add('explore');
+        renderSteps();
+      }
       save();
       if (el.open) requestAnimationFrame(renderGamut);
     });
@@ -2561,6 +2600,8 @@
   function choosePalette(ids) {
     setPalette(ids);
     if (S.tone !== 'palette') setTone('palette');
+    modeState.seen.add('palette'); // choosing paints is the Palette step
+    renderSteps();
   }
   $('#pal-preset').addEventListener('change', (e) => {
     const v = e.target.value;
@@ -4574,6 +4615,10 @@
       /* full screen isn't available here; the controls are still hidden */
     }
     T.keepAwake(presenting || countdown.running);
+    if (on) {
+      modeState.seen.add('present');
+      renderSteps();
+    }
     if (on) showPresentBar();
     else $('#present-bar').classList.remove('show');
     requestAnimationFrame(layout);
@@ -4973,6 +5018,106 @@
     if (spot.open) e.preventDefault();
   });
 
+  /* ================= Modes: three ways in ================= */
+
+  function stepDone(step) {
+    if (step === 'image') return !!img.el;
+    if (step === 'crop') return !!img.crop || modeState.seen.has('crop');
+    if (step === 'grid') return S.grid.on || modeState.seen.has('grid');
+    if (step === 'paint') return modeState.seen.has('present');
+    if (step === 'check') return !!mine.el;
+    return modeState.seen.has(step);
+  }
+
+  /** The next step to take: the first one not done yet (optional steps can be skipped). */
+  function nextStep() {
+    const m = MODES[S.workMode];
+    return m ? m.steps.find((st) => !m.optional.includes(st) && !stepDone(st)) || null : null;
+  }
+
+  function renderSteps() {
+    const box = $('#mode-steps');
+    $$('.is-next').forEach((el) => el.classList.remove('is-next'));
+    const m = MODES[S.workMode];
+    $('#mode-select').value = S.workMode;
+    $$('.mode-card').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === S.workMode)));
+    box.hidden = !m;
+    box.innerHTML = '';
+    if (!m) return;
+    const now = nextStep();
+    for (const st of m.steps) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.step = st;
+      const optional = m.optional.includes(st);
+      b.className = [stepDone(st) ? 'done' : '', st === now ? 'now' : '', optional ? 'optional' : ''].filter(Boolean).join(' ');
+      b.textContent = STEPS[st].name;
+      b.title = STEPS[st].tip + (optional ? ' (optional)' : '');
+      if (st === now) b.setAttribute('aria-current', 'step');
+      b.addEventListener('click', () => doStep(st));
+      li.appendChild(b);
+      box.appendChild(li);
+    }
+    const target = now && img.el && STEP_TARGET[now];
+    if (target) $(target).classList.add('is-next');
+  }
+
+  /** Takes you to a step: its tab, its tool, or the action itself. */
+  function doStep(st) {
+    if (st !== 'image' && !img.el) {
+      setPanel('images');
+      return toast('Choose an image first.');
+    }
+    if (st === 'image') setPanel('images');
+    else if (st === 'crop') openCrop();
+    else if (st === 'values') setPanel('study');
+    else if (st === 'palette') setPanel('color');
+    else if (st === 'grid') {
+      setPanel('canvas');
+      toggleGrid(true);
+      $('#sec-overlay').scrollIntoView({ block: 'nearest' });
+    } else if (st === 'present' || st === 'paint') setPresenting(true);
+    else if (st === 'check') {
+      setPanel('study');
+      $('#sec-mine').scrollIntoView({ block: 'nearest' });
+    } else if (st === 'explore') {
+      setPanel('color');
+      $('#fold-explore').open = true;
+      $('#fold-explore').scrollIntoView({ block: 'nearest' });
+    }
+    if (!['image', 'check', 'grid'].includes(st)) modeState.seen.add(st);
+    if (st === 'grid') modeState.seen.add('grid');
+    renderSteps();
+  }
+
+  /** Choosing a mode sets things up for it (like a broader preset); everything can still be changed. */
+  function chooseMode(mode) {
+    S.workMode = mode;
+    if (mode === 'prepare' || mode === 'study') {
+      if (S.tone !== 'gray') setTone('gray');
+      S.splitSource[3] = 'auto';
+      setBands(3);
+      if (mode === 'study' && !S.blur) S.blur = 30; // a little squint simplifies a quick study
+      setView(mode === 'study' ? 'study' : 'both');
+      if (mode === 'prepare') toggleGrid(true);
+    } else if (mode === 'color') {
+      setView('both');
+      if (S.tone !== 'palette') setTone('palette');
+    }
+    syncStudyControls();
+    requestStudy();
+    save();
+    if (img.el) {
+      if (mode === 'study') setPanel('study');
+      if (mode === 'color') setPanel('color');
+    }
+    renderSteps();
+    if (mode) toast(`${MODES[mode].name}: the steps are at the top of the sidebar. Any setting can still be changed.`);
+  }
+  $('#mode-select').addEventListener('change', (e) => chooseMode(e.target.value));
+  $$('.mode-card').forEach((b) => b.addEventListener('click', () => chooseMode(b.dataset.mode)));
+
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
@@ -5223,6 +5368,7 @@
   renderQueue();
   setMode(S.mode);
   setPanel(S.panel);
+  renderSteps();
   syncMineUi();
   window.addEventListener('resize', () => {
     drawHistogram();

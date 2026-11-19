@@ -925,3 +925,43 @@ body.presenting .timer-main { width: auto; }
 .compare-read .k-light { background: oklch(0.68 0.15 250); }
 .compare-read .k-dark { background: oklch(0.66 0.19 32); }
 #mine-style-field .seg { margin-top: 6px; }
+
+/* ---------- Modes: which way in, and the steps through it ---------- */
+.mode-bar { padding: 10px 0 8px; border-bottom: 1px solid var(--line); }
+.mode-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.mode-row select { flex: 1; min-width: 0; }
+.mode-steps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.mode-steps[hidden] { display: none; }
+.mode-steps button {
+  min-height: 32px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.mode-steps button:hover { color: var(--text); border-color: var(--line-strong); }
+.mode-steps .done { color: var(--text); }
+.mode-steps .done::before { content: '✓ '; color: var(--accent-text); }
+.mode-steps .now { color: var(--text); border-color: var(--accent); background: var(--panel-2); }
+.mode-steps .optional { font-style: italic; }
+@media (pointer: coarse) { .mode-steps button { min-height: 44px; padding: 6px 12px; } }
+/* the next step's control, ringed */
+.is-next { box-shadow: 0 0 0 2px var(--accent); }
+.side-tabs button.is-next { box-shadow: inset 0 0 0 2px var(--accent); }
+/* first run: three ways in */
+.empty-box:has(.mode-cards) { max-width: 600px; text-align: left; }
+.empty-lede { color: var(--on-stage); margin: 0 0 14px; }
+.mode-cards { display: grid; gap: 8px; margin-bottom: 14px; }
+.mode-card {
+  display: block; width: 100%; padding: 12px 14px; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  border: 1px solid var(--hairline); border-radius: 12px; background: var(--panel);
+}
+.mode-card:hover { border-color: var(--line-strong); }
+.mode-card[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mode-card b { display: block; font-size: 15px; margin-bottom: 2px; }
+.mode-card span { display: block; color: var(--muted); font-size: 13px; line-height: 1.45; }
+/* phones: the three ways in as titles only, and never spilling out of the picture area */
+.empty { overflow: auto; align-items: safe center; }
+@media (max-width: 600px) {
+  .mode-card span { display: none; }
+  .mode-card { padding: 10px 14px; min-height: 44px; }
+  .empty-lede { font-size: 13px; margin-bottom: 10px; }
+  .empty-box:has(.mode-cards) { padding: 16px; }
+}

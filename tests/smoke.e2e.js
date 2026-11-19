@@ -86,6 +86,28 @@ function check(cond, msg) {
     check(await fresh.evaluate(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'nga' && !document.getElementById('btn-present').disabled), 'Try it on a museum painting opens an open-access landscape, and the tools wake up');
     await fresh.close();
   }
+  // modes: three ways in, which set things up and show the steps (nothing is hidden)
+  {
+    const mp2 = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    await mp2.goto(BASE);
+    check(await mp2.isVisible('.mode-card[data-mode="prepare"]') && await mp2.isHidden('#mode-steps') && (await mp2.$eval('#mode-select', (x) => x.value)) === '', 'the first screen offers three ways in, and no mode is chosen until you pick one');
+    await mp2.click('.mode-card[data-mode="prepare"]');
+    const set = await mp2.evaluate(() => { const s = window.VST.app.settings; return [s.workMode, s.tone, s.bands, s.grid.on, s.view].join(); });
+    check(set === 'prepare,gray,3,true,both' && await mp2.isVisible('#mode-steps'), `Prepare a painting sets things up for it (${set}) and shows its steps`);
+    await mp2.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+    await mp2.waitForFunction(() => window.VST.app.work.w > 0);
+    await mp2.waitForTimeout(100);
+    check(await mp2.$eval('#mode-steps .now', (b) => b.dataset.step) === 'crop' && await mp2.$eval('#btn-crop', (b) => b.classList.contains('is-next')), 'with an image in, Crop is next, and its button is ringed');
+    await mp2.click('#mode-steps [data-step="crop"]');
+    await mp2.waitForSelector('#crop-modal:not([hidden])');
+    await mp2.click('#crop-cancel');
+    check(await mp2.$eval('#mode-steps .now', (b) => b.dataset.step) === 'values', 'after Crop, Values is next');
+    await mp2.selectOption('#mode-select', 'color');
+    check(await mp2.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color'), 'Color and palette paints the study with the palette and opens the Color tab');
+    await mp2.selectOption('#mode-select', '');
+    check(await mp2.isHidden('#mode-steps') && !(await mp2.$('.is-next')), 'Just the tools takes the steps away');
+    await mp2.close();
+  }
 
   // ---- Reference mode ----
   await page.setInputFiles('#file-input', { name: 'river-landscape.png', mimeType: 'image/png', buffer: png });

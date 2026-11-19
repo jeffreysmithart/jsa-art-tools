@@ -6,6 +6,11 @@ Inspired by [Proko's value tool](https://www.proko.com/values) and the [Massa Ar
 
 ## What's in v1
 
+**Modes** (the **Mode** menu at the top of the sidebar, or the three cards on the first screen): three ways in, each of which sets things up when you choose it and then shows its steps at the top of the sidebar, with the next step ringed (in the strip and on its toolbar button or tab). Tap a step to go to it. A mode never hides anything: every tool and setting is still there to change, and **Just the tools** turns modes off.
+- **Prepare a painting:** Gray, 3 values (fit to the image), the grid on, Both view. Steps: Image → Crop → Values → Palette (optional) → Grid → Present → Check.
+- **Value study:** Gray, 3 values, a little squint, Study view. Steps: Image → Values → Paint (Present, with the timer if you want it) → Check.
+- **Color and palette:** the study painted with your palette, Both view, the Color tab. Steps: Image → Palette → Explore.
+
 **Layout:** the sidebar has four tabs, plus the practice log:
 - **Images** is for finding what to study: **Upload** your own image or a link, search the **Museums**, or open a study set or something from History.
 - **Study** holds the value study settings and My study.
