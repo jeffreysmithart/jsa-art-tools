@@ -75,6 +75,8 @@
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
+    mineStyle: 'blend', // overlay: 'blend' (at a strength), 'flicker' (tap to swap) or 'difference'
+    mineDiff: false, // compare: mark where my values differ from the reference's
     spaceUnused: false, // color space: also show the colors the picture doesn't use
     palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
     palMark: true, // Palette study: stripe what the palette can't reach
@@ -114,6 +116,7 @@
     // the second version kept "main colors" as a separate method
     if (saved.method === 'poster') s.tone = 'poster';
     if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
+    if (!['blend', 'flicker', 'difference'].includes(s.mineStyle)) s.mineStyle = 'blend';
     if (!['gray', 'color', 'poster'].includes(s.tonePrev)) s.tonePrev = 'gray';
     if (!(s.palBands === 0 || (s.palBands >= 2 && s.palBands <= 6))) s.palBands = 0;
     if (!(s.bandsOther === 0 || (s.bandsOther >= 2 && s.bandsOther <= 6))) s.bandsOther = 4;
@@ -159,6 +162,7 @@
   let presenting = false; // Present mode: controls hidden
   // Present's zoom: z is the magnification, (cx, cy) the picture's point at the center of the frame (0..1)
   const pz = { z: 1, cx: 0.5, cy: 0.5, key: null };
+  const flick = { mine: true }; // Compare's Flicker overlay: my study on top (true) or the reference
   const img = { item: null, el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
@@ -498,6 +502,7 @@
     const imageData = ctxStudy.createImageData(work.w, work.h);
     const bands = produceStudy(studyLab(), work.hist, imageData.data, work.w);
     ctxStudy.putImageData(imageData, 0, 0);
+    work.bands = bands;
     renderSwatches(bands);
     renderMine();
     drawHistogram();
@@ -648,7 +653,15 @@
     if (maskKey()) text += ' · in a gamut mask';
     const comparing = S.view === 'compare' && mine.el;
     const overlay = comparing && S.mineOverlay;
-    $('#study-caption').textContent = overlay ? `Reference with my study on top · ${text}` : comparing ? `Reference · ${text}` : text;
+    const onTop =
+      S.mineStyle === 'flicker'
+        ? flick.mine
+          ? 'My study (tap for the reference)'
+          : 'Reference (tap for my study)'
+        : S.mineStyle === 'difference'
+          ? 'Where my study and the reference differ'
+          : 'Reference with my study on top';
+    $('#study-caption').textContent = overlay ? `${onTop} · ${text}` : comparing ? `Reference · ${text}` : text;
     $('#mine-caption').textContent = `My study · ${text}`;
   }
 
@@ -1181,6 +1194,95 @@
     }
     mine.bands = bands;
     renderSwatches(bands, $('#swatches-mine'));
+    renderValueDiff();
+    renderCompareRead();
+  }
+
+  /*
+   * Where my values differ: both studies grouped with the same splits, then
+   * compared spot by spot. Blue where mine is lighter than the reference,
+   * red where it's darker. Needs a number of values and my study fitted to
+   * the reference's shape.
+   */
+  const cvMineDiff = $('#cv-mine-diff');
+  function renderValueDiff() {
+    mine.diff = null;
+    const can = hasMine() && grouped() && mine.lab && mine.w === work.w && mine.h === work.h;
+    $('#mine-diff-row').hidden = !can;
+    cvMineDiff.hidden = !(can && S.mineDiff);
+    if (!can) return;
+    const t = currentThresholds();
+    const levels = currentLevels(work.hist);
+    const ref = P.flattenValues(studyLab(), t, levels).band;
+    const my = P.flattenValues(mine.lab, t, levels).band;
+    const n = ref.length;
+    let lighter = 0;
+    let darker = 0;
+    const draw = S.mineDiff;
+    const img2 = draw ? new ImageData(mine.w, mine.h) : null;
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      const d = my[i] - ref[i];
+      if (!d) continue;
+      if (d > 0) lighter++;
+      else darker++;
+      if (draw) {
+        const c = d > 0 ? [64, 148, 255] : [240, 88, 60];
+        img2.data[j] = c[0];
+        img2.data[j + 1] = c[1];
+        img2.data[j + 2] = c[2];
+        img2.data[j + 3] = 160;
+      }
+    }
+    mine.diff = { lighter: lighter / n, darker: darker / n };
+    if (draw) {
+      cvMineDiff.width = mine.w;
+      cvMineDiff.height = mine.h;
+      cvMineDiff.getContext('2d').putImageData(img2, 0, 0);
+    }
+  }
+
+  /** Names for the values, darkest to lightest: "dark, middle, light", or "darkest … lightest". */
+  function valueNames(n) {
+    if (n === 2) return ['dark', 'light'];
+    if (n === 3) return ['dark', 'middle', 'light'];
+    return Array.from({ length: n }, (_, i) => {
+      if (i === 0) return 'darkest';
+      if (i === n - 1) return 'lightest';
+      if (n % 2 && i === (n - 1) / 2) return 'middle';
+      return i < n / 2 ? (i === 1 ? 'second-darkest' : 'third-darkest') : i === n - 2 ? 'second-lightest' : 'third-lightest';
+    });
+  }
+
+  /** One or two plain sentences: the biggest difference in value balance, the light key, and where values differ. */
+  function renderCompareRead() {
+    const box = $('#compare-read');
+    const ref = work.bands;
+    const my = mine.bands;
+    box.hidden = !(hasMine() && grouped() && ref && my && ref.length === my.length);
+    if (box.hidden) return;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const names = valueNames(ref.length);
+    let k = 0;
+    for (let i = 1; i < ref.length; i++) if (Math.abs(my[i].share - ref[i].share) > Math.abs(my[k].share - ref[k].share)) k = i;
+    const gap = my[k].share - ref[k].share;
+    const parts = [];
+    if (Math.abs(gap) < 0.05) parts.push('Your value balance matches the reference closely.');
+    else if (my[k].share < 0.005) parts.push(`Your ${names[k]} value is missing: 0% of your study, against ${pct(ref[k].share)} of the reference.`);
+    else parts.push(`Your ${names[k]} value covers ${pct(my[k].share)} of your study, against ${pct(ref[k].share)} of the reference.`);
+    // a value the reference uses that's missing from yours is worth saying too
+    const missing = ref.findIndex((b, i) => i !== k && b.share >= 0.05 && my[i].share < 0.005);
+    if (missing >= 0) parts.push(`Your ${names[missing]} value is missing (${pct(ref[missing].share)} of the reference).`);
+    // the light key: the average value of each, painted as each value is painted
+    const avg = (bs) => bs.reduce((sum, b) => sum + b.share * b.L, 0) / 10;
+    const key = avg(my) - avg(ref);
+    const steps = Math.abs(key);
+    if (steps >= 0.3) parts.push(`Overall it reads about ${steps.toFixed(1)} ${steps >= 1 ? 'values' : 'of a value'} ${key > 0 ? 'lighter' : 'darker'} than the reference: ${key > 0 ? 'a higher' : 'a lower'} light key.`);
+    box.textContent = parts.join(' ');
+    if (mine.diff && (mine.diff.lighter >= 0.005 || mine.diff.darker >= 0.005)) {
+      const p = document.createElement('span');
+      p.innerHTML = ` <span class="k k-light"></span>${pct(mine.diff.lighter)} of it is a value lighter than the reference at the same spot, <span class="k k-dark"></span>${pct(mine.diff.darker)} darker.`;
+      box.appendChild(p);
+    }
   }
 
   function clearMine() {
@@ -1203,9 +1305,18 @@
     $('#mine-overlay').checked = S.mineOverlay;
     $('#mine-opacity').value = S.mineOpacity;
     $('#mine-opacity-out').textContent = `${S.mineOpacity}%`;
-    $('#mine-opacity-field').hidden = !S.mineOverlay;
+    $('#mine-style-field').hidden = !S.mineOverlay;
+    setSeg($('#mine-style'), 'style', S.mineStyle);
+    $('#mine-style-hint').textContent = {
+      blend: '',
+      flicker: 'Tap the picture to swap between your study and the reference, in place.',
+      difference: 'Where the two line up goes dark; edges that don’t line up glow. Good for checking the drawing.',
+    }[S.mineStyle];
+    $('#mine-diff').checked = S.mineDiff;
+    $('#mine-opacity-field').hidden = !S.mineOverlay || S.mineStyle !== 'blend';
     cvMineOverlay.hidden = !(has && S.mineOverlay && S.view === 'compare');
-    cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
+    cvMineOverlay.classList.toggle('difference', S.mineStyle === 'difference');
+    cvMineOverlay.style.opacity = String(S.mineStyle === 'blend' ? S.mineOpacity / 100 : S.mineStyle === 'flicker' ? (flick.mine ? 1 : 0) : 1);
     $('#panels').classList.toggle('overlaying', has && S.mineOverlay);
     setSeg($('#view-seg'), 'view', S.view);
     updateCaption();
@@ -1238,6 +1349,28 @@
     $('#mine-opacity-out').textContent = `${S.mineOpacity}%`;
     cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
     save();
+  });
+  $('#mine-style').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.mineStyle = b.dataset.style;
+    flick.mine = true;
+    syncMineUi();
+    save();
+  });
+  $('#mine-diff').addEventListener('change', (e) => {
+    S.mineDiff = e.target.checked;
+    renderValueDiff();
+    renderCompareRead();
+    save();
+  });
+  // Flicker: a tap on the picture swaps my study and the reference, in place
+  $('#panels').addEventListener('click', (e) => {
+    if (!(hasMine() && S.view === 'compare' && S.mineOverlay && S.mineStyle === 'flicker') || reveal.active || e.target.closest('button, a, input, label')) return;
+    if (!e.target.closest('#panel-study')) return;
+    flick.mine = !flick.mine;
+    cvMineOverlay.style.opacity = flick.mine ? '1' : '0';
+    updateCaption();
   });
 
 

@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-19g">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-19h">
 </head>
 <body>
   <header class="topbar">
@@ -250,6 +250,7 @@
           <p class="label swatch-title">My study</p>
           <div class="swatches" id="swatches-mine" aria-label="Values in my study"></div>
         </div>
+        <p class="compare-read" id="compare-read" hidden aria-live="polite"></p>
         <p class="hint" id="swatch-hint">Values from 0 (black) to 10 (white), like Munsell.</p>
 
         <div class="field" id="split-ctl">
@@ -287,6 +288,14 @@
           </div>
           <label class="check" title="Phone photos make white paper look gray, which would skew every value"><input type="checkbox" id="mine-paper" checked> Correct paper to white</label>
           <label class="check"><input type="checkbox" id="mine-overlay"> Overlay on the reference <kbd>O</kbd></label>
+          <div class="field" id="mine-style-field" hidden>
+            <div class="seg small" id="mine-style" role="radiogroup" aria-label="Overlay style">
+              <button data-style="blend" role="radio" title="My study over the reference, at the strength below">Blend</button>
+              <button data-style="flicker" role="radio" title="Tap the picture to swap between my study and the reference, in place">Flicker</button>
+              <button data-style="difference" role="radio" title="Where the two line up goes dark; what doesn't line up glows">Difference</button>
+            </div>
+            <p class="hint" id="mine-style-hint"></p>
+          </div>
           <div class="field" id="mine-opacity-field" hidden>
             <div class="label-row">
               <label class="label" for="mine-opacity">My study's strength</label>
@@ -294,6 +303,7 @@
             </div>
             <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
           </div>
+          <label class="check" id="mine-diff-row" title="Blue where my study is a value lighter than the reference, red where it's darker (with a number of values)"><input type="checkbox" id="mine-diff"> Show where my values differ</label>
         </div>
       </section>
       </div>
@@ -597,7 +607,7 @@
           <div class="frame-wrap"><div class="frame"><canvas id="cv-study"></canvas><canvas id="cv-mine-overlay" class="mine-overlay" hidden></canvas><canvas class="overlay"></canvas></div><figcaption id="study-caption">Study</figcaption></div>
         </figure>
         <figure class="panel" id="panel-mine">
-          <div class="frame-wrap"><div class="frame"><canvas id="cv-mine"></canvas><canvas class="overlay"></canvas></div><figcaption id="mine-caption">My study</figcaption></div>
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-mine"></canvas><canvas id="cv-mine-diff" class="mine-diff" hidden></canvas><canvas class="overlay"></canvas></div><figcaption id="mine-caption">My study</figcaption></div>
         </figure>
         <div class="empty" id="empty">
           <div class="empty-box" id="empty-reference">
@@ -835,30 +845,30 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-19g"></script>
-  <script src="js/process.js?v=2026-11-19g"></script>
-  <script src="js/config.js?v=2026-11-19g"></script>
-  <script src="js/museum.js?v=2026-11-19g"></script>
-  <script src="js/sync-merge.js?v=2026-11-19g"></script>
-  <script src="js/library.js?v=2026-11-19g"></script>
-  <script src="js/presets.js?v=2026-11-19g"></script>
-  <script src="js/saved.js?v=2026-11-19g"></script>
-  <script src="js/log.js?v=2026-11-19g"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-19g"></script>
-  <script src="js/sync.js?v=2026-11-19g"></script>
-  <script src="js/timer.js?v=2026-11-19g"></script>
-  <script src="js/compose.js?v=2026-11-19g"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-19g"></script>
-  <script src="js/palette.js?v=2026-11-19g"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-19g"></script>
-  <script src="js/munsell.js?v=2026-11-19g"></script>
-  <script src="js/colorspace.js?v=2026-11-19g"></script>
-  <script src="js/overlap.js?v=2026-11-19g"></script>
-  <script src="js/mask.js?v=2026-11-19g"></script>
-  <script src="js/gamut.js?v=2026-11-19g"></script>
-  <script src="js/crop.js?v=2026-11-19g"></script>
-  <script src="js/warp.js?v=2026-11-19g"></script>
-  <script src="js/squareup.js?v=2026-11-19g"></script>
-  <script src="js/app.js?v=2026-11-19g"></script>
+  <script src="js/color.js?v=2026-11-19h"></script>
+  <script src="js/process.js?v=2026-11-19h"></script>
+  <script src="js/config.js?v=2026-11-19h"></script>
+  <script src="js/museum.js?v=2026-11-19h"></script>
+  <script src="js/sync-merge.js?v=2026-11-19h"></script>
+  <script src="js/library.js?v=2026-11-19h"></script>
+  <script src="js/presets.js?v=2026-11-19h"></script>
+  <script src="js/saved.js?v=2026-11-19h"></script>
+  <script src="js/log.js?v=2026-11-19h"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-19h"></script>
+  <script src="js/sync.js?v=2026-11-19h"></script>
+  <script src="js/timer.js?v=2026-11-19h"></script>
+  <script src="js/compose.js?v=2026-11-19h"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-19h"></script>
+  <script src="js/palette.js?v=2026-11-19h"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-19h"></script>
+  <script src="js/munsell.js?v=2026-11-19h"></script>
+  <script src="js/colorspace.js?v=2026-11-19h"></script>
+  <script src="js/overlap.js?v=2026-11-19h"></script>
+  <script src="js/mask.js?v=2026-11-19h"></script>
+  <script src="js/gamut.js?v=2026-11-19h"></script>
+  <script src="js/crop.js?v=2026-11-19h"></script>
+  <script src="js/warp.js?v=2026-11-19h"></script>
+  <script src="js/squareup.js?v=2026-11-19h"></script>
+  <script src="js/app.js?v=2026-11-19h"></script>
 </body>
 </html>
