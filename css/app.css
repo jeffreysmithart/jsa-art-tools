@@ -139,7 +139,7 @@ h3 { font-size: 13px; margin: 16px 0 8px; }
   touch-action: manipulation;
 }
 .btn:hover { border-color: var(--line-strong); }
-.btn:disabled { color: var(--disabled); background: var(--panel); border-color: var(--line); cursor: default; }
+.btn:disabled, .btn.primary:disabled { color: var(--disabled); background: var(--panel); border-color: var(--line); cursor: default; }
 .btn.primary:disabled { color: var(--disabled); background: var(--panel-2); border-color: var(--line); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -326,6 +326,13 @@ figcaption { text-align: center; color: var(--on-stage); font-size: 12.5px; heig
 .crop-custom { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .crop-custom input { width: 72px; }
 .crop-guides { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.crop-break { display: none; }
+/* narrower screens (an iPad): the guides and the size readout take a second row, so Apply stays beside Cancel */
+@media (max-width: 1299px) {
+  #crop-modal .modal-bar > * { order: 1; }
+  #crop-modal .modal-bar > .crop-break { display: block; flex-basis: 100%; height: 0; order: 2; }
+  #crop-modal .modal-bar > .crop-guides, #crop-modal .modal-bar > .crop-info { order: 3; }
+}
 .compose-kinds .check { margin-top: 6px; }
 input.invalid { border-color: var(--danger); }
 .spacer { flex: 1; }
@@ -497,7 +504,7 @@ body.presenting .panels { touch-action: none; }
   .chips button::after { content: ""; position: absolute; inset: -4px 0; }
   .check { min-height: 44px; margin-top: 4px; }
   .history summary { min-height: 44px; display: flex; align-items: center; }
-  input[type="range"] { height: 32px; }
+  input[type="range"] { height: 44px; }
   .tile-x, .tile-add { width: 30px; height: 30px; line-height: 30px; }
   /* a bigger invisible hit area than the visible dot */
   .tile-x::before, .tile-add::before { content: ""; position: absolute; inset: -7px; }
@@ -890,3 +897,16 @@ body.presenting .timer-main { width: auto; }
 .spot-add-row small { display: block; color: var(--muted); font-size: 12.5px; }
 .spot-add-row em { flex: none; font-style: normal; font-size: 12.5px; color: var(--accent-text); }
 .spot-wait, .spot-none { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+
+/* the practice log: opened from Images or the timer, with Done to go back */
+.log-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.log-head h2 { margin: 0; }
+#sec-log-link .btn { margin-bottom: 0; }
+/* Reveal in stages (Study tab) */
+.reveal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reveal-row .hint { margin: 0; flex: 1; min-width: 140px; }
+/* first run: a museum painting to try it on */
+.empty-sample { margin: 14px 0 0; color: var(--on-stage); font-size: 13px; }
+.link-btn { border: 0; padding: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.link-btn:hover { color: var(--accent-text); }
+@media (pointer: coarse) { .link-btn { min-height: 44px; } }

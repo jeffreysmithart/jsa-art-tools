@@ -200,6 +200,26 @@
     return ngaIndex;
   }
 
+  /** A painting from the NGA index row [id, title, artist, date, image uuid, longest side]. */
+  function ngaItem([id, title, artist, date, uuid, side]) {
+    const base = `https://api.nga.gov/iiif/${uuid}`;
+    return {
+      id: `nga-${id}`,
+      source: 'nga',
+      museum: 'NGA Washington',
+      title: title || 'Untitled',
+      artist: artist || 'Unknown artist',
+      date: date || '',
+      type: 'Painting',
+      thumb: `${base}/full/!200,200/0/default.jpg`,
+      image: side && side < 1686 ? `${base}/full/max/0/default.jpg` : `${base}/full/!1686,1686/0/default.jpg`,
+      imageFallback: `${base}/full/!843,843/0/default.jpg`,
+      link: `https://www.nga.gov/collection/art-object-page.${id}.html`,
+      credit: 'National Gallery of Art, Washington, open access (CC0)',
+      needsRelay: false,
+    };
+  }
+
   const nga = {
     id: 'nga',
     name: 'National Gallery of Art, Washington',
@@ -212,25 +232,7 @@
       // works by a matching artist first, then titles and dates
       const byArtist = (e) => (terms.every((t) => e.artist.includes(t)) ? 0 : 1);
       hits.sort((a, b) => byArtist(a) - byArtist(b));
-      const items = hits.slice((page - 1) * PAGE, page * PAGE).map(({ r }) => {
-        const [id, title, artist, date, uuid, side] = r;
-        const base = `https://api.nga.gov/iiif/${uuid}`;
-        return {
-          id: `nga-${id}`,
-          source: 'nga',
-          museum: 'NGA Washington',
-          title: title || 'Untitled',
-          artist: artist || 'Unknown artist',
-          date: date || '',
-          type: 'Painting',
-          thumb: `${base}/full/!200,200/0/default.jpg`,
-          image: side && side < 1686 ? `${base}/full/max/0/default.jpg` : `${base}/full/!1686,1686/0/default.jpg`,
-          imageFallback: `${base}/full/!843,843/0/default.jpg`,
-          link: `https://www.nga.gov/collection/art-object-page.${id}.html`,
-          credit: 'National Gallery of Art, Washington, open access (CC0)',
-          needsRelay: false,
-        };
-      });
+      const items = hits.slice((page - 1) * PAGE, page * PAGE).map(({ r }) => ngaItem(r));
       return { items, page, totalPages: Math.min(Math.ceil(hits.length / PAGE), 25) };
     },
   };
@@ -371,5 +373,5 @@
     'Portrait',
   ];
 
-  VST.museum = { sources: { aic, met, nga, mia, cma, ngl }, all, available, imageUrl, relayBase, suggestions };
+  VST.museum = { sources: { aic, met, nga, mia, cma, ngl }, all, available, imageUrl, relayBase, suggestions, ngaItem };
 })(typeof window !== 'undefined' ? window : globalThis);
