@@ -91,3 +91,15 @@ test('main colors finds the distinct colors in an image', () => {
   share.forEach((s) => assert.ok(Math.abs(s - 1 / 3) < 1e-9));
   assert.ok(Math.abs(out[0] - 200) <= 2 && Math.abs(out[1] - 30) <= 2);
 });
+
+test('flattenValues sets each value group to its level and keeps the colors', () => {
+  // three pixels: dark, middle, light; split at 3.5 and 6.5 into levels 2, 5 and 8
+  const lab = { L: Float32Array.from([20, 50, 85]), A: Float32Array.from([10, -5, 3]), B: Float32Array.from([20, 0, -4]) };
+  const f = P.flattenValues(lab, [35, 65], [20, 50, 80]);
+  assert.deepEqual(Array.from(f.lab.L), [20, 50, 80]);
+  assert.deepEqual(Array.from(f.band), [0, 1, 2]);
+  assert.equal(f.lab.A, lab.A); // hue and chroma untouched
+  assert.equal(f.lab.B, lab.B);
+  assert.deepEqual(f.shares.map((x) => Math.round(x * 3)), [1, 1, 1]);
+  assert.deepEqual(f.means, [[10, 20], [-5, 0], [3, -4]]);
+});

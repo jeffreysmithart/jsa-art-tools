@@ -44,6 +44,8 @@
     flip: false,
     tone: 'gray', // 'gray' | 'color' | 'poster' (main colors) | 'palette' (limited palette)
     tonePrev: 'gray', // the tone to go back to when the palette stops painting the study
+    palBands: 0, // Palette's own number of values (0 = all), kept apart so the palette preview isn't flattened by the value study's count
+    bandsOther: 4, // the value study's count, kept while the Palette tone is on
     bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
     levelsMode: 'average', // true to the image's light key
@@ -113,6 +115,8 @@
     if (saved.method === 'poster') s.tone = 'poster';
     if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
     if (!['gray', 'color', 'poster'].includes(s.tonePrev)) s.tonePrev = 'gray';
+    if (!(s.palBands === 0 || (s.palBands >= 2 && s.palBands <= 6))) s.palBands = 0;
+    if (!(s.bandsOther === 0 || (s.bandsOther >= 2 && s.bandsOther <= 6))) s.bandsOther = 4;
     if (!Array.isArray(s.palette) || !s.palette.length) s.palette = DEFAULTS.palette.slice();
     // earlier versions defaulted to even steps; the default is now the image's average
     if ((saved.settingsVersion || 1) < 3 && s.levelsMode === 'even') s.levelsMode = 'average';
@@ -407,7 +411,7 @@
 
   /** True when the study is grouped into a set number of values. */
   function grouped() {
-    return (S.tone === 'gray' || S.tone === 'color') && S.bands >= 2;
+    return (S.tone === 'gray' || S.tone === 'color' || S.tone === 'palette') && S.bands >= 2;
   }
 
   function currentThresholds() {
@@ -462,6 +466,7 @@
 
   /** Renders the study for a Lab image into `out` (RGBA). Returns band info. */
   function produceStudy(lab, hist, out, width) {
+    if (S.tone === 'palette' && grouped()) return renderPaletteValues(lab, hist, out);
     if (S.tone === 'palette') return renderPalette(lab, out, width);
     if (S.tone === 'poster') {
       const shares = P.renderPoster(lab, work.centroids, true, out);
@@ -612,10 +617,11 @@
     setSeg($('#tone-seg'), 'tone', S.tone);
     setSeg($('#bands-seg'), 'n', S.bands);
     setSeg($('#k-seg'), 'k', S.posterK);
-    $('#values-ctl').hidden = S.tone === 'poster' || S.tone === 'palette';
+    $('#values-ctl').hidden = S.tone === 'poster';
     $('#poster-ctl').hidden = S.tone !== 'poster';
     $('#palette-ctl').hidden = S.tone !== 'palette';
     $('#pal-mark').checked = S.palMark;
+    $('#pal-mark').closest('label').hidden = grouped(); // a value study in the palette matches values first: nothing to mark
     $('#pal-live').checked = S.tone === 'palette';
     $('#palette-name').textContent = paletteName();
     const dots = $('#palette-dots');
@@ -797,9 +803,26 @@
   });
   ['pointerup', 'pointercancel'].forEach((ev) => histCanvas.addEventListener(ev, () => (histDrag = -1)));
 
-  function setTone(tone) {
-    if (tone === 'palette' && S.tone !== 'palette') S.tonePrev = S.tone;
+  /**
+   * Changes the tone, keeping a number of values for each side: the Palette
+   * tone has its own (all values to start, so the palette preview isn't
+   * flattened), and the value study keeps its own while Palette is on.
+   */
+  function switchTone(tone) {
+    if (tone === S.tone) return;
+    if (S.tone === 'palette') {
+      S.palBands = S.bands;
+      S.bands = S.bandsOther;
+    } else if (tone === 'palette') {
+      S.bandsOther = S.bands;
+      S.bands = S.palBands;
+    }
+    if (tone === 'palette') S.tonePrev = S.tone;
+    if (S.bands >= 2 && S.splitSource[S.bands] === 'auto') work.refit = true;
     S.tone = tone;
+  }
+  function setTone(tone) {
+    switchTone(tone);
     syncStudyControls();
     requestStudy();
     save();
@@ -814,7 +837,7 @@
   });
   function setBands(n) {
     S.bands = n;
-    if (S.tone === 'poster' || S.tone === 'palette') S.tone = 'color'; // values apply to grayscale or color
+    if (S.tone === 'poster') S.tone = 'color'; // values apply to grayscale, color and palette
     if (S.splitSource[n] === 'auto') work.refit = true;
     syncStudyControls();
     requestStudy();
@@ -1652,6 +1675,60 @@
       .slice(0, 6)
       .map(([i, c]) => ({ L: model.mixes[i].L, rgb: model.mixes[i].rgb, share: c / n }))
       .sort((p, q) => p.L - q.L);
+  }
+
+  /*
+   * A value study in your paints: the values grouped (2 to 6, with the same
+   * splits as Gray), each pixel keeping its hue and chroma, then painted
+   * with the nearest mix. With white and one dark it's a monochrome study;
+   * with a few more paints, a color thumbnail in that palette.
+   */
+  function renderPaletteValues(lab, hist, out) {
+    const model = ensurePalette();
+    const levels = currentLevels(hist);
+    const flat = P.flattenValues(lab, currentThresholds(), levels);
+    if (!model) {
+      P.renderColor(flat.lab, out);
+      return levels.map((L, i) => ({ L, share: flat.shares[i] }));
+    }
+    // the value comes first: each group is painted only with mixes at about
+    // its value, the closest in hue and chroma among them (so white and one
+    // dark still make a true 3-value study, even of a green landscape)
+    const near = levels.map((Lv) => {
+      const byValue = model.mixes.map((m, i) => [Math.abs(m.L - Lv), i]).sort((p, q) => p[0] - q[0]);
+      const within = byValue.filter(([d]) => d <= 4);
+      return (within.length >= 8 ? within : byValue.slice(0, 24)).map(([, i]) => model.mixes[i]);
+    });
+    const pick = (b, a, bb) => {
+      const Lv = levels[b];
+      let best = near[b][0];
+      let bestD = Infinity;
+      for (const m of near[b]) {
+        const d = 4 * (m.L - Lv) ** 2 + (m.a - a) ** 2 + (m.b - bb) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = m;
+        }
+      }
+      return best;
+    };
+    const cache = new Map();
+    const { A, B } = flat.lab;
+    for (let i = 0, j = 0; i < A.length; i++, j += 4) {
+      const b = flat.band[i];
+      const key = (b << 20) | ((Math.round(A[i] / 2) + 256) << 10) | (Math.round(B[i] / 2) + 256);
+      let m = cache.get(key);
+      if (!m) {
+        m = pick(b, A[i], B[i]);
+        cache.set(key, m);
+      }
+      out[j] = m.rgb[0];
+      out[j + 1] = m.rgb[1];
+      out[j + 2] = m.rgb[2];
+      out[j + 3] = 255;
+    }
+    // each value as the palette paints its average color
+    return levels.map((L, b) => ({ L, rgb: pick(b, flat.means[b][0], flat.means[b][1]).rgb, share: flat.shares[b] }));
   }
 
   function renderPaletteUi() {
@@ -3685,7 +3762,7 @@
   }
 
   function applyPreset(p) {
-    S.tone = p.tone || 'gray';
+    switchTone(p.tone || 'gray');
     S.blur = p.blur || 0;
     if (p.posterK) S.posterK = p.posterK;
     if (S.tone !== 'poster') {
