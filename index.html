@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-19c">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-19d">
 </head>
 <body>
   <header class="topbar">
@@ -296,6 +296,7 @@
         <div class="log-stats pal-stats" id="pal-stats"></div>
         <div class="pal-suggest" id="pal-suggest" hidden aria-live="polite" aria-label="Paints to add or take out, for this picture"></div>
         <button class="btn block" id="pal-compare" type="button">Compare palettes on this picture…</button>
+        <p class="hint">Tap a spot on the picture to see how to mix it with these paints. In other tabs, and in Present, press and hold.</p>
         <details class="fold" id="fold-explore">
           <summary><span class="fold-title">Explore this palette</span><span class="fold-sub">What stands in for each hue, and the wheel of what it can mix</span></summary>
           <div class="standins" id="pal-standins" hidden>
@@ -794,32 +795,42 @@
     <p class="modal-hint">Drag to turn · scroll or pinch to zoom · tap a dot to read it and see where it is in the picture · tap the picture to find a color · pick a value to see one level at a time.</p>
   </div>
 
+  <!-- a spot on the picture: its color, how your palette mixes it, and what to add if it can't -->
+  <div class="spot-ring" id="spot-ring" hidden aria-hidden="true"></div>
+  <div class="spot-pop" id="spot-pop" hidden role="dialog" aria-label="How to mix this spot">
+    <button class="spot-close" id="spot-close" type="button" aria-label="Close" title="Close (Esc)">×</button>
+    <div class="spot-row"><span class="spot-sw" id="spot-sw"></span><div><b id="spot-name"></b><span class="spot-sub" id="spot-sub"></span></div></div>
+    <p class="spot-label" id="spot-pal-label"></p>
+    <div class="spot-row"><span class="spot-sw" id="spot-mix-sw"></span><p class="spot-mix" id="spot-mix"></p></div>
+    <div class="spot-add" id="spot-add" aria-live="polite"></div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-19c"></script>
-  <script src="js/process.js?v=2026-11-19c"></script>
-  <script src="js/config.js?v=2026-11-19c"></script>
-  <script src="js/museum.js?v=2026-11-19c"></script>
-  <script src="js/sync-merge.js?v=2026-11-19c"></script>
-  <script src="js/library.js?v=2026-11-19c"></script>
-  <script src="js/presets.js?v=2026-11-19c"></script>
-  <script src="js/saved.js?v=2026-11-19c"></script>
-  <script src="js/log.js?v=2026-11-19c"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-19c"></script>
-  <script src="js/sync.js?v=2026-11-19c"></script>
-  <script src="js/timer.js?v=2026-11-19c"></script>
-  <script src="js/compose.js?v=2026-11-19c"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-19c"></script>
-  <script src="js/palette.js?v=2026-11-19c"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-19c"></script>
-  <script src="js/munsell.js?v=2026-11-19c"></script>
-  <script src="js/colorspace.js?v=2026-11-19c"></script>
-  <script src="js/overlap.js?v=2026-11-19c"></script>
-  <script src="js/mask.js?v=2026-11-19c"></script>
-  <script src="js/gamut.js?v=2026-11-19c"></script>
-  <script src="js/crop.js?v=2026-11-19c"></script>
-  <script src="js/warp.js?v=2026-11-19c"></script>
-  <script src="js/squareup.js?v=2026-11-19c"></script>
-  <script src="js/app.js?v=2026-11-19c"></script>
+  <script src="js/color.js?v=2026-11-19d"></script>
+  <script src="js/process.js?v=2026-11-19d"></script>
+  <script src="js/config.js?v=2026-11-19d"></script>
+  <script src="js/museum.js?v=2026-11-19d"></script>
+  <script src="js/sync-merge.js?v=2026-11-19d"></script>
+  <script src="js/library.js?v=2026-11-19d"></script>
+  <script src="js/presets.js?v=2026-11-19d"></script>
+  <script src="js/saved.js?v=2026-11-19d"></script>
+  <script src="js/log.js?v=2026-11-19d"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-19d"></script>
+  <script src="js/sync.js?v=2026-11-19d"></script>
+  <script src="js/timer.js?v=2026-11-19d"></script>
+  <script src="js/compose.js?v=2026-11-19d"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-19d"></script>
+  <script src="js/palette.js?v=2026-11-19d"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-19d"></script>
+  <script src="js/munsell.js?v=2026-11-19d"></script>
+  <script src="js/colorspace.js?v=2026-11-19d"></script>
+  <script src="js/overlap.js?v=2026-11-19d"></script>
+  <script src="js/mask.js?v=2026-11-19d"></script>
+  <script src="js/gamut.js?v=2026-11-19d"></script>
+  <script src="js/crop.js?v=2026-11-19d"></script>
+  <script src="js/warp.js?v=2026-11-19d"></script>
+  <script src="js/squareup.js?v=2026-11-19d"></script>
+  <script src="js/app.js?v=2026-11-19d"></script>
 </body>
 </html>

@@ -1228,6 +1228,7 @@
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
     if (name === 'color') renderGamut();
+    $('#panels').classList.toggle('spot-pick', name === 'color');
     if (name === 'log') {
       LG.tick();
       LG.flush();
@@ -4527,6 +4528,207 @@
     if (document.visibilityState === 'visible' && (presenting || countdown.running)) T.keepAwake(true);
   });
 
+  /* ================= A spot on the picture: how to mix it ================= */
+
+  /*
+   * Tap a spot on the picture while the Color tab is open, or press and hold
+   * anywhere (in Present too): a small card shows its color, how your
+   * palette comes closest to it, and, if that isn't close enough, which one
+   * paint would reach it. It uses the same mixing as the rest of the palette
+   * tools.
+   */
+  const spot = { x: 0, y: 0, token: 0, open: false };
+  const spotModels = new Map(); // palette + added paint -> its new mixes (the most recent 80)
+  const SPOT_NEAR = 18; // ΔE: past "can mix" (10), still near enough to read as the same color
+
+  /** The picture's color under a screen point (averaged over a few pixels), or null off the pictures. */
+  function spotAt(x, y) {
+    if (!work.lab0 || !work.w) return null;
+    const frame = $$('#panel-original .frame, #panel-study .frame').find((f) => {
+      if (!f.offsetParent) return false;
+      const r = f.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    });
+    if (!frame) return null;
+    const r = frame.getBoundingClientRect();
+    let fx = (x - r.left) / r.width;
+    let fy = (y - r.top) / r.height;
+    if (S.flip) fx = 1 - fx;
+    if (frame.classList.contains('zoomed')) {
+      fx = pz.cx + (fx - 0.5) / pz.z;
+      fy = pz.cy + (fy - 0.5) / pz.z;
+    }
+    const px = Math.min(work.w - 1, Math.max(0, Math.floor(fx * work.w)));
+    const py = Math.min(work.h - 1, Math.max(0, Math.floor(fy * work.h)));
+    const rad = Math.max(1, Math.round(Math.max(work.w, work.h) / 400));
+    const lab = work.lab0;
+    let L = 0;
+    let a = 0;
+    let b = 0;
+    let n = 0;
+    for (let yy = Math.max(0, py - rad); yy <= Math.min(work.h - 1, py + rad); yy++) {
+      for (let xx = Math.max(0, px - rad); xx <= Math.min(work.w - 1, px + rad); xx++) {
+        const i = yy * work.w + xx;
+        L += lab.L[i];
+        a += lab.A[i];
+        b += lab.B[i];
+        n++;
+      }
+    }
+    return { L: L / n, a: a / n, b: b / n };
+  }
+
+  const rgbCss = (rgb) => `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`;
+
+  function closeSpot() {
+    spot.open = false;
+    spot.token++;
+    $('#spot-pop').hidden = true;
+    $('#spot-ring').hidden = true;
+  }
+
+  /** Puts the card beside the spot, inside the window. */
+  function placeSpot() {
+    const pop = $('#spot-pop');
+    const ring = $('#spot-ring');
+    ring.style.left = `${spot.x}px`;
+    ring.style.top = `${spot.y}px`;
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    let left = spot.x + 24;
+    if (left + w > innerWidth - 12) left = spot.x - w - 24;
+    left = Math.max(12, Math.min(innerWidth - w - 12, left));
+    const top = Math.max(12, Math.min(innerHeight - h - 12, spot.y - h / 2));
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+  }
+
+  function showSpot(x, y) {
+    const c = spotAt(x, y);
+    if (!c) return false;
+    Object.assign(spot, { x, y, open: true });
+    const token = ++spot.token;
+    const m = munsellOf(c.L, c.a, c.b);
+    $('#spot-sw').style.background = rgbCss(toRgb(c.L, c.a, c.b));
+    $('#spot-name').textContent = m.exact ? `${m.notation} · ${m.name}` : m.neutral ? `Value ${m.value} · neutral gray` : `Value ${m.value} · ${m.name}`;
+    $('#spot-sub').textContent = `This spot · value ${(c.L / 10).toFixed(1)}`;
+    $('#spot-pal-label').textContent = `With your palette · ${capFirst(paletteName())}`;
+    $('#spot-add').innerHTML = '';
+    const model = ensurePalette();
+    const hit = model && PAL.nearest(model, c.L, c.a, c.b);
+    const near = hit && hit.i >= 0 ? model.mixes[hit.i] : null;
+    const d = near ? hit.d : Infinity;
+    $('#spot-mix-sw').hidden = !near;
+    if (near) $('#spot-mix-sw').style.background = rgbCss(near.rgb);
+    const mix = $('#spot-mix');
+    if (!model) mix.textContent = 'Mixing isn’t available in this browser.';
+    else if (!near) mix.textContent = 'Nothing your palette mixes comes close.';
+    else if (d <= PAL.REACH) mix.innerHTML = `<b>You can mix it:</b> ${PAL.recipe(near.parts)} (ΔE ${Math.round(d)}).`;
+    else mix.innerHTML = `<b>Closest you can get</b> (ΔE ${Math.round(d)}, ${d < SPOT_NEAR ? 'near, but visibly off' : 'well off'}): ${PAL.recipe(near.parts)}.`;
+    $('#spot-pop').hidden = false;
+    $('#spot-ring').hidden = false;
+    placeSpot();
+    if (model && d > PAL.REACH) findSpotPaints(c, d, token);
+    return true;
+  }
+
+  /** The one or two paints that would reach the spot, tried a few at a time. */
+  function findSpotPaints(c, d, token) {
+    const add = $('#spot-add');
+    add.innerHTML = '<p class="spot-wait">Looking for a paint that reaches it…</p>';
+    placeSpot();
+    const toLab = (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]);
+    const palKey = PAL.paintsFor(S.palette).map((p) => p.id).join(',');
+    const vars = PAL.variations(S.palette).filter((v) => v.kind === 'add');
+    const found = [];
+    let i = 0;
+    const step = () => {
+      if (token !== spot.token) return;
+      const t0 = performance.now();
+      while (i < vars.length && performance.now() - t0 < 25) {
+        const v = vars[i++];
+        const key = `${palKey}+${v.id}`;
+        let extra = spotModels.get(key);
+        if (!extra) {
+          extra = PAL.build(v.ids, window.spectral, toLab, { include: v.id });
+          spotModels.set(key, extra);
+          if (spotModels.size > 80) spotModels.delete(spotModels.keys().next().value);
+        }
+        const h = PAL.nearest(extra, c.L, c.a, c.b);
+        if (h.i >= 0 && h.d < d - 2) found.push({ v, d: h.d, mix: extra.mixes[h.i] });
+      }
+      if (i < vars.length) return setTimeout(step, 0);
+      found.sort((p, q) => p.d - q.d);
+      add.innerHTML = '';
+      if (!found.length) {
+        const none = document.createElement('p');
+        none.className = 'spot-none';
+        none.textContent = 'No single paint brings it much closer.';
+        add.append(none);
+        return placeSpot();
+      }
+      const label = document.createElement('p');
+      label.className = 'spot-label';
+      label.textContent = 'To reach it, add one paint';
+      add.append(label);
+      for (const f of found.slice(0, 2)) {
+        const p = PAL.byId.get(f.v.id);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'spot-add-row';
+        b.innerHTML = '<i></i><span><b></b><small></small></span><em>+ Add</em>';
+        b.querySelector('i').style.background = p.hex;
+        b.querySelector('b').textContent = `${p.name} · ΔE ${Math.round(f.d)}`;
+        b.querySelector('small').textContent = PAL.recipe(f.mix.parts);
+        b.title = `Add ${p.name.toLowerCase()} to your palette`;
+        b.addEventListener('click', () => {
+          choosePalette(f.v.ids);
+          showSpot(spot.x, spot.y);
+        });
+        add.append(b);
+      }
+      placeSpot();
+    };
+    setTimeout(step, 30);
+  }
+
+  $('#spot-close').addEventListener('click', closeSpot);
+  // a tap elsewhere closes it (a tap on the picture moves it instead)
+  document.addEventListener('pointerdown', (e) => {
+    if (spot.open && !e.target.closest('#spot-pop, #panels')) closeSpot();
+  });
+  window.addEventListener('resize', () => spot.open && closeSpot());
+
+  // a tap with the Color tab open (unless a staged reveal is using taps)
+  $('#panels').addEventListener('click', (e) => {
+    if (S.panel !== 'color' || presenting || reveal.active || e.target.closest('button, a, input, label')) return;
+    if (!showSpot(e.clientX, e.clientY)) closeSpot();
+  });
+  // press and hold, anywhere (and in Present); a second finger is a pinch, not a hold
+  const hold = { timer: 0, x: 0, y: 0, id: null, down: new Set() };
+  $('#panels').addEventListener('pointerdown', (e) => {
+    clearTimeout(hold.timer);
+    hold.down.add(e.pointerId);
+    if (hold.down.size > 1 || e.button > 0 || e.target.closest('button')) return;
+    Object.assign(hold, { x: e.clientX, y: e.clientY, id: e.pointerId });
+    hold.timer = setTimeout(() => {
+      if (showSpot(hold.x, hold.y)) touch.noClickUntil = Date.now() + 600; // the release isn't a tap
+    }, 500);
+  });
+  $('#panels').addEventListener('pointermove', (e) => {
+    if (e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) clearTimeout(hold.timer);
+  });
+  ['pointerup', 'pointercancel'].forEach((ev) =>
+    document.addEventListener(ev, (e) => {
+      if (!hold.down.delete(e.pointerId)) return;
+      clearTimeout(hold.timer);
+    })
+  );
+  // no text-selection menu after a long press on a touch screen
+  $('#panels').addEventListener('contextmenu', (e) => {
+    if (spot.open) e.preventDefault();
+  });
+
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
@@ -4534,6 +4736,7 @@
     const k = e.key.toLowerCase();
     // changing the study by hand ends a staged reveal (and gives back your settings) first
     if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
+    if (k === 'escape' && spot.open) return closeSpot();
     if (k === 'escape' && presenting) setPresenting(false);
     else if (k === 'escape') return;
     else if (presenting && (k === '+' || k === '=')) zoomStep(1.5);

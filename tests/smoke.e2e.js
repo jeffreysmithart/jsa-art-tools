@@ -209,6 +209,25 @@ function check(cond, msg) {
   const toneBefore = await page.evaluate(() => window.VST.app.settings.tone);
   await page.selectOption('#pal-preset', 'secondary');
   check(toneBefore !== 'palette' && await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color') && await page.isChecked('#pal-live'), `choosing a palette paints the study with it, and you stay in the Color tab (was ${toneBefore})`);
+  // a spot on the picture: tap it (Color tab) or press and hold (anywhere) to see how to mix it
+  const spotXY = await page.$eval('#panels', (p) => { const f = [...p.querySelectorAll('#panel-original .frame, #panel-study .frame')].find((x) => x.offsetParent); const r = f.getBoundingClientRect(); return [r.left + r.width * 0.5, r.top + r.height * 0.3]; });
+  await page.mouse.click(spotXY[0], spotXY[1]);
+  await page.waitForSelector('#spot-pop:not([hidden])', { timeout: 3000 });
+  check(/value \d/.test(await page.textContent('#spot-sub')) && /With your palette/i.test(await page.textContent('#spot-pal-label')) && /mix|Closest|close/.test(await page.textContent('#spot-mix')), `tapping the picture in the Color tab shows how to mix that spot (${await page.textContent('#spot-name')}: ${await page.textContent('#spot-mix')})`);
+  await page.keyboard.press('Escape');
+  check(await page.isHidden('#spot-pop'), 'Esc closes it');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.mouse.click(spotXY[0], spotXY[1]);
+  await page.waitForTimeout(150);
+  check(await page.isHidden('#spot-pop'), 'in other tabs a plain tap does not open it');
+  await page.mouse.move(spotXY[0], spotXY[1]);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  check(await page.isVisible('#spot-pop'), 'pressing and holding opens it anywhere');
+  await page.click('#spot-close');
+  check(await page.isHidden('#spot-pop'), 'the × closes it');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
   check((await page.$$('#standin-grid .standin')).length === 10, 'the stand-ins chart shows the ten hue families');
   check(/Weakest: .*reds/.test(await page.textContent('#standin-detail')), `it names the palette's strongest and weakest hues (${await page.textContent('#standin-detail')})`);
   await page.click('#standin-grid .standin:nth-child(1)');
