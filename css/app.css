@@ -748,6 +748,34 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .howto summary { min-height: 44px; display: flex; align-items: center; }
 }
 
+/* Color tab: folded sections (the palette leads; the deeper tools fold away) */
+.fold > summary {
+  list-style: none; cursor: pointer; min-height: 44px;
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after {
+  content: ''; grid-column: 2; grid-row: 1 / span 2; width: 7px; height: 7px; margin-right: 6px;
+  border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg);
+}
+.fold[open] > summary::after { transform: rotate(45deg); }
+.fold > summary h2 { margin: 0; }
+.fold-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.fold-sub { grid-column: 1; font-size: 12.5px; color: var(--muted); margin-top: 2px; text-wrap: pretty; }
+.fold > summary:hover h2, .fold > summary:hover .fold-title { color: var(--text); }
+.fold[open] > summary { margin-bottom: 10px; }
+#fold-explore { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+
+/* touch: the paints two to a row, so a long palette stays short */
+@media (pointer: coarse) {
+  .pal-paints { display: grid; grid-template-columns: 1fr 1fr; }
+  .pal-chip { min-height: 44px; border-radius: 10px; padding: 0 0 0 8px; gap: 5px; min-width: 0; font-size: 12px; }
+  .pal-chip > span { flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: break-word; hyphens: auto; }
+  /* a narrower ×, still a 44 px target: the extra width reaches into the padding and the gap */
+  .pal-chip .pal-remove { flex: none; width: 34px; position: relative; }
+  .pal-chip .pal-remove::before { content: ''; position: absolute; inset: 0 -5px; }
+}
+
 /* phones: the view switcher and Present on one row, the tools on the next */
 @media (max-width: 600px) {
   .toolbar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
