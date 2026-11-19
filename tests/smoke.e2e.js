@@ -73,6 +73,20 @@ function check(cond, msg) {
   });
   const png = Buffer.from(pngB64, 'base64');
 
+  // ---- First run ----
+  check(await page.$$eval('#btn-save-set, #btn-crop, #btn-flip, #btn-grid, #btn-present, #btn-download', (bs) => bs.every((b) => b.disabled)), 'with no image, the tools that act on one wait (Present too)');
+  check(await page.isHidden('#set-actions') && await page.isHidden('#set-rename') && await page.isHidden('#set-delete') && await page.isVisible('#set-new'), 'with no sets, only New set and Import show');
+  check(!(await page.$('.toolbar #btn-reveal')) && !!(await page.$('#panel-study #btn-reveal')), 'Reveal lives in the Study tab, not the toolbar');
+  {
+    const fresh = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    await fresh.route('https://api.nga.gov/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+    await fresh.goto(BASE);
+    await fresh.click('#try-sample');
+    await fresh.waitForFunction(() => window.VST.app.work.w > 0, null, { timeout: 5000 }).catch(() => {});
+    check(await fresh.evaluate(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'nga' && !document.getElementById('btn-present').disabled), 'Try it on a museum painting opens an open-access landscape, and the tools wake up');
+    await fresh.close();
+  }
+
   // ---- Reference mode ----
   await page.setInputFiles('#file-input', { name: 'river-landscape.png', mimeType: 'image/png', buffer: png });
   await page.waitForFunction(() => window.VST.app.work.w > 0);
@@ -1237,7 +1251,9 @@ function check(cond, msg) {
   await lp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await lp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await lp.goto(BASE);
-  await lp.click('#ptab-log');
+  check(!(await lp.$('#ptab-log')), 'the practice log is no longer a tab');
+  await lp.click('#open-log');
+  check(await lp.isVisible('#panel-log') && await lp.isVisible('#log-done'), 'Practice log (at the foot of Images) opens it, with Done to go back');
   const stats = await lp.$$eval('#log-stats .stat', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
   check(stats[1].startsWith('2 days') && /best 2/.test(stats[1]), `streak counts the last two days (${stats[1]})`);
   check(/all time · 3 days/.test(stats[3]), `all-time total counts practiced days only (${stats[3]})`);

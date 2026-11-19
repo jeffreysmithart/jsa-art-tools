@@ -381,8 +381,14 @@
     cvStudy.height = h;
     Object.assign(work, { w, h, rgba, lab0: P.computeLab(rgba, w * h), lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, refit: true });
     $('#panels').classList.remove('is-empty');
+    syncImageTools();
     layout();
     renderStudy();
+  }
+
+  /** The tools that act on a picture wait until there is one. */
+  function syncImageTools() {
+    ['#btn-save-set', '#btn-crop', '#btn-flip', '#btn-grid', '#btn-present', '#btn-download'].forEach((sel) => ($(sel).disabled = !img.el));
   }
 
   /** Blur strength as a Gaussian sigma, relative to image size. */
@@ -1215,16 +1221,20 @@
   /* ================= Sidebar tabs: Images / Study / Canvas ================= */
 
   const PANELS = ['images', 'study', 'color', 'canvas', 'log'];
+  const TABS = PANELS.filter((p) => p !== 'log'); // the practice log is opened from a link, not a tab
+  let panelBeforeLog = 'images';
 
   function setPanel(name) {
     if (!PANELS.includes(name)) name = 'images';
+    if (name === 'log' && S.panel !== 'log') panelBeforeLog = S.panel || 'images';
     S.panel = name;
     PANELS.forEach((p) => {
       const on = p === name;
       $(`#panel-${p}`).hidden = !on;
       const tab = $(`#ptab-${p}`);
+      if (!tab) return;
       tab.setAttribute('aria-selected', String(on));
-      tab.tabIndex = on ? 0 : -1;
+      tab.tabIndex = on || (name === 'log' && p === 'images') ? 0 : -1;
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
     if (name === 'color') renderGamut();
@@ -1244,15 +1254,22 @@
     });
     // arrow keys move between tabs, as in any tab list
     tab.addEventListener('keydown', (e) => {
-      const i = PANELS.indexOf(tab.dataset.panel);
-      const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? PANELS.length - 1 : null;
+      const i = TABS.indexOf(tab.dataset.panel);
+      const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
       if (next == null) return;
       e.preventDefault();
-      const p = PANELS[(next + PANELS.length) % PANELS.length];
+      const p = TABS[(next + TABS.length) % TABS.length];
       setPanel(p);
       $(`#ptab-${p}`).focus();
     });
   });
+  const openLog = () => {
+    setPanel('log');
+    $('.sidebar').scrollTop = 0;
+  };
+  $('#open-log').addEventListener('click', openLog);
+  $('#t-log').addEventListener('click', openLog);
+  $('#log-done').addEventListener('click', () => setPanel(panelBeforeLog));
 
   /* Pop-up screens: move keyboard focus in when they open and back to where it was when they close. */
   function manageFocus(modal) {
@@ -3064,6 +3081,10 @@
     loadFromFile(e.target.files[0]);
     e.target.value = '';
   });
+  // a first try without a picture of your own: an open-access landscape
+  $('#try-sample').addEventListener('click', () =>
+    studyItem(M.ngaItem([30776, 'The Lackawanna Valley', 'George Inness', 'c. 1856', '41934d82-bfb0-447b-b36e-d06dca991243', 5132]))
+  );
   $('#url-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const url = $('#url-input').value.trim();
@@ -3492,7 +3513,8 @@
     sel.value = S.currentSet || '';
     sel.disabled = !all.length;
     const set = currentSet();
-    ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).disabled = !set));
+    ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).hidden = !set));
+    $('#set-actions').hidden = !all.length && !img.el; // + Add current image makes the first set
     $('#set-session').disabled = !set || !set.items.length;
     $('#set-tryon').disabled = !set || !set.items.length;
     const box = $('#set-items');
@@ -4974,6 +4996,7 @@
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');
+  syncImageTools();
   armRound();
   renderQueue();
   setMode(S.mode);
