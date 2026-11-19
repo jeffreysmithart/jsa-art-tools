@@ -916,3 +916,12 @@ body.presenting .timer-main { width: auto; }
 .preset-form input[type="text"] { width: 100%; }
 .preset-form .label { margin: 10px 0 0; }
 .preset-form .row { margin-top: 10px; }
+
+/* Compare: where my values differ, overlay styles, and the plain-words read */
+.frame .mine-diff { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.frame .mine-overlay.difference { mix-blend-mode: difference; }
+.compare-read { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; text-wrap: pretty; }
+.compare-read .k { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.compare-read .k-light { background: oklch(0.68 0.15 250); }
+.compare-read .k-dark { background: oklch(0.66 0.19 32); }
+#mine-style-field .seg { margin-top: 6px; }

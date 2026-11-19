@@ -995,6 +995,12 @@ function check(cond, msg) {
   check(await cp.isVisible('#swatches-master-label') && await cp.isVisible('#swatches-mine-wrap'), 'two bar charts: reference and my study');
   const dims = await cp.evaluate(() => [document.getElementById('cv-mine').width, document.getElementById('cv-mine').height, window.VST.app.work.w, window.VST.app.work.h]);
   check(dims[0] === dims[2] && dims[1] === dims[3], 'my study is fitted to the reference\'s shape');
+  check(await cp.isVisible('#compare-read') && /^Your /.test(await cp.textContent('#compare-read')), `a plain sentence reads the two bar charts (${await cp.textContent('#compare-read')})`);
+  await cp.check('#mine-diff');
+  await settle(cp);
+  const vd = await cp.evaluate(() => window.VST.app.mine.diff);
+  check(await cp.isVisible('#cv-mine-diff') && vd && vd.lighter + vd.darker < 0.15, `Show where my values differ marks the spots a value off (${vd && Math.round((vd.lighter + vd.darker) * 100)}% for a copy of the study itself)`);
+  await cp.uncheck('#mine-diff');
   await cp.screenshot({ path: path.join(OUT, '17-compare.png') });
 
   // without paper correction the darker photo reads differently
@@ -1010,6 +1016,14 @@ function check(cond, msg) {
   check(await cp.isVisible('#cv-mine-overlay') && !(await cp.isVisible('#panel-mine')), 'O lays my study over the reference');
   await cp.$eval('#mine-opacity', (i) => { i.value = 30; i.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await cp.$eval('#cv-mine-overlay', (c) => c.style.opacity) === '0.3', 'overlay strength slider works');
+  await cp.click('#mine-style [data-style="difference"]');
+  check(await cp.$eval('#cv-mine-overlay', (c) => c.classList.contains('difference') && c.style.opacity === '1') && await cp.isHidden('#mine-opacity-field'), 'Difference shows what doesn\'t line up (no strength needed)');
+  await cp.click('#mine-style [data-style="flicker"]');
+  check(/^My study \(tap for the reference\)/.test(await cp.textContent('#study-caption')), 'Flicker starts on my study');
+  const fc = await cp.$eval('#panel-study .frame', (f) => { const r = f.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  await cp.mouse.click(fc[0], fc[1]);
+  check(/^Reference \(tap for my study\)/.test(await cp.textContent('#study-caption')) && (await cp.$eval('#cv-mine-overlay', (c) => c.style.opacity)) === '0', 'a tap swaps to the reference, in place');
+  await cp.click('#mine-style [data-style="blend"]');
   await cp.screenshot({ path: path.join(OUT, '18-overlay.png') });
   await cp.keyboard.press('o');
 
