@@ -87,6 +87,7 @@
     maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
     folds: { explore: false, space: false, mask: false }, // Color tab: which folded sections are open
+    zooms: {}, // Present: the zoom kept for each image, { [image id]: { z, cx, cy } }
     settingsVersion: 3,
   };
 
@@ -96,6 +97,7 @@
     s.grid = { ...DEFAULTS.grid, ...(saved.grid || {}) };
     s.compose = { ...DEFAULTS.compose, ...(saved.compose || {}) };
     s.folds = { ...DEFAULTS.folds, ...(saved.folds || {}) };
+    if (!s.zooms || typeof s.zooms !== 'object' || Array.isArray(s.zooms)) s.zooms = {};
     // settings saved by the first version used a single "style" choice
     if (saved.style && !saved.tone) {
       if (saved.style === 'gray') {
@@ -151,6 +153,8 @@
   /* ================= State ================= */
 
   let presenting = false; // Present mode: controls hidden
+  // Present's zoom: z is the magnification, (cx, cy) the picture's point at the center of the frame (0..1)
+  const pz = { z: 1, cx: 0.5, cy: 0.5, key: null };
   const img = { item: null, el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
@@ -524,7 +528,7 @@
       frame.style.height = `${Math.floor(h)}px`;
       frame.classList.toggle('flipped', S.flip);
     });
-    drawOverlays();
+    applyZoom();
   }
 
   const GRID_COLORS = { black: '0,0,0', white: '255,255,255', red: '226,56,56' };
@@ -576,10 +580,20 @@
       if (ov.height !== H) ov.height = H;
       const ctx = ov.getContext('2d');
       ctx.clearRect(0, 0, W, H);
-      drawGrid(ctx, W, H, Math.max(1, Math.round(dpr)));
-      drawCompose(ctx, W, H, Math.max(1, Math.round(dpr)));
+      // zoomed in Present: the grid and guides move with the picture, and their lines stay thin
+      const zoomed = frame.classList.contains('zoomed');
+      const line = Math.max(1, Math.round(dpr));
+      ctx.save();
+      if (zoomed) {
+        ctx.translate(W / 2 - pz.cx * W * pz.z, H / 2 - pz.cy * H * pz.z);
+        ctx.scale(pz.z, pz.z);
+      }
+      drawGrid(ctx, W, H, zoomed ? line / pz.z : line);
+      drawCompose(ctx, W, H, zoomed ? line / pz.z : line);
+      ctx.restore();
     });
     $('#btn-grid').setAttribute('aria-pressed', String(S.grid.on));
+    $('#pz-grid').setAttribute('aria-pressed', String(S.grid.on));
     $('#grid-on').checked = S.grid.on;
     $('#compose-on').checked = S.compose.on;
   }
@@ -942,6 +956,7 @@
     if (v === 'compare' && !mine.el) v = 'both';
     S.view = v;
     setSeg($('#view-seg'), 'view', v);
+    setSeg($('#present-view'), 'view', v);
     syncMineUi();
     layout();
     save();
@@ -4274,13 +4289,17 @@
    * presentation mode. Goes full screen where the browser allows it and
    * keeps the screen awake. Shortcuts (G, F, V, K, 2-6, Space) still work.
    */
-  let exitHideTimer = 0;
-  function showExitButton() {
+  let barHideTimer = 0;
+  /** The floating bar: shown on a tap or when the pointer moves, gone again after a few seconds. */
+  function showPresentBar() {
     if (!presenting) return;
-    const b = $('#btn-present-exit');
-    b.classList.add('show');
-    clearTimeout(exitHideTimer);
-    exitHideTimer = setTimeout(() => b.classList.remove('show'), 2500);
+    const bar = $('#present-bar');
+    bar.classList.add('show');
+    clearTimeout(barHideTimer);
+    barHideTimer = setTimeout(() => {
+      if (!bar.matches(':hover') && !bar.contains(document.activeElement)) bar.classList.remove('show');
+      else showPresentBar();
+    }, 3000);
   }
 
   function fullscreenElement() {
@@ -4292,7 +4311,9 @@
     if (on === presenting) return;
     presenting = on;
     document.body.classList.toggle('presenting', on);
-    $('#btn-present-exit').hidden = !on;
+    $('#present-bar').hidden = !on;
+    $('#present-view [data-view="compare"]').hidden = !mine.el;
+    setSeg($('#present-view'), 'view', S.view);
     const root = document.documentElement;
     try {
       if (on && !fullscreenElement()) {
@@ -4308,8 +4329,8 @@
       /* full screen isn't available here; the controls are still hidden */
     }
     T.keepAwake(presenting || countdown.running);
-    if (on) showExitButton();
-    else $('#btn-present-exit').classList.remove('show');
+    if (on) showPresentBar();
+    else $('#present-bar').classList.remove('show');
     requestAnimationFrame(layout);
   }
 
@@ -4323,7 +4344,184 @@
       enteredFullscreen = !!fullscreenElement();
     })
   );
-  ['pointermove', 'pointerdown'].forEach((ev) => document.addEventListener(ev, showExitButton, { passive: true }));
+  ['pointermove', 'pointerdown'].forEach((ev) => document.addEventListener(ev, showPresentBar, { passive: true }));
+  $('#present-view').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) setView(b.dataset.view);
+  });
+  $('#pz-grid').addEventListener('click', () => toggleGrid());
+
+  /* ---------- Present: zoom and move around, both pictures in step ---------- */
+
+  /*
+   * Pinch or double-tap to zoom, drag to move around; on a Mac, pinch the
+   * trackpad (or scroll with Ctrl) to zoom and scroll to move. The original
+   * and the study always show the same part of the picture, so you can work
+   * sight-size from one area (an eye, a tree line) and flick between them.
+   * The zoom is kept for each image, so the next session starts the same.
+   */
+  const PZ_MAX = 8;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const zoomKey = () => (img.item && img.item.id ? String(img.item.id) : null);
+
+  function clampZoom() {
+    pz.z = clamp(pz.z, 1, PZ_MAX);
+    const half = 0.5 / pz.z;
+    pz.cx = clamp(pz.cx, half, 1 - half);
+    pz.cy = clamp(pz.cy, half, 1 - half);
+  }
+
+  /** This image's kept zoom, the first time it's shown (or a fresh fit). */
+  function loadZoom() {
+    const key = zoomKey();
+    if (key === pz.key) return;
+    const kept = key && S.zooms[key];
+    // an image that's still being saved gets its id a moment later: keep what's on screen
+    if (!kept && pz.key === null && key && pz.z > 1) pz.key = key;
+    else Object.assign(pz, kept ? { z: kept.z, cx: kept.cx, cy: kept.cy } : { z: 1, cx: 0.5, cy: 0.5 }, { key });
+    clampZoom();
+  }
+
+  /** Keep the zoom for this image (the 60 most recent). */
+  function keepZoom() {
+    const key = zoomKey();
+    if (!key) return;
+    delete S.zooms[key];
+    if (pz.z > 1.001) S.zooms[key] = { z: +pz.z.toFixed(3), cx: +pz.cx.toFixed(4), cy: +pz.cy.toFixed(4) };
+    const keys = Object.keys(S.zooms);
+    for (let i = 0; i < keys.length - 60; i++) delete S.zooms[keys[i]];
+    save();
+  }
+
+  /** Moves the pictures (and the grid over them) to the zoom; outside Present they sit as usual. */
+  function applyZoom() {
+    loadZoom();
+    const on = presenting && pz.z > 1.001;
+    $$('.panel .frame').forEach((frame) => {
+      frame.classList.toggle('zoomed', on);
+      const W = frame.clientWidth;
+      const H = frame.clientHeight;
+      const t = on ? `translate(${W / 2 - pz.cx * W * pz.z}px, ${H / 2 - pz.cy * H * pz.z}px) scale(${pz.z})` : '';
+      frame.querySelectorAll('canvas:not(.overlay)').forEach((c) => (c.style.transform = t));
+    });
+    $('#pz-level').textContent = `${Math.round(pz.z * 100)}%`;
+    $('#pz-out').disabled = pz.z <= 1.001;
+    $('#pz-fit').disabled = pz.z <= 1.001;
+    $('#pz-in').disabled = pz.z >= PZ_MAX - 0.001;
+    drawOverlays();
+  }
+
+  /** The visible frame under a point (or the first one), and the point in it, 0..1 across the frame. */
+  function frameAt(x, y) {
+    const frames = $$('.panel .frame').filter((f) => f.offsetParent);
+    if (!frames.length) return null;
+    const hit = frames.find((f) => {
+      const r = f.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    }) || frames[0];
+    const r = hit.getBoundingClientRect();
+    const fx = (x - r.left) / r.width;
+    return { frame: hit, w: r.width, h: r.height, fx: S.flip ? 1 - fx : fx, fy: (y - r.top) / r.height };
+  }
+
+  /** Zoom to z, keeping the picture's point under (x, y) where it is (the center when no point is given). */
+  function zoomTo(z, x, y, { keep = true } = {}) {
+    const at = x == null ? null : frameAt(x, y);
+    const fx = at ? at.fx : 0.5;
+    const fy = at ? at.fy : 0.5;
+    // the picture's point under (fx, fy) now
+    const px = pz.cx + (fx - 0.5) / pz.z;
+    const py = pz.cy + (fy - 0.5) / pz.z;
+    pz.z = clamp(z, 1, PZ_MAX);
+    pz.cx = px - (fx - 0.5) / pz.z;
+    pz.cy = py - (fy - 0.5) / pz.z;
+    clampZoom();
+    applyZoom();
+    if (keep) keepZoom();
+  }
+  /** Move the pictures by (dx, dy) screen pixels. */
+  function panBy(dx, dy) {
+    const at = frameAt(0, 0);
+    if (!at || pz.z <= 1.001) return;
+    pz.cx -= ((S.flip ? -dx : dx) / at.w) / pz.z;
+    pz.cy -= dy / at.h / pz.z;
+    clampZoom();
+    applyZoom();
+  }
+  const zoomStep = (f) => zoomTo(pz.z * f);
+  $('#pz-in').addEventListener('click', () => zoomStep(1.5));
+  $('#pz-out').addEventListener('click', () => zoomStep(1 / 1.5));
+  $('#pz-fit').addEventListener('click', () => zoomTo(1));
+
+  // touch and pen: one finger moves, two pinch; a quick second tap zooms in, or back out to fit
+  const touch = { pts: new Map(), start: null, moved: false, lastTap: 0 };
+  const panels = $('#panels');
+  panels.addEventListener('pointerdown', (e) => {
+    if (!presenting || e.button > 0 || e.target.closest('button')) return;
+    touch.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try {
+      panels.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* a synthetic event can't be captured; moving still works over the pictures */
+    }
+    if (touch.pts.size === 1) touch.moved = false;
+    touch.start = pinchState();
+  });
+  function pinchState() {
+    const p = [...touch.pts.values()];
+    if (p.length < 2) return { x: p[0].x, y: p[0].y, d: 0, z: pz.z };
+    return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), z: pz.z };
+  }
+  panels.addEventListener('pointermove', (e) => {
+    if (!presenting || !touch.pts.has(e.pointerId)) return;
+    const before = touch.pts.get(e.pointerId);
+    touch.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const now = pinchState();
+    if (Math.hypot(now.x - touch.start.x, now.y - touch.start.y) > 6 || (now.d && Math.abs(now.d - touch.start.d) > 6)) touch.moved = true;
+    if (touch.pts.size >= 2 && touch.start.d) {
+      // pinch: zoom about the fingers' midpoint, and follow it as it moves
+      zoomTo(touch.start.z * (now.d / touch.start.d), now.x, now.y, { keep: false });
+      panBy(now.x - (touch.last ? touch.last.x : now.x), now.y - (touch.last ? touch.last.y : now.y));
+      touch.last = now;
+    } else if (touch.pts.size === 1) {
+      panBy(e.clientX - before.x, e.clientY - before.y);
+    }
+  });
+  function endPointer(e) {
+    if (!touch.pts.delete(e.pointerId)) return;
+    touch.last = null;
+    if (touch.pts.size) {
+      touch.start = pinchState();
+      return;
+    }
+    if (touch.moved) {
+      keepZoom();
+      touch.noClickUntil = Date.now() + 400; // a drag isn't a tap: it doesn't step a staged reveal
+      return;
+    }
+    const now = Date.now();
+    if (now - touch.lastTap < 320) {
+      touch.lastTap = 0;
+      if (pz.z > 1.001) zoomTo(1);
+      else zoomTo(2.5, e.clientX, e.clientY);
+    } else touch.lastTap = now;
+  }
+  ['pointerup', 'pointercancel'].forEach((ev) => panels.addEventListener(ev, endPointer));
+  panels.addEventListener('click', (e) => Date.now() < (touch.noClickUntil || 0) && e.stopImmediatePropagation(), { capture: true });
+  // trackpad: pinch (sent as a wheel with Ctrl) zooms; scrolling moves around
+  panels.addEventListener(
+    'wheel',
+    (e) => {
+      if (!presenting) return;
+      e.preventDefault();
+      if (e.ctrlKey) zoomTo(pz.z * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, { keep: false });
+      else if (pz.z > 1.001) panBy(-e.deltaX, -e.deltaY);
+      else return;
+      clearTimeout(touch.wheelKeep);
+      touch.wheelKeep = setTimeout(keepZoom, 300);
+    },
+    { passive: false }
+  );
   // the browser drops the wake lock when the tab is hidden; take it back on return
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && (presenting || countdown.running)) T.keepAwake(true);
@@ -4338,6 +4536,8 @@
     if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
     if (k === 'escape' && presenting) setPresenting(false);
     else if (k === 'escape') return;
+    else if (presenting && (k === '+' || k === '=')) zoomStep(1.5);
+    else if (presenting && (k === '-' || k === '_')) zoomStep(1 / 1.5);
     else if (k === 'r') nextStage();
     else if (k === 'p') setPresenting(!presenting);
     else if (k === 'g') toggleGrid();

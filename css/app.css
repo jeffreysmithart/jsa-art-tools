@@ -380,11 +380,29 @@ body.presenting #t-stop { display: none !important; }
 body.presenting .timer-main { min-width: 0; gap: 10px; }
 body.presenting .timer-clock { font-size: 26px; }
 body.presenting .timer-status { font-size: 12px; }
-.present-exit {
-  position: fixed; top: max(16px, env(safe-area-inset-top)); right: 16px; z-index: var(--z-float);
-  background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity 0.2s ease-out;
+/* the floating bar in Present: view, zoom, grid, exit; shows on a tap or when the pointer moves */
+.present-bar {
+  position: fixed; left: 16px; right: 16px; margin-inline: auto; width: fit-content; bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: var(--z-float); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px;
+  max-width: calc(100vw - 32px); padding: 8px; border-radius: 14px; background: var(--scrim);
+  border: 1px solid var(--hairline); opacity: 0; pointer-events: none; transition: opacity 0.2s ease-out;
 }
-.present-exit.show { opacity: 1; pointer-events: auto; }
+.present-bar.show { opacity: 1; pointer-events: auto; }
+.present-bar[hidden] { display: none; }
+.present-zoom { display: flex; align-items: center; gap: 4px; }
+.present-bar .seg { flex: none; }
+.present-bar .seg button { flex: none; padding-inline: 12px; }
+.present-zoom output { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text); font-size: 13px; }
+#pz-out, #pz-in { min-width: 40px; font-size: 18px; line-height: 1; }
+@media (pointer: coarse) { #pz-out, #pz-in, #pz-fit, .present-bar .seg button { min-width: 44px; } }
+/* zoomed: the pictures move inside their frames */
+.frame.zoomed { overflow: hidden; }
+.frame.zoomed > canvas:not(.overlay) { transform-origin: 0 0; }
+body.presenting .panels { touch-action: none; }
+/* phones: the bar at the top, clear of the small timer */
+@media (max-width: 700px) {
+  .present-bar { bottom: auto; top: max(12px, env(safe-area-inset-top)); max-width: none; }
+}
 
 /* the museum names are long: let the dropdown take the full row and shrink to fit */
 .grid-fields .museum-field { flex: 1 1 100%; }
