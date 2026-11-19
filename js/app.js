@@ -43,6 +43,7 @@
     view: 'both',
     flip: false,
     tone: 'gray', // 'gray' | 'color' | 'poster' (main colors) | 'palette' (limited palette)
+    tonePrev: 'gray', // the tone to go back to when the palette stops painting the study
     bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
     levelsMode: 'average', // true to the image's light key
@@ -107,6 +108,7 @@
     // the second version kept "main colors" as a separate method
     if (saved.method === 'poster') s.tone = 'poster';
     if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
+    if (!['gray', 'color', 'poster'].includes(s.tonePrev)) s.tonePrev = 'gray';
     if (!Array.isArray(s.palette) || !s.palette.length) s.palette = DEFAULTS.palette.slice();
     // earlier versions defaulted to even steps; the default is now the image's average
     if ((saved.settingsVersion || 1) < 3 && s.levelsMode === 'even') s.levelsMode = 'average';
@@ -592,6 +594,7 @@
     $('#poster-ctl').hidden = S.tone !== 'poster';
     $('#palette-ctl').hidden = S.tone !== 'palette';
     $('#pal-mark').checked = S.palMark;
+    $('#pal-live').checked = S.tone === 'palette';
     $('#palette-name').textContent = paletteName();
     const dots = $('#palette-dots');
     dots.innerHTML = '';
@@ -773,9 +776,11 @@
   ['pointerup', 'pointercancel'].forEach((ev) => histCanvas.addEventListener(ev, () => (histDrag = -1)));
 
   function setTone(tone) {
+    if (tone === 'palette' && S.tone !== 'palette') S.tonePrev = S.tone;
     S.tone = tone;
     syncStudyControls();
     requestStudy();
+    save();
   }
   $('#tone-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -1609,7 +1614,7 @@
       rm.setAttribute('aria-label', `Remove ${p.name}`);
       rm.title = `Remove ${p.name}`;
       rm.disabled = S.palette.length <= 1;
-      rm.addEventListener('click', () => setPalette(S.palette.filter((id) => id !== p.id)));
+      rm.addEventListener('click', () => choosePalette(S.palette.filter((id) => id !== p.id)));
       box.appendChild(chip);
     }
     const add = $('#pal-add');
@@ -2009,7 +2014,7 @@
     use.disabled = samePaints(b.ids, PAL.paintsFor(S.palette).map((p) => p.id));
     use.addEventListener('click', () => {
       S.palMine = null;
-      setPalette(b.ids);
+      choosePalette(b.ids);
       toast('Palette chosen. Save… keeps it under My palettes.');
     });
     out.append(paints, steps, use);
@@ -2275,7 +2280,7 @@
         text: `+${pctLabel(a.gain)}%`,
         why: [a.gained.length ? hueFamilies(a.gained) : '', strays(a.id) ? 'mostly mixes outside the mask' : ''].filter(Boolean).join(' · '),
         title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of ${what}${strays(a.id) ? '; but most of its mixes fall outside the mask, which makes it easy to stray from the scheme' : ''}`,
-        apply: () => setPalette([...S.palette, a.id]),
+        apply: () => choosePalette([...S.palette, a.id]),
       })),
       st.full ? `It already mixes nearly all of ${what}.` : `No one paint adds much to ${what}.`
     );
@@ -2288,7 +2293,7 @@
           text: d.loss < 0.005 ? '' : `−${pctLabel(d.loss)}%`,
           why: d.loss < 0.005 ? 'not needed here' : '',
           title: `Take out ${PAL.byId.get(d.id).name.toLowerCase()}: the palette would reach ${d.loss < 0.005 ? 'about the same' : `${pctLabel(d.loss)}% less`} of ${what}`,
-          apply: () => setPalette(S.palette.filter((x) => x !== d.id)),
+          apply: () => choosePalette(S.palette.filter((x) => x !== d.id)),
         })),
         'Every paint is doing work here.'
       );
@@ -2305,20 +2310,29 @@
     renderGamut();
     save();
   }
+  /**
+   * Paints you chose (a palette from the menu, a paint added or taken out, a
+   * suggestion, a built or compared palette): set them, and paint the study
+   * with them, so you see the picture change. The tab you're on stays.
+   */
+  function choosePalette(ids) {
+    setPalette(ids);
+    if (S.tone !== 'palette') setTone('palette');
+  }
   $('#pal-preset').addEventListener('change', (e) => {
     const v = e.target.value;
     if (v.startsWith('mine:')) {
       const mine = MP.get(v.slice(5));
       if (mine) {
         S.palMine = mine.id;
-        setPalette(mine.paints);
+        choosePalette(mine.paints);
       }
       return;
     }
     const p = PAL.PRESETS.find((x) => x.id === v);
     if (p) {
       S.palMine = null;
-      setPalette(p.paints);
+      choosePalette(p.paints);
     }
   });
 
@@ -2360,7 +2374,7 @@
     renderPaletteUi();
   });
   $('#pal-add').addEventListener('change', (e) => {
-    if (e.target.value) setPalette([...S.palette, e.target.value]);
+    if (e.target.value) choosePalette([...S.palette, e.target.value]);
   });
   /** Shows or hides the palette in the color space (in the Color tab and the large view). */
   function setPalShow(on) {
@@ -2385,11 +2399,8 @@
     requestStudy();
     save();
   });
-  $('#pal-study').addEventListener('click', () => {
-    if (!img.el) return toast('Load an image first.');
-    setTone('palette');
-    setPanel('study');
-  });
+  // on: paint the study with the palette; off: back to the tone you had before
+  $('#pal-live').addEventListener('change', (e) => setTone(e.target.checked ? 'palette' : S.tonePrev || 'gray'));
   $('#pal-choose').addEventListener('click', () => setPanel('color'));
 
   /*
@@ -2515,8 +2526,7 @@
     fig.setAttribute('aria-label', `${p.name}${p.current ? ' (your palette)' : ''}: ${names}. Reaches ${pctLabel(r.reached)}% of the picture.`);
     const use = () => {
       closePalCompare();
-      setPalette(p.ids);
-      setTone('palette');
+      choosePalette(p.ids);
     };
     fig.addEventListener('click', use);
     fig.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), use()));

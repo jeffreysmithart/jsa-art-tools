@@ -194,7 +194,9 @@ function check(cond, msg) {
   const povReach = await reachOf();
   check(povReach > 0 && povReach <= 100, `it reports how much of the picture it can mix (${povReach}%)`);
   // what stands in for each hue: the secondary triad's red is a weak orange-and-violet mix
+  const toneBefore = await page.evaluate(() => window.VST.app.settings.tone);
   await page.selectOption('#pal-preset', 'secondary');
+  check(toneBefore !== 'palette' && await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color') && await page.isChecked('#pal-live'), `choosing a palette paints the study with it, and you stay in the Color tab (was ${toneBefore})`);
   check((await page.$$('#standin-grid .standin')).length === 10, 'the stand-ins chart shows the ten hue families');
   check(/Weakest: .*reds/.test(await page.textContent('#standin-detail')), `it names the palette's strongest and weakest hues (${await page.textContent('#standin-detail')})`);
   await page.click('#standin-grid .standin:nth-child(1)');
@@ -246,9 +248,12 @@ function check(cond, msg) {
   await page.click('#pal-paints .pal-chip:nth-child(1) .pal-remove');
   check((await page.$$('#pal-paints .pal-chip')).length === 4, 'a paint can be removed');
   await page.selectOption('#pal-preset', 'pov');
-  await page.click('#pal-study');
+  await page.uncheck('#pal-live');
+  check(await page.evaluate((t) => window.VST.app.settings.tone === t, toneBefore), `turning off "Paint the study with it" goes back to the tone you had (${toneBefore})`);
+  await page.check('#pal-live');
   await settle(page);
-  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'study'), 'Paint the study with this palette switches the study to Palette');
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color'), 'turning it on paints the study with the palette, in the Color tab');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
   check(/Palette · Prussian blue/.test(await page.textContent('#study-caption')) && await page.isVisible('#palette-ctl') && !(await page.isVisible('#values-ctl')), `the caption names the palette (${await page.textContent('#study-caption')})`);
   check((await page.$$('#swatches .swatch')).length >= 2, 'swatches show the mixes the study uses most');
   await page.selectOption('#pal-preset', 'zorn').catch(() => {});
@@ -395,6 +400,8 @@ function check(cond, msg) {
   check(await bare.isVisible('#mask-fit') && (await bare.$eval('#mask-aim [data-aim="picture"]', (b) => b.disabled)) && /of the colors in this mask/.test(await bare.textContent('#mask-fit-note')), `with no image loaded, paints for the mask aim at the whole mask (${await bare.textContent('#mask-fit-note')})`);
   await bare.close();
   await page.selectOption('#pal-preset', 'pov');
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette'), 'a palette chosen from the mask tools paints the study too');
+  await page.click('#tone-seg [data-tone="color"]'); // back to Color, as the unmasked study was
   await page.uncheck('#mask-on');
   await settle(page);
   check((await studyStats()).sum === unmasked.sum, 'turning it off brings the colors back');
