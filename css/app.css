@@ -852,3 +852,41 @@ body.presenting .timer-main { width: auto; }
   #palcmp-grid .tryon-tile { padding: 6px; }
   #palcmp-grid .pt-reach { font-size: 11.5px; }
 }
+
+/* ---------- A spot on the picture: how to mix it ---------- */
+.panels.spot-pick .frame { cursor: crosshair; }
+.panels canvas { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.spot-ring {
+  position: fixed; z-index: calc(var(--z-float) + 1); width: 26px; height: 26px; margin: -13px 0 0 -13px;
+  border: 2px solid var(--text); border-radius: 50%; box-shadow: 0 0 0 2px var(--shadow); pointer-events: none;
+}
+.spot-pop {
+  position: fixed; z-index: calc(var(--z-float) + 2); width: min(340px, calc(100vw - 24px));
+  padding: 14px 16px; border-radius: 12px; border: 1px solid var(--hairline);
+  background: var(--deep); color: var(--text); box-shadow: 0 12px 32px var(--shadow); font-size: 13.5px; line-height: 1.45;
+}
+.spot-close {
+  position: absolute; top: 4px; right: 4px; width: 36px; height: 36px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.spot-close:hover { color: var(--text); background: var(--panel-2); }
+@media (pointer: coarse) { .spot-close { width: 44px; height: 44px; top: 0; right: 0; } }
+.spot-row { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0; }
+.spot-row > div { min-width: 0; padding-right: 28px; }
+.spot-row b { display: block; font-size: 14.5px; }
+.spot-sw { flex: none; width: 34px; height: 34px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--hairline); }
+.spot-sub { display: block; color: var(--muted); font-size: 12.5px; }
+.spot-label { margin: 12px 0 4px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.spot-mix { margin: 0; }
+.spot-mix:empty { display: none; }
+.spot-add .spot-label { margin-top: 10px; }
+.spot-add-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 6px; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.spot-add-row:hover { border-color: var(--line-strong); background: var(--panel); }
+.spot-add-row i { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--hairline); }
+.spot-add-row span { flex: 1; min-width: 0; }
+.spot-add-row small { display: block; color: var(--muted); font-size: 12.5px; }
+.spot-add-row em { flex: none; font-style: normal; font-size: 12.5px; color: var(--accent-text); }
+.spot-wait, .spot-none { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
