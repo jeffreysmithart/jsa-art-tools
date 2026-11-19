@@ -299,7 +299,19 @@ function check(cond, msg) {
   await settle(page);
   check(await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color'), 'turning it on paints the study with the palette, in the Color tab');
   await page.evaluate(() => window.VST.app.setPanel('study'));
-  check(/Palette · Prussian blue/.test(await page.textContent('#study-caption')) && await page.isVisible('#palette-ctl') && !(await page.isVisible('#values-ctl')), `the caption names the palette (${await page.textContent('#study-caption')})`);
+  check(/^Palette · Prussian blue[^·]*$/.test(await page.textContent('#study-caption')) && await page.isVisible('#palette-ctl') && await page.isVisible('#values-ctl') && (await page.$eval('#bands-seg [aria-checked="true"]', (b) => b.dataset.n)) === '0', `the caption names the palette, which starts with all values (${await page.textContent('#study-caption')})`);
+  // a value study in the palette's paints: its own number of values, apart from Gray's
+  const grayBands = await page.evaluate(() => window.VST.app.settings.bandsOther);
+  await page.click('#bands-seg [data-n="3"]');
+  await settle(page);
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette') && /Palette · .* · 3 values/.test(await page.textContent('#study-caption')) && await swatchCount(page, 3), `3 values in Palette paints a 3-value study in the palette (${await page.textContent('#study-caption')})`);
+  const pv = await studyColors(page);
+  check(pv.count <= 3 * 40, `and the study keeps to a few mixes per value (${pv.count} colors)`);
+  await page.click('#tone-seg [data-tone="gray"]');
+  check(await page.evaluate((g) => window.VST.app.settings.bands === g, grayBands), `Gray keeps its own number of values (${grayBands})`);
+  await page.click('#tone-seg [data-tone="palette"]');
+  check(await page.evaluate(() => window.VST.app.settings.bands === 3), 'and the palette remembers its 3');
+  await page.click('#bands-seg [data-n="0"]');
   check((await page.$$('#swatches .swatch')).length >= 2, 'swatches show the mixes the study uses most');
   await page.selectOption('#pal-preset', 'zorn').catch(() => {});
   await page.evaluate(() => window.VST.app.setPanel('color'));

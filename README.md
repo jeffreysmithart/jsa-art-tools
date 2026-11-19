@@ -23,9 +23,9 @@ The study image and its toolbar stay in view whichever tab is open. Until there'
 
 **Study tools**
 - **Color:** Gray, Color, Main colors, or Palette.
-- **Number of values** (Grayscale or Color): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
+- **Number of values** (Grayscale, Color or Palette): **All** (the full range) or 2–6 values (2 is notan). In Color the hues stay and only the values are flattened, for a color poster study.
 - **Main colors:** repaints the image with the 2–8 colors that best summarize it.
-- **Palette:** repaints the image with what your limited palette can mix (see the Color tab), striping what it can't.
+- **Palette:** repaints the image with what your limited palette can mix (see the Color tab), striping what it can't. With a **number of values** (2–6) it becomes a value study in your paints: the values are grouped first (the same splits as Gray) and each group is painted with a mix at that value, the closest in hue and chroma. White and one dark make a true monochrome study; a few more paints make a color thumbnail in that palette. Palette keeps its own number of values, starting at **All**, so the palette preview isn't flattened by the value study's count.
 - **Value bar chart:** a bar for each value (or main color) shows how much of the picture it covers, with the largest highlighted, so you can see at a glance which value dominates. It also appears on the side-by-side sheet.
 - **Value splits:** drag the splits on the histogram or the sliders, use **Fit to image** to find natural breaks, or **Even** to reset.
 - **Paint each value as:** the **average** of each area (the default, true to the image's light key), **even steps** from dark to light (most contrast), or **custom**, which starts from the averages so you can adjust each value to match your markers (0 = black, 10 = white).
