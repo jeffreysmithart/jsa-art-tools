@@ -86,6 +86,7 @@
     maskMine: null, // the saved mask last chosen or saved, so changes to it can be saved back
     maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
     spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
+    folds: { explore: false, space: false, mask: false }, // Color tab: which folded sections are open
     settingsVersion: 3,
   };
 
@@ -94,6 +95,7 @@
     const s = { ...DEFAULTS, ...saved };
     s.grid = { ...DEFAULTS.grid, ...(saved.grid || {}) };
     s.compose = { ...DEFAULTS.compose, ...(saved.compose || {}) };
+    s.folds = { ...DEFAULTS.folds, ...(saved.folds || {}) };
     // settings saved by the first version used a single "style" choice
     if (saved.style && !saved.tone) {
       if (saved.style === 'gray') {
@@ -1253,6 +1255,31 @@
   ['#crop-modal', '#square-modal', '#tryon-modal', '#space-modal', '#palcmp-modal'].forEach((sel) => manageFocus($(sel)));
 
 
+  /* ================= Color tab: folded sections ================= */
+
+  /*
+   * The palette leads the Color tab; the deeper tools fold away (what stands
+   * in for each hue and the wheel, the color space, the gamut mask). Each
+   * fold remembers whether it was open, and draws when it's opened.
+   */
+  const FOLDS = { explore: '#fold-explore', space: '#sec-gamut', mask: '#sec-mask' };
+  for (const [key, sel] of Object.entries(FOLDS)) {
+    const el = $(sel);
+    el.open = !!S.folds[key];
+    el.addEventListener('toggle', () => {
+      if (S.folds[key] === el.open) return;
+      S.folds[key] = el.open;
+      save();
+      if (el.open) requestAnimationFrame(renderGamut);
+    });
+  }
+  /** The mask's folded heading says whether it's painting the study. */
+  function renderMaskSummary() {
+    $('#mask-sum').textContent = S.maskOn
+      ? `On: the study is painted inside the mask${S.maskStrength < 100 ? ` (${S.maskStrength}%)` : ''}`
+      : 'Plan a color scheme on the wheel, then find paints for it';
+  }
+
   /* ================= Color tab: the color space ================= */
 
   /*
@@ -1319,16 +1346,20 @@
   }
 
   function renderGamut() {
-    if (!$('#space-small').clientWidth) return; // hidden
+    if ($('#panel-color').hidden) return;
     renderPaletteUi();
     renderMask();
     const d = colorData();
     $('#gamut-empty').hidden = !!d;
-    spaceSmall.setShowUnused(S.spaceUnused);
-    spaceSmall.setData(d || {});
+    if ($('#space-small').clientWidth) {
+      // folded away, it may have no size yet (Safari); it draws when its fold opens
+      spaceSmall.setShowUnused(S.spaceUnused);
+      spaceSmall.setData(d || {});
+    }
     const box = $('#gamut-stats');
     if (!d) {
       box.innerHTML = '';
+      $('#space-sum').textContent = 'The picture’s colors in 3D, with its main hue and value range';
       return;
     }
     const st = d.stats;
@@ -1342,6 +1373,8 @@
       stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ≈ ${strongMunsell(st)}`) +
       stat(`${Math.round(st.neutralShare * 100)}%`, 'near gray') +
       stat(`${st.valueLow}–${st.valueHigh}`, 'value range');
+    // the figures on the folded heading, so they read without opening it
+    $('#space-sum').textContent = `Main hue ${mh && !mh.neutral ? `${mh.name} ${mh.exact ? mh.hue : mh.code}` : 'gray'} · strongest chroma ≈ ${strongMunsell(st)} · values ${st.valueLow}–${st.valueHigh}`;
     $('#space-open').setAttribute(
       'aria-label',
       `Open the color space larger. Main hue ${mh && !mh.neutral ? mh.name : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
@@ -1867,6 +1900,7 @@
   const maskReach = (m) => Math.max(...m.points.map(([a, b]) => Math.hypot(a, b)));
 
   function renderMask() {
+    renderMaskSummary();
     const cv = $('#mask-wheel');
     if (!cv.clientWidth) return; // hidden
     const m = ensureMask();
@@ -2183,6 +2217,7 @@
   $('#mask-strength').addEventListener('input', (e) => {
     S.maskStrength = +e.target.value;
     $('#mask-strength-out').textContent = `${S.maskStrength}%`;
+    renderMaskSummary();
     requestStudy();
     save();
   });

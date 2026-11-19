@@ -19,8 +19,8 @@ const studyColors = (pg) => pg.evaluate(() => {
 const settle = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
 
-// Sidebar controls live in tabs (Images / Study / Canvas). Like a person would,
-// open the tab that holds a control before using it.
+// Sidebar controls live in tabs (Images / Study / Canvas), some in folded
+// sections. Like a person would, open the tab and the fold before using it.
 function aware(pg) {
   const reveal = async (sel) => {
     if (typeof sel !== 'string') return;
@@ -30,6 +30,10 @@ function aware(pg) {
       try { el = document.querySelector(css); } catch (e) { return; }
       const panel = el && el.closest('.side-panel');
       if (panel && panel.hidden && window.VST && window.VST.app && window.VST.app.setPanel) window.VST.app.setPanel(panel.dataset.panel);
+      // and open a folded section that holds it (the Color tab folds its deeper tools)
+      // (but not for a fold's own heading: tapping that is what opens it)
+      const inside = el && el.matches('details.fold > summary') ? el.parentElement.parentElement : el;
+      for (let d = inside && inside.closest('details.fold:not([open])'); d; d = d.parentElement.closest('details.fold:not([open])')) d.open = true;
     }, css).catch(() => {});
   };
   for (const m of ['click', 'fill', 'selectOption', 'check', 'uncheck', 'isVisible']) {
@@ -111,8 +115,16 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
-  // Color tab: the picture's colors in a 3D color space
+  // Color tab: the palette first, the deeper tools folded away
   await page.click('#ptab-color');
+  check(await page.evaluate(() => document.getElementById('panel-color').firstElementChild.id === 'sec-palette' && ['fold-explore', 'sec-gamut', 'sec-mask'].every((id) => !document.getElementById(id).open)), 'the Color tab leads with the palette, with the deeper tools folded');
+  await page.waitForFunction(() => document.querySelectorAll('#pal-stats .stat').length === 2 && /^Main hue .* values \d/.test(document.getElementById('space-sum').textContent));
+  check(true, `the palette's figures show, and the folded color space has its figures on its heading (${await page.textContent('#space-sum')})`);
+  await page.click('#sec-gamut > summary');
+  const foldKept = await page.waitForFunction(() => document.getElementById('sec-gamut').open && window.VST.app.settings.folds.space === true, null, { timeout: 2000 }).then(() => true, () => false);
+  check(foldKept, 'tapping a heading opens its section, and that is remembered');
+
+  // the picture's colors in a 3D color space
   await page.waitForFunction(() => document.querySelectorAll('#gamut-stats .stat').length === 4);
   const canvasSum = (sel) => page.$eval(sel, (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0, ink = 0; for (let i = 0; i < d.length; i++) { s = (s * 31 + d[i]) >>> 0; if (i % 4 === 3 && d[i]) ink++; } return { s, ink }; });
   await settle(page);
@@ -359,6 +371,7 @@ function check(cond, msg) {
   await page.evaluate(() => window.VST.app.setPanel('color'));
   await page.check('#mask-on');
   await settle(page);
+  check(/^On: the study is painted inside the mask/.test(await page.textContent('#mask-sum')), 'the mask heading says when it is painting the study');
   const maskedStats = await studyStats();
   check(/in a gamut mask/.test(await page.textContent('#study-caption')), `the caption says the study is in a gamut mask (${await page.textContent('#study-caption')})`);
   check(maskedStats.sum !== unmasked.sum && maskedStats.chroma < unmasked.chroma, `painting inside the mask changes the colors, and the colors outside get quieter (chroma ${unmasked.chroma.toFixed(1)} -> ${maskedStats.chroma.toFixed(1)})`);
@@ -395,7 +408,7 @@ function check(cond, msg) {
   const bare = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   await bare.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await bare.goto(BASE);
-  await bare.evaluate(() => window.VST.app.setPanel('color'));
+  await bare.evaluate(() => { window.VST.app.setPanel('color'); document.querySelector('#sec-mask').open = true; });
   await bare.waitForTimeout(300);
   check(await bare.isVisible('#mask-fit') && (await bare.$eval('#mask-aim [data-aim="picture"]', (b) => b.disabled)) && /of the colors in this mask/.test(await bare.textContent('#mask-fit-note')), `with no image loaded, paints for the mask aim at the whole mask (${await bare.textContent('#mask-fit-note')})`);
   await bare.close();
