@@ -728,7 +728,24 @@ function check(cond, msg) {
   await page.click('#btn-present');
   await page.mouse.move(500, 400);
   await page.mouse.move(520, 410);
-  await page.waitForSelector('#btn-present-exit.show');
+  await page.waitForSelector('#present-bar.show');
+  // zoom and move around: both pictures in step, and kept for this image
+  const zoomShown = () => page.$$eval('.panel .frame', (fs) => fs.filter((f) => f.offsetParent).map((f) => f.querySelector('canvas').style.transform));
+  await page.click('#pz-in');
+  const z1 = await zoomShown();
+  check(z1.length === 2 && /scale\(1\.5\)/.test(z1[0]) && z1[0] === z1[1] && (await page.textContent('#pz-level')) === '150%', `zooming in Present moves both pictures in step (${z1[0]})`);
+  await page.mouse.move(400, 450);
+  await page.mouse.down();
+  await page.mouse.move(470, 420, { steps: 5 });
+  await page.mouse.up();
+  const z2 = await zoomShown();
+  check(z2[0] !== z1[0] && z2[0] === z2[1], 'dragging moves around the zoomed pictures, together');
+  check(await page.evaluate(() => { const id = window.VST.app.img.item && window.VST.app.img.item.id; const z = id && window.VST.app.settings.zooms[id]; return !id || (z && z.z === 1.5); }), 'the zoom is kept for this image');
+  await page.click('#present-view [data-view="study"]');
+  check((await page.evaluate(() => window.VST.app.settings.view)) === 'study' && (await zoomShown()).length === 1, 'the bar switches the view without leaving Present');
+  await page.click('#present-view [data-view="both"]');
+  await page.click('#pz-fit');
+  check((await zoomShown()).every((t) => t === '') && (await page.textContent('#pz-level')) === '100%', 'Fit shows the whole picture again');
   await page.click('#btn-present-exit');
   check(!(await page.evaluate(() => window.VST.app.isPresenting())), 'the Present button enters and the Exit button leaves');
 

@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css?v=2026-11-19b">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-19c">
 </head>
 <body>
   <header class="topbar">
@@ -516,6 +516,7 @@
           <dt><kbd>C</kbd> <kbd>F</kbd></dt><dd>crop, flip</dd>
           <dt><kbd>R</kbd></dt><dd>reveal in stages</dd>
           <dt><kbd>P</kbd></dt><dd>present</dd>
+          <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>zoom, while presenting</dd>
           <dt><kbd>T</kbd> <kbd>Space</kbd></dt><dd>timer, start or pause</dd>
           <dt><kbd>M</kbd></dt><dd>memory mode</dd>
           <dt><kbd>O</kbd></dt><dd>overlay my study</dd>
@@ -545,7 +546,22 @@
         </div>
         <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
       </div>
-      <button class="btn present-exit" id="btn-present-exit" hidden title="Show the controls again (Esc or P)">Exit presentation</button>
+      <div class="present-bar" id="present-bar" hidden role="toolbar" aria-label="Presentation">
+        <div class="seg" id="present-view" role="radiogroup" aria-label="View">
+          <button data-view="both" role="radio" title="Original and study side by side (V)">Both</button>
+          <button data-view="study" role="radio">Study</button>
+          <button data-view="original" role="radio">Original</button>
+          <button data-view="compare" role="radio" hidden>Compare</button>
+        </div>
+        <div class="present-zoom" role="group" aria-label="Zoom">
+          <button class="btn" id="pz-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+          <output id="pz-level" aria-live="polite">100%</output>
+          <button class="btn" id="pz-in" type="button" aria-label="Zoom in" title="Zoom in (+). Pinch or double-tap to zoom, drag to move around.">+</button>
+          <button class="btn" id="pz-fit" type="button" title="Show the whole picture (double-tap)">Fit</button>
+        </div>
+        <button class="btn" id="pz-grid" type="button" aria-pressed="false" title="Grid (G)">Grid</button>
+        <button class="btn" id="btn-present-exit" type="button" title="Show the controls again (Esc or P)">Exit</button>
+      </div>
 
       <div class="panels" id="panels" data-view="both">
         <figure class="panel" id="panel-original">
@@ -780,30 +796,30 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js?v=2026-11-19b"></script>
-  <script src="js/process.js?v=2026-11-19b"></script>
-  <script src="js/config.js?v=2026-11-19b"></script>
-  <script src="js/museum.js?v=2026-11-19b"></script>
-  <script src="js/sync-merge.js?v=2026-11-19b"></script>
-  <script src="js/library.js?v=2026-11-19b"></script>
-  <script src="js/presets.js?v=2026-11-19b"></script>
-  <script src="js/saved.js?v=2026-11-19b"></script>
-  <script src="js/log.js?v=2026-11-19b"></script>
-  <script src="js/vendor/qrcode.js?v=2026-11-19b"></script>
-  <script src="js/sync.js?v=2026-11-19b"></script>
-  <script src="js/timer.js?v=2026-11-19b"></script>
-  <script src="js/compose.js?v=2026-11-19b"></script>
-  <script src="js/vendor/spectral.js?v=2026-11-19b"></script>
-  <script src="js/palette.js?v=2026-11-19b"></script>
-  <script src="data/munsell-renotation.js?v=2026-11-19b"></script>
-  <script src="js/munsell.js?v=2026-11-19b"></script>
-  <script src="js/colorspace.js?v=2026-11-19b"></script>
-  <script src="js/overlap.js?v=2026-11-19b"></script>
-  <script src="js/mask.js?v=2026-11-19b"></script>
-  <script src="js/gamut.js?v=2026-11-19b"></script>
-  <script src="js/crop.js?v=2026-11-19b"></script>
-  <script src="js/warp.js?v=2026-11-19b"></script>
-  <script src="js/squareup.js?v=2026-11-19b"></script>
-  <script src="js/app.js?v=2026-11-19b"></script>
+  <script src="js/color.js?v=2026-11-19c"></script>
+  <script src="js/process.js?v=2026-11-19c"></script>
+  <script src="js/config.js?v=2026-11-19c"></script>
+  <script src="js/museum.js?v=2026-11-19c"></script>
+  <script src="js/sync-merge.js?v=2026-11-19c"></script>
+  <script src="js/library.js?v=2026-11-19c"></script>
+  <script src="js/presets.js?v=2026-11-19c"></script>
+  <script src="js/saved.js?v=2026-11-19c"></script>
+  <script src="js/log.js?v=2026-11-19c"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-19c"></script>
+  <script src="js/sync.js?v=2026-11-19c"></script>
+  <script src="js/timer.js?v=2026-11-19c"></script>
+  <script src="js/compose.js?v=2026-11-19c"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-19c"></script>
+  <script src="js/palette.js?v=2026-11-19c"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-19c"></script>
+  <script src="js/munsell.js?v=2026-11-19c"></script>
+  <script src="js/colorspace.js?v=2026-11-19c"></script>
+  <script src="js/overlap.js?v=2026-11-19c"></script>
+  <script src="js/mask.js?v=2026-11-19c"></script>
+  <script src="js/gamut.js?v=2026-11-19c"></script>
+  <script src="js/crop.js?v=2026-11-19c"></script>
+  <script src="js/warp.js?v=2026-11-19c"></script>
+  <script src="js/squareup.js?v=2026-11-19c"></script>
+  <script src="js/app.js?v=2026-11-19c"></script>
 </body>
 </html>
