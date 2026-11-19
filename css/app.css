@@ -910,3 +910,9 @@ body.presenting .timer-main { width: auto; }
 .link-btn { border: 0; padding: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link-btn:hover { color: var(--accent-text); }
 @media (pointer: coarse) { .link-btn { min-height: 44px; } }
+
+/* saving a preset: its name, and what else it keeps */
+.preset-form { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.preset-form input[type="text"] { width: 100%; }
+.preset-form .label { margin: 10px 0 0; }
+.preset-form .row { margin-top: 10px; }

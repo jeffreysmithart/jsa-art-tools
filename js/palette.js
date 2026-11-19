@@ -374,6 +374,52 @@
   }
 
   /**
+   * A value study in a palette's paints: `flat` comes from
+   * process.flattenValues (each pixel's value group, its a and b, each
+   * group's average a and b) and `levels` are the groups' values. The value
+   * comes first: each group is painted only with mixes at about its value,
+   * the closest in hue and chroma among them, so white and one dark still
+   * make a true value study. Writes RGBA into `out`; returns each group's
+   * color (its average, as the palette paints it).
+   */
+  function paintValues(model, flat, levels, out) {
+    const near = levels.map((Lv) => {
+      const byValue = model.mixes.map((m, i) => [Math.abs(m.L - Lv), i]).sort((p, q) => p[0] - q[0]);
+      const within = byValue.filter(([d]) => d <= 4);
+      return (within.length >= 8 ? within : byValue.slice(0, 24)).map(([, i]) => model.mixes[i]);
+    });
+    const pick = (b, a, bb) => {
+      const Lv = levels[b];
+      let best = near[b][0];
+      let bestD = Infinity;
+      for (const m of near[b]) {
+        const d = 4 * (m.L - Lv) ** 2 + (m.a - a) ** 2 + (m.b - bb) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = m;
+        }
+      }
+      return best;
+    };
+    const cache = new Map();
+    const { A, B } = flat.lab;
+    for (let i = 0, j = 0; i < A.length; i++, j += 4) {
+      const b = flat.band[i];
+      const key = (b << 20) | ((Math.round(A[i] / 2) + 256) << 10) | (Math.round(B[i] / 2) + 256);
+      let m = cache.get(key);
+      if (!m) {
+        m = pick(b, A[i], B[i]);
+        cache.set(key, m);
+      }
+      out[j] = m.rgb[0];
+      out[j + 1] = m.rgb[1];
+      out[j + 2] = m.rgb[2];
+      out[j + 3] = 255;
+    }
+    return levels.map((L, b) => pick(b, flat.means[b][0], flat.means[b][1]).rgb);
+  }
+
+  /**
    * The palettes to try for "which paint would help": the palette with each
    * paint it doesn't have added, and (if it has more than one) with each of
    * its paints taken out. [{ kind: 'add' | 'drop', id, ids }]
@@ -544,5 +590,5 @@
     return out.join(', ');
   }
 
-  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, standIns, complementOf, paint, variations, rank, recipe };
+  VST.palette = { PIGMENTS, PRESETS, REACH, byId, paintsFor, compositions, build, nearest, nearestCached, reach, within, gain, without, strayShare, grow, standIns, complementOf, paint, paintValues, variations, rank, recipe };
 })(typeof window !== 'undefined' ? window : globalThis);

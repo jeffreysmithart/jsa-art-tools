@@ -1691,44 +1691,9 @@
       P.renderColor(flat.lab, out);
       return levels.map((L, i) => ({ L, share: flat.shares[i] }));
     }
-    // the value comes first: each group is painted only with mixes at about
-    // its value, the closest in hue and chroma among them (so white and one
-    // dark still make a true 3-value study, even of a green landscape)
-    const near = levels.map((Lv) => {
-      const byValue = model.mixes.map((m, i) => [Math.abs(m.L - Lv), i]).sort((p, q) => p[0] - q[0]);
-      const within = byValue.filter(([d]) => d <= 4);
-      return (within.length >= 8 ? within : byValue.slice(0, 24)).map(([, i]) => model.mixes[i]);
-    });
-    const pick = (b, a, bb) => {
-      const Lv = levels[b];
-      let best = near[b][0];
-      let bestD = Infinity;
-      for (const m of near[b]) {
-        const d = 4 * (m.L - Lv) ** 2 + (m.a - a) ** 2 + (m.b - bb) ** 2;
-        if (d < bestD) {
-          bestD = d;
-          best = m;
-        }
-      }
-      return best;
-    };
-    const cache = new Map();
-    const { A, B } = flat.lab;
-    for (let i = 0, j = 0; i < A.length; i++, j += 4) {
-      const b = flat.band[i];
-      const key = (b << 20) | ((Math.round(A[i] / 2) + 256) << 10) | (Math.round(B[i] / 2) + 256);
-      let m = cache.get(key);
-      if (!m) {
-        m = pick(b, A[i], B[i]);
-        cache.set(key, m);
-      }
-      out[j] = m.rgb[0];
-      out[j + 1] = m.rgb[1];
-      out[j + 2] = m.rgb[2];
-      out[j + 3] = 255;
-    }
-    // each value as the palette paints its average color
-    return levels.map((L, b) => ({ L, rgb: pick(b, flat.means[b][0], flat.means[b][1]).rgb, share: flat.shares[b] }));
+    // the value first, then the closest hue and chroma at that value (see PAL.paintValues)
+    const rgbs = PAL.paintValues(model, flat, levels, out);
+    return levels.map((L, i) => ({ L, rgb: rgbs[i], share: flat.shares[i] }));
   }
 
   function renderPaletteUi() {
@@ -3735,8 +3700,8 @@
 
   const PR = VST.presets;
 
-  /** The current study settings as a preset. */
-  function currentPreset(name) {
+  /** The current study settings as a preset, with what you chose to keep alongside. */
+  function currentPreset(name, keep = {}) {
     const p = { name, tone: S.tone, posterK: S.posterK, blur: S.blur, bands: S.tone === 'poster' ? 0 : S.bands };
     if (S.tone !== 'poster' && S.bands >= 2) {
       p.splits = S.splitSource[S.bands] || 'fixed';
@@ -3744,12 +3709,22 @@
       p.levelsMode = S.levelsMode;
       if (S.levelsMode === 'custom') p.customLevels = (S.customLevels[S.bands] || []).slice();
     }
+    if (S.tone === 'palette') p.palette = PAL.paintsFor(S.palette).map((x) => x.id);
+    if (keep.grid) p.grid = { ...S.grid };
+    if (keep.compose) p.compose = { ...S.compose };
+    if (keep.view) p.view = S.view === 'compare' ? 'both' : S.view;
     return p;
   }
+  const sameGrid = (a, b) => ['on', 'cols', 'rows', 'diag', 'color', 'opacity'].every((k) => a[k] === b[k]);
+  const sameCompose = (a, b) => ['on', 'thirds', 'golden', 'diag', 'cross', 'color'].every((k) => a[k] === b[k]);
 
   /** True when the current settings are exactly this preset. */
   function presetMatches(p) {
     if (p.tone !== S.tone || (p.blur || 0) !== S.blur) return false;
+    if (p.tone === 'palette' && !(Array.isArray(p.palette) && samePaints(p.palette, S.palette))) return false;
+    if (p.grid && !sameGrid(p.grid, S.grid)) return false;
+    if (p.compose && !sameCompose(p.compose, S.compose)) return false;
+    if (p.view && p.view !== S.view) return false;
     if (p.tone === 'poster') return (p.posterK || 5) === S.posterK;
     if ((p.bands || 0) !== (S.bands >= 2 ? S.bands : 0)) return false;
     if (!(p.bands >= 2)) return true;
@@ -3776,8 +3751,24 @@
         if (S.levelsMode === 'custom' && Array.isArray(p.customLevels)) S.customLevels[S.bands] = p.customLevels.slice();
       }
     }
+    if (p.tone === 'palette' && Array.isArray(p.palette) && p.palette.length) {
+      S.palMine = null;
+      setPalette(p.palette);
+    }
+    if (p.grid) {
+      Object.assign(S.grid, p.grid);
+      syncGridControls();
+      drawOverlays();
+    }
+    if (p.compose) {
+      Object.assign(S.compose, p.compose);
+      syncComposeControls();
+      drawOverlays();
+    }
+    if (p.view && p.view !== S.view) setView(p.view);
     syncStudyControls();
     requestStudy();
+    save();
   }
 
   function renderPresetSelect() {
@@ -3813,11 +3804,32 @@
     if (p) applyPreset(p);
     else renderPresetSelect();
   });
-  $('#preset-save').addEventListener('click', () => {
-    if (S.tone === 'palette') return toast('Presets don’t include palettes yet: choose Grayscale, Color or Main colors to save one.');
-    const name = prompt('Name this preset:', '');
-    if (name == null) return;
-    const p = PR.save(currentPreset(name));
+  /*
+   * Saving a preset: its name, and what else it keeps besides the study's
+   * look. The paints always go with a Palette preset; the grid, the
+   * composition guides and the view are kept only if you tick them (they
+   * start ticked when they're on), and a preset without them leaves them
+   * as they are.
+   */
+  const presetForm = $('#preset-form');
+  function openPresetForm() {
+    presetForm.hidden = false;
+    $('#preset-name').value = '';
+    $('#preset-keep-paints').closest('label').hidden = S.tone !== 'palette';
+    $('#preset-keep-paints-name').textContent = paletteName();
+    $('#preset-keep-grid').checked = S.grid.on;
+    $('#preset-keep-compose').checked = S.compose.on;
+    $('#preset-keep-view').checked = false;
+    $('#preset-keep-view-name').textContent = { both: 'Both', study: 'Study', original: 'Original', compare: 'Both' }[S.view] || 'Both';
+    $('#preset-name').focus();
+  }
+  $('#preset-save').addEventListener('click', () => (presetForm.hidden ? openPresetForm() : (presetForm.hidden = true)));
+  $('#preset-cancel').addEventListener('click', () => (presetForm.hidden = true));
+  presetForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const keep = { grid: $('#preset-keep-grid').checked, compose: $('#preset-keep-compose').checked, view: $('#preset-keep-view').checked };
+    const p = PR.save(currentPreset($('#preset-name').value, keep));
+    presetForm.hidden = true;
     renderPresetSelect();
     toast(`Saved preset “${p.name}”.`);
   });

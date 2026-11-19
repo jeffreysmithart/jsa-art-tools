@@ -1152,14 +1152,38 @@ function check(cond, msg) {
 
   // save my own preset, and it survives a reload
   await pp.$eval('#blur', (i) => { i.value = 20; i.dispatchEvent(new Event('input', { bubbles: true })); });
-  pAnswers.push('Soft 3');
   await pp.click('#preset-save');
+  check(await pp.isVisible('#preset-form') && await pp.isHidden('#preset-keep-paints'), 'Save… opens a small form (no paints to keep outside Palette)');
+  await pp.fill('#preset-name', 'Soft 3');
+  await pp.click('#preset-form [type="submit"]');
   await settle(pp);
   check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'saving names the preset and selects it');
   check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 1, 'saved presets are listed under My presets');
   await pp.reload();
   await pp.waitForTimeout(300);
   check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'my preset (and the settings) survive a reload');
+
+  // a Palette preset that keeps the grid: the paints, the values and the grid come back with it
+  await pp.evaluate(() => window.VST.app.setPanel('color'));
+  await pp.selectOption('#pal-preset', 'zorn');
+  await pp.click('#bands-seg [data-n="3"]');
+  await pp.check('#grid-on');
+  await pp.click('#preset-save');
+  check(await pp.isVisible('#preset-keep-paints') && await pp.isChecked('#preset-keep-grid') && !(await pp.isChecked('#preset-keep-view')), 'in Palette the form keeps the paints, and offers the grid (ticked, since it is on)');
+  await pp.fill('#preset-name', 'Zorn thumbnail');
+  await pp.click('#preset-form [type="submit"]');
+  check(/^Palette of 4 paints · 3 values .*grid 3 × 3/.test(await pp.textContent('#preset-desc')), `a Palette preset describes its paints and grid (${await pp.textContent('#preset-desc')})`);
+  await pp.selectOption('#preset-select', 'b-3');
+  check(await pp.evaluate(() => window.VST.app.settings.tone === 'gray' && window.VST.app.settings.grid.on), 'a preset that keeps no grid leaves the grid as it is');
+  await pp.uncheck('#grid-on');
+  await pp.evaluate(() => window.VST.app.setPanel('color'));
+  await pp.selectOption('#pal-preset', 'pov');
+  await pp.selectOption('#preset-select', { label: 'Zorn thumbnail' });
+  await settle(pp);
+  check(await pp.evaluate(() => { const s = window.VST.app.settings; return s.tone === 'palette' && s.bands === 3 && s.grid.on && s.palette.length === 4 && s.palette.includes('vermilion') && !s.palette.includes('prussian-blue'); }) && (await pp.$eval('#preset-select', (x) => x.selectedOptions[0].textContent)) === 'Zorn thumbnail', 'applying it brings back the Palette tone, its paints, 3 values and the grid');
+  await pp.click('#preset-delete');
+  await pp.uncheck('#grid-on');
+  await pp.selectOption('#preset-select', { label: 'Soft 3' });
 
   // "fit to each image" splits follow a new image
   await pp.selectOption('#preset-select', 'b-3');
