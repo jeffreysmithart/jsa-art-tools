@@ -14,6 +14,27 @@ The review followed [BRIEF.md](BRIEF.md): an interview with the owner first, the
 
 ---
 
+## Status
+
+The plan below was agreed with the owner, and the first nine steps are built and merged, one pull request each:
+
+| Finding | Status |
+|---|---|
+| 1 · Choosing a palette paints the study | Done, jeffreysmithart/jsa-art-tools#41 |
+| 2, 2a · The Color tab led by the palette, folds, compact chips | Done, jeffreysmithart/jsa-art-tools#42 |
+| 3 · Present: zoom, pan, view switch | Done, jeffreysmithart/jsa-art-tools#43 (zoom kept per image) |
+| 4 · Tap a spot to see how to mix it | Done, jeffreysmithart/jsa-art-tools#44 (tap on the Color tab, or press and hold anywhere) |
+| 8, 9, 12, 14 · First screen, toolbar, tabs, crop bar, touch | Done, jeffreysmithart/jsa-art-tools#45 |
+| 7 · Palette tone with a number of values | Done, jeffreysmithart/jsa-art-tools#46 |
+| 5 (step 1) · Presets that carry more | Done, jeffreysmithart/jsa-art-tools#47 |
+| 6 · Compare says what it sees | Done, jeffreysmithart/jsa-art-tools#48 |
+| 5 (steps 2, 3) · Modes, steps, first-run picker | Done, jeffreysmithart/jsa-art-tools#49 (no mode preselected) |
+| 10 · Controls that move you | Partly: the palette no longer switches tabs (#41); the mask and number keys still change the tone without a note |
+| 11 · One wheel, one suggestion box | Open |
+| 13 · One explanation pattern | Open |
+| 15 · Neutral pressed state beside the picture | Open (the token drift in the overlap key too) |
+| New features (principles, sight-size helper, Log export) | Open, each needs its own yes |
+
 ## The short version
 
 1. **Your app has one core loop, and it isn't the one the toolbar is built around.** You set up a reference (crop, values, grid, maybe a palette), go to **Present** with *Both* showing, and paint. When you need to check, you stop, photograph, and **Compare/Overlay**. You don't use the timer, Reveal, Memory or the Log, yet they hold a top-bar button, a toolbar button and a whole tab.
