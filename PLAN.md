@@ -38,10 +38,33 @@ Remaining from v2:
 2. **Staged reveal:** show 2 values, then 3, then the full image, so you commit to the big masses first. Could run on the timer or step on tap.
 3. **Decreasing-time rounds:** the same image at 10, then 5, then 2 minutes. Today's rounds all have the same length.
 
-v3, a larger project to scope on its own:
+### v3: Artist palettes
 
-- **Color gamut view:** plot an image's colors on a color wheel.
-- **Limited-palette recolor:** for example Prussian blue, yellow ocher, vermillion, black and white, using pigment-mixing simulation (check the license of any mixing library), and flag colors the palette can't reach.
+Search a painter, see the palette they most likely used, and tap to repaint the study using only colors those paints can mix. The goal is the best possible shot at a master copy: match the materials, then see what they can and can't do on this painting.
+
+Inspired by Chelsea Lang's **Materials Decoder** (Alla Prima Bootcamp), which compiles a painter's palette, brushes, surfaces and medium from public sources. We borrow its *ideas*, not its design or wording:
+
+- **Every claim says how sure we are:** **Confirmed** (the painter said it, or a lab analysed it), **Reported** (a credible secondhand source), **Not confirmed** (nothing found, said plainly rather than guessed).
+- **Every claim links to its source,** with a date where known.
+- **Context is kept:** "one demo in 2009," "this was acrylic, not oil."
+
+**Where it lives:** inside Value Study, not as a separate app. It becomes a fourth way to paint the study, next to Grayscale / Color / Main colors, so value bands, presets, sheets and Compare my study all work with it. Museum results already know the artist, so a painting can offer its painter's palette without typing.
+
+**Build order:**
+
+1. **Mixing engine (the core).** Given a few tube colors plus white, compute the colors they can mix, repaint each area with its nearest mixable color, and **flag areas the palette can't reach** (e.g. "this blue is out of reach, so he must have grayed it"). Mixing must behave like paint (blue + yellow = green), not screen RGB. Use **spectral.js** (MIT, Kubelka-Munk). Avoid Mixbox: its license rules out commercial use.
+2. **Paint picker.** Choose tube colors from a list of common paints (cadmium yellow light, alizarin crimson, ultramarine, Portland grays, …) and save named palettes. This makes the engine useful for any artist, including your own palette, before any artist data exists.
+3. **Artist palettes.**
+   - **Start with a curated file:** a research script in `tools/` (like `build_nga_index.py`) compiles palettes for 20–40 commonly copied painters, with tiers and sources, into `data/palettes.json`. The owner reviews it before it ships. Free, consistent, no server.
+   - **Sources:** for old masters, conservation science (National Gallery Technical Bulletin, ColourLex, museum conservation reports) counts as Confirmed; well-documented accounts (Zorn's limited palette, Sargent's letters) as Reported. For living painters, their own interviews, workshop supply lists and signature paint sets.
+   - **Later, live lookup for any name:** a Cloudflare Worker (alongside the image relay) calls Claude with web search, for painters not in the file. It costs money per search and results vary, so it needs an API key, caching and abuse limits.
+4. **Show the support from museum records.** Museum APIs already return a medium field ("Oil on canvas," "Oil on oak panel"). Show it as a Confirmed surface fact. This one is small and could ship first.
+
+**Caveat to show on the page:** a documented palette is a best guess for a painter, not proof of what's on a specific painting. The tiers make that honest, and the "can't reach" flags are useful either way.
+
+Also in v3:
+
+- **Color gamut view:** plot an image's colors on a color wheel, and overlay the gamut of the chosen palette.
 
 Smaller ideas raised along the way:
 
