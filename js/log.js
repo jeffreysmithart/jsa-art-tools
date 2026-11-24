@@ -10,11 +10,15 @@
  *             timer is running)
  *   drawSecs  time in completed timed drawing rounds
  *   rounds    completed timed rounds
+ *   memRounds those of the rounds drawn from memory (memory mode), a subset
+ *             of `rounds`; memSecs is their drawing time (part of drawSecs)
  */
 (function (root) {
   'use strict';
   const VST = (root.VST = root.VST || {});
-  const KEY = 'value-study:log';
+  const KEY = 'value-study:log'; // this device's own log
+  const OTHERS_KEY = 'value-study:log-others'; // other devices' logs, from syncing: { [deviceId]: log }
+  const DEVICE_KEY = 'value-study:device'; // this browser's id, so its log can be told apart
   const IDLE_MS = 30 * 60 * 1000;
   const MAX_STEP_MS = 90 * 1000; // a longer gap between ticks means the device slept
 
@@ -26,6 +30,28 @@
       /* fall through */
     }
     return { version: 1, days: {} };
+  }
+
+  /** A random id for this browser, made once. */
+  function deviceId() {
+    try {
+      let id = localStorage.getItem(DEVICE_KEY);
+      if (!id) {
+        id = `d-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem(DEVICE_KEY, id);
+      }
+      return id;
+    } catch (e) {
+      return 'd-local';
+    }
+  }
+  function others() {
+    try {
+      const v = JSON.parse(localStorage.getItem(OTHERS_KEY) || '{}');
+      return v && typeof v === 'object' ? v : {};
+    } catch (e) {
+      return {};
+    }
   }
   const listeners = [];
   function store(data) {
@@ -95,13 +121,20 @@
     }
   }
 
-  /** A timed drawing round on the current image ran to the end. */
-  function round(seconds, now = Date.now()) {
+  /**
+   * A timed drawing round on the current image ran to the end.
+   * `memory` is true when it was drawn from memory with the image hidden.
+   */
+  function round(seconds, { memory = false } = {}, now = Date.now()) {
     if (!state.item) return;
     const data = load();
     const e = entryFor(data, state.item, now);
     e.drawSecs += Math.round(seconds);
     e.rounds += 1;
+    if (memory) {
+      e.memRounds = (e.memRounds || 0) + 1;
+      e.memSecs = (e.memSecs || 0) + Math.round(seconds);
+    }
     store(data);
   }
 
@@ -112,8 +145,29 @@
     state.timerRunning = !!on;
   }
 
+  /** All practice: this device's log plus other devices' (from syncing), added up. */
   function days() {
-    return load().days;
+    const own = load();
+    const rest = Object.values(others());
+    const M = VST.syncMerge;
+    if (!rest.length || !M) return own.days;
+    return M.combineLogs([own, ...rest]);
+  }
+
+  /* for syncing: this device's own log, and the others' as received */
+  function syncDoc() {
+    return { ...load(), device: deviceId() };
+  }
+  function setOthers(map) {
+    const mine = deviceId();
+    const keep = {};
+    for (const [id, doc] of Object.entries(map || {})) if (id !== mine && doc) keep[id] = doc;
+    try {
+      localStorage.setItem(OTHERS_KEY, JSON.stringify(keep));
+    } catch (e) {
+      /* storage unavailable or full */
+    }
+    listeners.forEach((fn) => fn());
   }
 
   /* ---------- reading the log ---------- */
@@ -125,12 +179,14 @@
   }
 
   function totals(day) {
-    const t = { secs: 0, drawSecs: 0, rounds: 0, images: 0 };
+    const t = { secs: 0, drawSecs: 0, rounds: 0, memRounds: 0, memSecs: 0, images: 0 };
     if (!day) return t;
     for (const e of Object.values(day.items)) {
       t.secs += e.secs || 0;
       t.drawSecs += e.drawSecs || 0;
       t.rounds += e.rounds || 0;
+      t.memRounds += e.memRounds || 0;
+      t.memSecs += e.memSecs || 0;
       if ((e.secs || 0) >= 10 || e.rounds) t.images += 1;
     }
     return t;
@@ -189,19 +245,20 @@
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const rows = [['date', 'title', 'artist', 'museum', 'source', 'study_minutes', 'timed_rounds', 'timed_minutes']];
+    const rows = [['date', 'title', 'artist', 'museum', 'source', 'study_minutes', 'timed_rounds', 'timed_minutes', 'memory_rounds', 'memory_minutes']];
     for (const k of Object.keys(daysMap).sort()) {
       for (const e of Object.values(daysMap[k].items)) {
         if (!(e.secs >= 10 || e.rounds)) continue;
-        rows.push([k, e.title, e.artist, e.museum, e.source, (e.secs / 60).toFixed(1), e.rounds, ((e.drawSecs || 0) / 60).toFixed(1)]);
+        rows.push([k, e.title, e.artist, e.museum, e.source, (e.secs / 60).toFixed(1), e.rounds, ((e.drawSecs || 0) / 60).toFixed(1), e.memRounds || 0, ((e.memSecs || 0) / 60).toFixed(1)]);
       }
     }
     return rows.map((r) => r.map(esc).join(',')).join('\n') + '\n';
   }
 
+  /** Clears the log. With syncing, `clearedAt` tells the other devices to clear theirs up to now. */
   function clear() {
     state.pendingMs = 0;
-    store({ version: 1, days: {} });
+    store({ version: 1, days: {}, clearedAt: Date.now() });
     if (state.item) start(state.item);
   }
 
@@ -223,5 +280,5 @@
     });
   }
 
-  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey, onChange, practiced, totals, stats, csv, clear, shiftDay };
+  VST.log = { start, round, tick, flush, activity, setTimerRunning, days, dayKey, onChange, practiced, totals, stats, csv, clear, shiftDay, deviceId, syncDoc, setOthers };
 })(typeof window !== 'undefined' ? window : globalThis);

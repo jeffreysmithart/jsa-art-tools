@@ -2,8 +2,13 @@
  * Study sets and history, kept in this browser.
  *
  * Small records (sets, history, item details) live in localStorage; uploaded
- * photos live in IndexedDB, which can hold much more. Both stay on this
- * device only; Export / Import moves a set between devices.
+ * photos live in IndexedDB, which can hold much more. Export / Import moves a
+ * set between devices by hand.
+ *
+ * For syncing (see js/sync-merge.js), changes carry times: a set's name has
+ * `nameAt`, each item in a set has `at`, and removals leave a marker with
+ * the time (a set's `removed`, plus the deleted-sets and removed-history
+ * records), so a removal on one device isn't undone by another.
  *
  * An item is one image to study:
  *   museum painting: { id, source: 'aic' | 'met' | ..., title, artist, image, thumb, ... }
@@ -17,8 +22,17 @@
   const SETS_KEY = 'value-study:sets';
   const HISTORY_KEY = 'value-study:history';
   const QUEUE_KEY = 'value-study:queue';
+  const SETS_DELETED_KEY = 'value-study:sets-deleted'; // { [setId]: time }
+  const HISTORY_REMOVED_KEY = 'value-study:history-removed'; // { removed: { [itemId]: time }, clearedAt }
   const HISTORY_MAX = 60;
   const UPLOAD_MAX = 2400; // uploads are stored at most this many px on the long side
+
+  /** A time for a change: now, and always later than the last one, so two quick changes keep their order. */
+  let lastTime = 0;
+  function now() {
+    lastTime = VST.syncMerge ? VST.syncMerge.stamp(lastTime) : Math.max(Date.now(), lastTime + 1);
+    return lastTime;
+  }
 
   /* ---------- small records (localStorage) ---------- */
 
@@ -144,17 +158,69 @@
     return (h >>> 0).toString(36);
   }
 
-  /** The stored photo for an uploaded item, as a Blob. */
+  /*
+   * Where to get an uploaded photo this device doesn't have (set by syncing):
+   * fn(item) -> Blob. The photo is kept here once fetched.
+   */
+  let fetchMissing = null;
+  function onMissingPhoto(fn) {
+    fetchMissing = fn;
+  }
+
+  /** The stored photo for an uploaded item, as a Blob (fetched from the synced copy if needed). */
   async function loadUpload(item) {
-    const blob = await getBlob(item.blobId);
+    let blob = await getBlob(item.blobId);
+    if (!blob && fetchMissing && item.photo) {
+      blob = await fetchMissing(item);
+      if (blob) await putBlob(item.blobId, blob);
+    }
     if (!blob) throw new Error('missing');
     return blob;
+  }
+
+  /* ---------- for syncing photos ---------- */
+
+  /** Uploaded photos in sets and history that don't have a synced name yet: [{ blobId }]. */
+  function uploadsToName() {
+    const seen = new Map();
+    const note = (it) => it && it.source === 'upload' && it.blobId && !it.photo && seen.set(it.blobId, { blobId: it.blobId });
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return [...seen.values()];
+  }
+  /** Records a photo's synced name on every item that uses it. */
+  function namePhoto(blobId, name) {
+    const list = sets();
+    let changed = false;
+    for (const s of list) {
+      for (const it of s.items) {
+        if (it.blobId === blobId && it.photo !== name) {
+          it.photo = name;
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveSets(list);
+    const h = history();
+    if (h.some((it) => it.blobId === blobId && it.photo !== name)) write(HISTORY_KEY, h.map((it) => (it.blobId === blobId ? { ...it, photo: name } : it)));
+  }
+  /** The synced names of the photos sets and history still use. */
+  function photosInUse() {
+    const used = new Set();
+    const note = (it) => it && it.photo && used.add(it.photo);
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return used;
+  }
+  /** This device's stored photo, if any (for uploading it). */
+  function photoBlob(blobId) {
+    return getBlob(blobId).catch(() => null);
   }
 
   /** Only the fields worth keeping (drops temporary ones like _order). */
   function clean(item) {
     const out = {};
-    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'added']) {
+    for (const k of ['id', 'source', 'museum', 'title', 'artist', 'date', 'type', 'thumb', 'image', 'imageFallback', 'link', 'credit', 'needsRelay', 'blobId', 'photo', 'crop', 'added']) {
       if (item[k] !== undefined && item[k] !== '') out[k] = item[k];
     }
     return out;
@@ -180,7 +246,8 @@
   }
   function createSet(name) {
     const list = sets();
-    const set = { id: uid('set'), name: uniqueName(name, list), created: Date.now(), updated: Date.now(), items: [] };
+    const t = now();
+    const set = { id: uid('set'), name: uniqueName(name, list), nameAt: t, created: t, updated: t, items: [], removed: {} };
     list.unshift(set);
     saveSets(list);
     return set;
@@ -193,16 +260,20 @@
     const set = list.find((s) => s.id === id);
     if (!set) return null;
     fn(set);
-    set.updated = Date.now();
+    set.updated = now();
     saveSets(list);
     return set;
   }
   function renameSet(id, name) {
     const others = sets().filter((s) => s.id !== id);
-    return updateSet(id, (s) => (s.name = uniqueName(name, others)));
+    return updateSet(id, (s) => {
+      s.name = uniqueName(name, others);
+      s.nameAt = now();
+    });
   }
   function deleteSet(id) {
     saveSets(sets().filter((s) => s.id !== id));
+    write(SETS_DELETED_KEY, { ...read(SETS_DELETED_KEY, {}), [id]: now() });
     return cleanup();
   }
   /** Adds an item; returns false if it was already in the set. */
@@ -210,14 +281,17 @@
     let added = false;
     updateSet(id, (s) => {
       if (s.items.some((it) => it.id === item.id)) return;
-      s.items.push(clean(item));
+      s.items.push({ ...clean(item), at: now() });
       added = true;
     });
     if (added) keep();
     return added;
   }
   function removeFromSet(id, itemId) {
-    updateSet(id, (s) => (s.items = s.items.filter((it) => it.id !== itemId)));
+    updateSet(id, (s) => {
+      s.items = s.items.filter((it) => it.id !== itemId);
+      s.removed = { ...(s.removed || {}), [itemId]: now() };
+    });
     return cleanup();
   }
 
@@ -229,19 +303,80 @@
   }
   /** Records that an item was studied (most recent first, no duplicates). */
   function record(item) {
+    const prev = history().find((it) => it.id === item.id);
     const list = history().filter((it) => it.id !== item.id);
-    list.unshift({ ...clean(item), viewed: Date.now() });
+    // keep what this device already knows about the image (its synced photo name, its crop)
+    const keep = {};
+    if (prev && prev.photo && !item.photo) keep.photo = prev.photo;
+    if (prev && prev.crop && (!item.crop || (prev.crop.at || 0) > (item.crop.at || 0))) keep.crop = prev.crop;
+    list.unshift({ ...clean(item), ...keep, viewed: now() });
     const dropped = list.splice(HISTORY_MAX);
     write(HISTORY_KEY, list);
     if (dropped.some((it) => it.blobId)) cleanup();
   }
+  function historyMarks() {
+    const m = read(HISTORY_REMOVED_KEY, {});
+    return { removed: (m && m.removed) || {}, clearedAt: (m && m.clearedAt) || 0 };
+  }
   function removeFromHistory(itemId) {
     write(HISTORY_KEY, history().filter((it) => it.id !== itemId));
+    const m = historyMarks();
+    write(HISTORY_REMOVED_KEY, { ...m, removed: { ...m.removed, [itemId]: now() } });
     return cleanup();
   }
   function clearHistory() {
     write(HISTORY_KEY, []);
+    write(HISTORY_REMOVED_KEY, { removed: {}, clearedAt: now() });
     return cleanup();
+  }
+
+  /* ---------- for syncing: what this device holds, and taking in a merged copy ---------- */
+
+  function setsDoc() {
+    return { sets: sets(), deleted: read(SETS_DELETED_KEY, {}) || {} };
+  }
+  function applySetsDoc(doc) {
+    saveSets(doc.sets || []);
+    write(SETS_DELETED_KEY, doc.deleted || {});
+  }
+  function historyDoc() {
+    return { items: history(), ...historyMarks() };
+  }
+  function applyHistoryDoc(doc) {
+    write(HISTORY_KEY, doc.items || []);
+    write(HISTORY_REMOVED_KEY, { removed: doc.removed || {}, clearedAt: doc.clearedAt || 0 });
+  }
+
+  /**
+   * Remembers an image's crop (fractions of the image: { x, y, w, h, preset,
+   * landscape }) on every saved copy of it, so it comes back when the image
+   * is opened again, on this device or, with sync, another one.
+   */
+  function setCrop(itemId, crop) {
+    const c = { ...crop, at: now() };
+    const list = sets();
+    let changed = false;
+    for (const s of list) {
+      for (const it of s.items) {
+        if (it.id === itemId) {
+          it.crop = c;
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveSets(list);
+    const h = history();
+    if (h.some((it) => it.id === itemId)) write(HISTORY_KEY, h.map((it) => (it.id === itemId ? { ...it, crop: c } : it)));
+    return c;
+  }
+
+  /** The latest crop saved for an image, or null. */
+  function cropFor(itemId) {
+    let best = null;
+    const note = (it) => it && it.id === itemId && it.crop && (!best || (it.crop.at || 0) > (best.at || 0)) && (best = it.crop);
+    sets().forEach((s) => s.items.forEach(note));
+    history().forEach(note);
+    return best;
   }
 
   /** Any saved copy of an item (from a set or history), by id. */
@@ -341,5 +476,16 @@
     importSet,
     cleanup,
     clean,
+    setsDoc,
+    applySetsDoc,
+    onMissingPhoto,
+    setCrop,
+    cropFor,
+    uploadsToName,
+    namePhoto,
+    photosInUse,
+    photoBlob,
+    historyDoc,
+    applyHistoryDoc,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

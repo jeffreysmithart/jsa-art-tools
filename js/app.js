@@ -8,6 +8,9 @@
   const P = VST.process;
   const C = VST.color;
   const T = VST.timer;
+  const CO = VST.compose;
+  const G = VST.gamut;
+  const PAL = VST.palette;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -39,7 +42,10 @@
     mode: 'reference',
     view: 'both',
     flip: false,
-    tone: 'gray', // 'gray' | 'color' | 'poster' (main colors)
+    tone: 'gray', // 'gray' | 'color' | 'poster' (main colors) | 'palette' (limited palette)
+    tonePrev: 'gray', // the tone to go back to when the palette stops painting the study
+    palBands: 0, // Palette's own number of values (0 = all), kept apart so the palette preview isn't flattened by the value study's count
+    bandsOther: 4, // the value study's count, kept while the Palette tone is on
     bands: 4, // 0 = all values (no grouping), else 2..6
     thresholds: {}, // per number of values, e.g. { 4: [25, 50, 75] }
     levelsMode: 'average', // true to the image's light key
@@ -47,12 +53,18 @@
     posterK: 5,
     blur: 0,
     grid: { on: false, cols: 3, rows: 3, diag: false, color: 'black', opacity: 70 },
+    // composition guides; the chosen kinds also show in Crop, even when hidden here
+    compose: { on: false, thirds: true, golden: false, diag: false, cross: false, color: 'white' },
     exportFormat: 'png',
     exportGrid: true,
     timerVisible: false,
     minutes: 10,
     rounds: 1,
     breakSec: 10,
+    memorySec: 0, // memory mode: look this long, then draw with the image hidden (0 = off)
+    memoryLast: 30, // the look time M turns back on
+    revealSeq: '', // staged reveal during timed rounds, e.g. '2,3,full' ('' = off)
+    revealLast: '2,3,full', // the stages the Reveal button and R use
     chime: true,
     paintingsOnly: true,
     museum: 'all', // 'all' or a museum id: 'aic', 'met', 'cma'
@@ -63,6 +75,24 @@
     minePaper: true, // compare: correct the photographed paper to white
     mineOverlay: false, // compare: lay my study over the reference
     mineOpacity: 50,
+    mineStyle: 'blend', // overlay: 'blend' (at a strength), 'flicker' (tap to swap) or 'difference'
+    mineDiff: false, // compare: mark where my values differ from the reference's
+    workMode: '', // the way in: 'prepare' (a painting), 'study' (a value study), 'color' (palette), or '' (just the tools)
+    spaceUnused: false, // color space: also show the colors the picture doesn't use
+    palette: ['prussian-blue', 'yellow-ochre', 'vermilion', 'ivory-black', 'titanium-white'], // limited palette paints
+    palMark: true, // Palette study: stripe what the palette can't reach
+    palShow: false, // color space: show the palette's range and fade what it can't mix (off unless asked)
+    overlapBand: 'all', // gamut overlap wheel: 'all' | 'darks' | 'middles' | 'lights'
+    palMine: null, // the palette of your own last chosen or saved, so changes to it can be saved back
+    mask: null, // gamut mask: { shape, points: [[a, b], …] } (made when first shown)
+    maskOn: false, // paint the study inside the mask
+    maskStrength: 100, // how far colors outside move toward the mask (percent)
+    maskShowPal: false, // gamut mask wheel: outline what the palette can mix
+    maskMine: null, // the saved mask last chosen or saved, so changes to it can be saved back
+    maskTarget: 'picture', // paints for the mask: 'picture' (the picture moved into it) or 'whole' (every color inside it)
+    spaceMatch: 0, // color space: how close a color must be to count as the tapped one (ΔE; 0 = that dot only)
+    folds: { explore: false, space: false, mask: false }, // Color tab: which folded sections are open
+    zooms: {}, // Present: the zoom kept for each image, { [image id]: { z, cx, cy } }
     settingsVersion: 3,
   };
 
@@ -70,6 +100,9 @@
     const saved = store.get('settings', {}) || {};
     const s = { ...DEFAULTS, ...saved };
     s.grid = { ...DEFAULTS.grid, ...(saved.grid || {}) };
+    s.compose = { ...DEFAULTS.compose, ...(saved.compose || {}) };
+    s.folds = { ...DEFAULTS.folds, ...(saved.folds || {}) };
+    if (!s.zooms || typeof s.zooms !== 'object' || Array.isArray(s.zooms)) s.zooms = {};
     // settings saved by the first version used a single "style" choice
     if (saved.style && !saved.tone) {
       if (saved.style === 'gray') {
@@ -83,7 +116,13 @@
     }
     // the second version kept "main colors" as a separate method
     if (saved.method === 'poster') s.tone = 'poster';
-    if (!['gray', 'color', 'poster'].includes(s.tone)) s.tone = 'gray';
+    if (!['gray', 'color', 'poster', 'palette'].includes(s.tone)) s.tone = 'gray';
+    if (!['blend', 'flicker', 'difference'].includes(s.mineStyle)) s.mineStyle = 'blend';
+    if (!['', 'prepare', 'study', 'color'].includes(s.workMode)) s.workMode = '';
+    if (!['gray', 'color', 'poster'].includes(s.tonePrev)) s.tonePrev = 'gray';
+    if (!(s.palBands === 0 || (s.palBands >= 2 && s.palBands <= 6))) s.palBands = 0;
+    if (!(s.bandsOther === 0 || (s.bandsOther >= 2 && s.bandsOther <= 6))) s.bandsOther = 4;
+    if (!Array.isArray(s.palette) || !s.palette.length) s.palette = DEFAULTS.palette.slice();
     // earlier versions defaulted to even steps; the default is now the image's average
     if ((saved.settingsVersion || 1) < 3 && s.levelsMode === 'even') s.levelsMode = 'average';
     s.settingsVersion = DEFAULTS.settingsVersion;
@@ -95,12 +134,20 @@
     return s;
   }
   const S = loadSettings();
+  // on a phone, two stacked images are small: start on the study alone
+  if (!(store.get('settings', {}) || {}).view && window.matchMedia && matchMedia('(max-width: 600px)').matches) S.view = 'study';
   if (S.view === 'compare') S.view = 'both'; // the study photo isn't kept between visits
   let saveTimer = 0;
+  /*
+   * Staged reveal: the study steps through a few values (2, then 3, …) and
+   * ends on the original. It borrows the view, tone and number of values,
+   * so `snapshot` holds the painter's own, which are what get saved.
+   */
+  const reveal = { active: false, stages: [], index: -1, snapshot: null, timed: false, skipRound: false };
   function flushSave() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    store.set('settings', S);
+    store.set('settings', reveal.snapshot ? { ...S, ...reveal.snapshot } : S);
   }
   function save() {
     clearTimeout(saveTimer);
@@ -115,6 +162,33 @@
   /* ================= State ================= */
 
   let presenting = false; // Present mode: controls hidden
+  // Present's zoom: z is the magnification, (cx, cy) the picture's point at the center of the frame (0..1)
+  const pz = { z: 1, cx: 0.5, cy: 0.5, key: null };
+  const flick = { mine: true }; // Compare's Flicker overlay: my study on top (true) or the reference
+  /*
+   * Modes: three ways in. A mode sets things up when you choose it (a
+   * broader preset), then shows its steps at the top of the sidebar and
+   * rings the next one's control. It never hides a tool; any setting can
+   * still be changed. `seen` holds the steps visited for this image.
+   */
+  const MODES = {
+    prepare: { name: 'Prepare a painting', steps: ['image', 'crop', 'values', 'palette', 'grid', 'present', 'check'], optional: ['palette'] },
+    study: { name: 'Value study', steps: ['image', 'values', 'paint', 'check'], optional: [] },
+    color: { name: 'Color and palette', steps: ['image', 'palette', 'explore'], optional: [] },
+  };
+  const STEPS = {
+    image: { name: 'Image', tip: 'Choose a reference: your own photo, a museum painting, or one from a set' },
+    crop: { name: 'Crop', tip: 'Crop it to your canvas size' },
+    values: { name: 'Values', tip: 'Set the number of values and where they split' },
+    palette: { name: 'Palette', tip: 'Choose the paints and see the picture painted with them' },
+    grid: { name: 'Grid', tip: 'A grid for transferring the drawing to the canvas' },
+    present: { name: 'Present', tip: 'Paint from the screen: just the pictures, big' },
+    paint: { name: 'Paint', tip: 'Paint from the screen (Present); the timer is there if you want it' },
+    check: { name: 'Check', tip: 'Photograph your study and compare it with the reference' },
+    explore: { name: 'Explore', tip: 'What stands in for each hue, and the wheel of what it can mix' },
+  };
+  const STEP_TARGET = { crop: '#btn-crop', grid: '#btn-grid', present: '#btn-present', paint: '#btn-present', values: '#ptab-study', palette: '#ptab-color', explore: '#ptab-color', check: '#ptab-study' };
+  const modeState = { seen: new Set() };
   const img = { item: null, el: null, w: 0, h: 0, crop: null, cropPreset: 'free', cropLandscape: null, meta: null, name: 'reference', url: null };
   const work = { w: 0, h: 0, rgba: null, lab0: null, lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, shares: [] };
 
@@ -259,8 +333,36 @@
     el.classList.toggle('error', !!isError);
   }
 
+  /*
+   * An image's crop is saved with it (in sets and history, as fractions of
+   * the image, so it fits whatever size the image loads at), so it comes
+   * back when the image is opened again, on this device or another.
+   */
+  function rememberCrop() {
+    if (!img.item || !img.item.id || !img.w) return;
+    const r = img.crop || { x: 0, y: 0, w: img.w, h: img.h };
+    const crop = { x: r.x / img.w, y: r.y / img.h, w: r.w / img.w, h: r.h / img.h, preset: img.cropPreset, landscape: img.cropLandscape };
+    img.item.crop = L.setCrop(img.item.id, crop);
+  }
+  function restoreCrop(item) {
+    const c = item && item.id ? L.cropFor(item.id) || item.crop : null;
+    if (!c || !img.w) return;
+    const full = c.x <= 0.0005 && c.y <= 0.0005 && c.w >= 0.9995 && c.h >= 0.9995;
+    img.crop = full
+      ? null
+      : {
+          x: Math.round(c.x * img.w),
+          y: Math.round(c.y * img.h),
+          w: Math.max(1, Math.min(img.w - Math.round(c.x * img.w), Math.round(c.w * img.w))),
+          h: Math.max(1, Math.min(img.h - Math.round(c.y * img.h), Math.round(c.h * img.h))),
+        };
+    img.cropPreset = c.preset || 'free';
+    img.cropLandscape = c.landscape == null ? null : c.landscape;
+  }
+
   function setImage(el, { name, meta = null, objectUrl = null, item = null }) {
     if (img.url) URL.revokeObjectURL(img.url);
+    modeState.seen.clear();
     img.item = item;
     img.el = el;
     img.w = el.naturalWidth;
@@ -268,6 +370,7 @@
     img.crop = null;
     img.cropPreset = 'free';
     img.cropLandscape = null;
+    restoreCrop(item);
     img.meta = meta;
     img.name = name || 'reference';
     img.url = objectUrl;
@@ -313,8 +416,15 @@
     cvStudy.height = h;
     Object.assign(work, { w, h, rgba, lab0: P.computeLab(rgba, w * h), lab: null, blurKey: null, hist: null, centroids: null, centroidKey: null, refit: true });
     $('#panels').classList.remove('is-empty');
+    syncImageTools();
     layout();
     renderStudy();
+    renderSteps();
+  }
+
+  /** The tools that act on a picture wait until there is one. */
+  function syncImageTools() {
+    ['#btn-save-set', '#btn-crop', '#btn-flip', '#btn-grid', '#btn-present', '#btn-download'].forEach((sel) => ($(sel).disabled = !img.el));
   }
 
   /** Blur strength as a Gaussian sigma, relative to image size. */
@@ -333,7 +443,7 @@
 
   /** True when the study is grouped into a set number of values. */
   function grouped() {
-    return S.tone !== 'poster' && S.bands >= 2;
+    return (S.tone === 'gray' || S.tone === 'color' || S.tone === 'palette') && S.bands >= 2;
   }
 
   function currentThresholds() {
@@ -356,15 +466,40 @@
     return P.bandLevels('average', S.bands, thresholds, hist).map((L) => Math.round(L / 5) * 5);
   }
 
+  /*
+   * The gamut mask, applied to the study: each color outside the mask
+   * moves toward the nearest color inside, at the same value. Only the
+   * study (and its downloads) change; the analysis tools see the picture.
+   */
+  const MK = VST.mask;
+  /** What the mask does to the study right now, as a key ('' when it does nothing). */
+  function maskKey() {
+    if (!S.maskOn || !MK.valid(S.mask) || S.tone === 'gray') return '';
+    return `${JSON.stringify(S.mask.points)}|${S.maskStrength}`;
+  }
+  function masked(lab) {
+    return maskKey() ? MK.apply(lab, S.mask, S.maskStrength / 100) : lab;
+  }
+  const maskCache = { lab: null, key: '', out: null };
+  /** The picture the study is painted from: the working picture, moved into the mask when that's on. */
+  function studyLab() {
+    const key = maskKey();
+    if (!key) return work.lab;
+    if (maskCache.lab !== work.lab || maskCache.key !== key) Object.assign(maskCache, { lab: work.lab, key, out: masked(work.lab) });
+    return maskCache.out;
+  }
+
   function ensureCentroids() {
-    const key = `${work.blurKey}|${S.posterK}`;
+    const key = `${work.blurKey}|${S.posterK}|${maskKey()}`;
     if (work.centroids && work.centroidKey === key) return;
-    work.centroids = P.kmeans(work.lab, S.posterK);
+    work.centroids = P.kmeans(studyLab(), S.posterK);
     work.centroidKey = key;
   }
 
   /** Renders the study for a Lab image into `out` (RGBA). Returns band info. */
-  function produceStudy(lab, hist, out) {
+  function produceStudy(lab, hist, out, width) {
+    if (S.tone === 'palette' && grouped()) return renderPaletteValues(lab, hist, out);
+    if (S.tone === 'palette') return renderPalette(lab, out, width);
     if (S.tone === 'poster') {
       const shares = P.renderPoster(lab, work.centroids, true, out);
       return work.centroids.map((c, i) => ({ L: c[0], rgb: C.labToRgb8(c[0], c[1], c[2], [0, 0, 0]), share: shares[i] }));
@@ -393,12 +528,14 @@
     }
     if (S.tone === 'poster') ensureCentroids();
     const imageData = ctxStudy.createImageData(work.w, work.h);
-    const bands = produceStudy(work.lab, work.hist, imageData.data);
+    const bands = produceStudy(studyLab(), work.hist, imageData.data, work.w);
     ctxStudy.putImageData(imageData, 0, 0);
+    work.bands = bands;
     renderSwatches(bands);
     renderMine();
     drawHistogram();
     renderPresetSelect();
+    if (S.panel === 'color') renderGamut();
     save();
   }
 
@@ -435,7 +572,7 @@
       frame.style.height = `${Math.floor(h)}px`;
       frame.classList.toggle('flipped', S.flip);
     });
-    drawOverlays();
+    applyZoom();
   }
 
   const GRID_COLORS = { black: '0,0,0', white: '255,255,255', red: '226,56,56' };
@@ -470,6 +607,13 @@
     ctx.restore();
   }
 
+  /** Composition guides over a picture (rule of thirds, golden section, diagonals). */
+  function drawCompose(ctx, W, H, lineWidth) {
+    const g = S.compose;
+    if (!g.on) return;
+    CO.draw(ctx, g, 0, 0, W, H, { color: GRID_COLORS[g.color] || GRID_COLORS.white, alpha: 0.8, lineWidth });
+  }
+
   function drawOverlays() {
     const dpr = window.devicePixelRatio || 1;
     $$('.frame .overlay').forEach((ov) => {
@@ -480,10 +624,22 @@
       if (ov.height !== H) ov.height = H;
       const ctx = ov.getContext('2d');
       ctx.clearRect(0, 0, W, H);
-      drawGrid(ctx, W, H, Math.max(1, Math.round(dpr)));
+      // zoomed in Present: the grid and guides move with the picture, and their lines stay thin
+      const zoomed = frame.classList.contains('zoomed');
+      const line = Math.max(1, Math.round(dpr));
+      ctx.save();
+      if (zoomed) {
+        ctx.translate(W / 2 - pz.cx * W * pz.z, H / 2 - pz.cy * H * pz.z);
+        ctx.scale(pz.z, pz.z);
+      }
+      drawGrid(ctx, W, H, zoomed ? line / pz.z : line);
+      drawCompose(ctx, W, H, zoomed ? line / pz.z : line);
+      ctx.restore();
     });
     $('#btn-grid').setAttribute('aria-pressed', String(S.grid.on));
+    $('#pz-grid').setAttribute('aria-pressed', String(S.grid.on));
     $('#grid-on').checked = S.grid.on;
+    $('#compose-on').checked = S.compose.on;
   }
 
   new ResizeObserver(() => layout()).observe($('#panels'));
@@ -496,6 +652,19 @@
     setSeg($('#k-seg'), 'k', S.posterK);
     $('#values-ctl').hidden = S.tone === 'poster';
     $('#poster-ctl').hidden = S.tone !== 'poster';
+    $('#palette-ctl').hidden = S.tone !== 'palette';
+    $('#pal-mark').checked = S.palMark;
+    $('#pal-mark').closest('label').hidden = grouped(); // a value study in the palette matches values first: nothing to mark
+    $('#pal-live').checked = S.tone === 'palette';
+    $('#palette-name').textContent = paletteName();
+    const dots = $('#palette-dots');
+    dots.innerHTML = '';
+    for (const p of PAL.paintsFor(S.palette)) {
+      const d = document.createElement('i');
+      d.style.background = p.hex;
+      d.title = p.name;
+      dots.appendChild(d);
+    }
     $('#split-ctl').hidden = !grouped();
     $('#levels-ctl').hidden = !grouped();
     $('#levels-mode').value = S.levelsMode;
@@ -506,12 +675,21 @@
   }
 
   function updateCaption() {
-    let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors` }[S.tone];
+    let text = { gray: 'Grayscale', color: 'Color', poster: `${S.posterK} main colors`, palette: `Palette · ${paletteName()}` }[S.tone];
     if (grouped()) text += ` · ${S.bands} values${S.bands === 2 ? ' (notan)' : ''}`;
     if (S.blur) text += ' · squint';
+    if (maskKey()) text += ' · in a gamut mask';
     const comparing = S.view === 'compare' && mine.el;
     const overlay = comparing && S.mineOverlay;
-    $('#study-caption').textContent = overlay ? `Reference with my study on top · ${text}` : comparing ? `Reference · ${text}` : text;
+    const onTop =
+      S.mineStyle === 'flicker'
+        ? flick.mine
+          ? 'My study (tap for the reference)'
+          : 'Reference (tap for my study)'
+        : S.mineStyle === 'difference'
+          ? 'Where my study and the reference differ'
+          : 'Reference with my study on top';
+    $('#study-caption').textContent = overlay ? `${onTop} · ${text}` : comparing ? `Reference · ${text}` : text;
     $('#mine-caption').textContent = `My study · ${text}`;
   }
 
@@ -582,6 +760,10 @@
       bar.title = `Value ${valueLabel(b.L)} · ${Math.round(b.share * 100)}% of the picture`;
       track.appendChild(bar);
       el.appendChild(track);
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.style.background = bar.style.background;
+      el.appendChild(chip);
       if (editable) {
         const input = document.createElement('input');
         input.type = 'number';
@@ -662,10 +844,29 @@
   });
   ['pointerup', 'pointercancel'].forEach((ev) => histCanvas.addEventListener(ev, () => (histDrag = -1)));
 
-  function setTone(tone) {
+  /**
+   * Changes the tone, keeping a number of values for each side: the Palette
+   * tone has its own (all values to start, so the palette preview isn't
+   * flattened), and the value study keeps its own while Palette is on.
+   */
+  function switchTone(tone) {
+    if (tone === S.tone) return;
+    if (S.tone === 'palette') {
+      S.palBands = S.bands;
+      S.bands = S.bandsOther;
+    } else if (tone === 'palette') {
+      S.bandsOther = S.bands;
+      S.bands = S.palBands;
+    }
+    if (tone === 'palette') S.tonePrev = S.tone;
+    if (S.bands >= 2 && S.splitSource[S.bands] === 'auto') work.refit = true;
     S.tone = tone;
+  }
+  function setTone(tone) {
+    switchTone(tone);
     syncStudyControls();
     requestStudy();
+    save();
   }
   $('#tone-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -677,7 +878,7 @@
   });
   function setBands(n) {
     S.bands = n;
-    if (S.tone === 'poster') S.tone = 'color'; // values apply to grayscale or color
+    if (S.tone === 'poster') S.tone = 'color'; // values apply to grayscale, color and palette
     if (S.splitSource[n] === 'auto') work.refit = true;
     syncStudyControls();
     requestStudy();
@@ -730,6 +931,7 @@
   function gridChanged() {
     drawOverlays();
     save();
+    renderSteps();
   }
   function toggleGrid(on = !S.grid.on) {
     S.grid.on = on;
@@ -783,12 +985,49 @@
     })
   );
 
+  /* ================= Composition guides ================= */
+
+  function syncComposeControls() {
+    const g = S.compose;
+    $('#compose-on').checked = g.on;
+    $$('[data-compose]').forEach((el) => (el.checked = !!g[el.dataset.compose]));
+    $$('[data-guide]').forEach((b) => b.setAttribute('aria-pressed', String(!!g[b.dataset.guide])));
+    $('#compose-color').value = g.color;
+  }
+  function composeChanged() {
+    syncComposeControls();
+    drawOverlays();
+    if (cropper.isOpen()) cropper.redraw();
+    save();
+  }
+  function toggleCompose(on = !S.compose.on) {
+    S.compose.on = on;
+    // showing guides with none chosen would show nothing: start with thirds
+    if (on && !CO.any(S.compose)) S.compose.thirds = true;
+    composeChanged();
+  }
+  /** Turns one kind of guide on or off. Choosing one in the Canvas tab also shows the guides. */
+  function setGuide(kind, on, show = true) {
+    S.compose[kind] = on;
+    if (on && show) S.compose.on = true;
+    composeChanged();
+  }
+  $('#compose-on').addEventListener('change', (e) => toggleCompose(e.target.checked));
+  $$('[data-compose]').forEach((el) => el.addEventListener('change', () => setGuide(el.dataset.compose, el.checked)));
+  $('#compose-color').addEventListener('change', (e) => {
+    S.compose.color = e.target.value;
+    composeChanged();
+  });
+  // the same choices inside Crop (they don't turn the guides on over the study)
+  $$('[data-guide]').forEach((b) => b.addEventListener('click', () => setGuide(b.dataset.guide, !S.compose[b.dataset.guide], false)));
+
   /* ================= View, flip, crop ================= */
 
   function setView(v) {
     if (v === 'compare' && !mine.el) v = 'both';
     S.view = v;
     setSeg($('#view-seg'), 'view', v);
+    setSeg($('#present-view'), 'view', v);
     syncMineUi();
     layout();
     save();
@@ -818,9 +1057,15 @@
     customBox: $('#crop-custom'),
     customW: $('#crop-cw'),
     customH: $('#crop-ch'),
+    // the composition guides chosen in the Canvas tab, over the crop
+    drawGuides(ctx, x, y, w, h) {
+      CO.draw(ctx, S.compose, x, y, w, h, { alpha: 0.6, lineWidth: 1 });
+    },
   });
   function openCrop() {
     if (!img.el) return toast('Load an image first.');
+    modeState.seen.add('crop');
+    renderSteps();
     cropper.open({
       image: img.el,
       rect: img.crop,
@@ -834,6 +1079,7 @@
         S.cropCustom = custom; // remembered for the next image
         save();
         buildSource();
+        rememberCrop();
       },
     });
   }
@@ -970,7 +1216,7 @@
     if (!hasMine() || !work.lab) return;
     ensureMineLab();
     const imageData = ctxMine.createImageData(mine.w, mine.h);
-    const bands = produceStudy(mine.lab, work.hist, imageData.data);
+    const bands = produceStudy(mine.lab, work.hist, imageData.data, mine.w);
     ctxMine.putImageData(imageData, 0, 0);
     if (S.mineOverlay) {
       cvMineOverlay.width = mine.w;
@@ -979,6 +1225,95 @@
     }
     mine.bands = bands;
     renderSwatches(bands, $('#swatches-mine'));
+    renderValueDiff();
+    renderCompareRead();
+  }
+
+  /*
+   * Where my values differ: both studies grouped with the same splits, then
+   * compared spot by spot. Blue where mine is lighter than the reference,
+   * red where it's darker. Needs a number of values and my study fitted to
+   * the reference's shape.
+   */
+  const cvMineDiff = $('#cv-mine-diff');
+  function renderValueDiff() {
+    mine.diff = null;
+    const can = hasMine() && grouped() && mine.lab && mine.w === work.w && mine.h === work.h;
+    $('#mine-diff-row').hidden = !can;
+    cvMineDiff.hidden = !(can && S.mineDiff);
+    if (!can) return;
+    const t = currentThresholds();
+    const levels = currentLevels(work.hist);
+    const ref = P.flattenValues(studyLab(), t, levels).band;
+    const my = P.flattenValues(mine.lab, t, levels).band;
+    const n = ref.length;
+    let lighter = 0;
+    let darker = 0;
+    const draw = S.mineDiff;
+    const img2 = draw ? new ImageData(mine.w, mine.h) : null;
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      const d = my[i] - ref[i];
+      if (!d) continue;
+      if (d > 0) lighter++;
+      else darker++;
+      if (draw) {
+        const c = d > 0 ? [64, 148, 255] : [240, 88, 60];
+        img2.data[j] = c[0];
+        img2.data[j + 1] = c[1];
+        img2.data[j + 2] = c[2];
+        img2.data[j + 3] = 160;
+      }
+    }
+    mine.diff = { lighter: lighter / n, darker: darker / n };
+    if (draw) {
+      cvMineDiff.width = mine.w;
+      cvMineDiff.height = mine.h;
+      cvMineDiff.getContext('2d').putImageData(img2, 0, 0);
+    }
+  }
+
+  /** Names for the values, darkest to lightest: "dark, middle, light", or "darkest … lightest". */
+  function valueNames(n) {
+    if (n === 2) return ['dark', 'light'];
+    if (n === 3) return ['dark', 'middle', 'light'];
+    return Array.from({ length: n }, (_, i) => {
+      if (i === 0) return 'darkest';
+      if (i === n - 1) return 'lightest';
+      if (n % 2 && i === (n - 1) / 2) return 'middle';
+      return i < n / 2 ? (i === 1 ? 'second-darkest' : 'third-darkest') : i === n - 2 ? 'second-lightest' : 'third-lightest';
+    });
+  }
+
+  /** One or two plain sentences: the biggest difference in value balance, the light key, and where values differ. */
+  function renderCompareRead() {
+    const box = $('#compare-read');
+    const ref = work.bands;
+    const my = mine.bands;
+    box.hidden = !(hasMine() && grouped() && ref && my && ref.length === my.length);
+    if (box.hidden) return;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const names = valueNames(ref.length);
+    let k = 0;
+    for (let i = 1; i < ref.length; i++) if (Math.abs(my[i].share - ref[i].share) > Math.abs(my[k].share - ref[k].share)) k = i;
+    const gap = my[k].share - ref[k].share;
+    const parts = [];
+    if (Math.abs(gap) < 0.05) parts.push('Your value balance matches the reference closely.');
+    else if (my[k].share < 0.005) parts.push(`Your ${names[k]} value is missing: 0% of your study, against ${pct(ref[k].share)} of the reference.`);
+    else parts.push(`Your ${names[k]} value covers ${pct(my[k].share)} of your study, against ${pct(ref[k].share)} of the reference.`);
+    // a value the reference uses that's missing from yours is worth saying too
+    const missing = ref.findIndex((b, i) => i !== k && b.share >= 0.05 && my[i].share < 0.005);
+    if (missing >= 0) parts.push(`Your ${names[missing]} value is missing (${pct(ref[missing].share)} of the reference).`);
+    // the light key: the average value of each, painted as each value is painted
+    const avg = (bs) => bs.reduce((sum, b) => sum + b.share * b.L, 0) / 10;
+    const key = avg(my) - avg(ref);
+    const steps = Math.abs(key);
+    if (steps >= 0.3) parts.push(`Overall it reads about ${steps.toFixed(1)} ${steps >= 1 ? 'values' : 'of a value'} ${key > 0 ? 'lighter' : 'darker'} than the reference: ${key > 0 ? 'a higher' : 'a lower'} light key.`);
+    box.textContent = parts.join(' ');
+    if (mine.diff && (mine.diff.lighter >= 0.005 || mine.diff.darker >= 0.005)) {
+      const p = document.createElement('span');
+      p.innerHTML = ` <span class="k k-light"></span>${pct(mine.diff.lighter)} of it is a value lighter than the reference at the same spot, <span class="k k-dark"></span>${pct(mine.diff.darker)} darker.`;
+      box.appendChild(p);
+    }
   }
 
   function clearMine() {
@@ -1001,12 +1336,22 @@
     $('#mine-overlay').checked = S.mineOverlay;
     $('#mine-opacity').value = S.mineOpacity;
     $('#mine-opacity-out').textContent = `${S.mineOpacity}%`;
-    $('#mine-opacity-field').hidden = !S.mineOverlay;
+    $('#mine-style-field').hidden = !S.mineOverlay;
+    setSeg($('#mine-style'), 'style', S.mineStyle);
+    $('#mine-style-hint').textContent = {
+      blend: '',
+      flicker: 'Tap the picture to swap between your study and the reference, in place.',
+      difference: 'Where the two line up goes dark; edges that don’t line up glow. Good for checking the drawing.',
+    }[S.mineStyle];
+    $('#mine-diff').checked = S.mineDiff;
+    $('#mine-opacity-field').hidden = !S.mineOverlay || S.mineStyle !== 'blend';
     cvMineOverlay.hidden = !(has && S.mineOverlay && S.view === 'compare');
-    cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
+    cvMineOverlay.classList.toggle('difference', S.mineStyle === 'difference');
+    cvMineOverlay.style.opacity = String(S.mineStyle === 'blend' ? S.mineOpacity / 100 : S.mineStyle === 'flicker' ? (flick.mine ? 1 : 0) : 1);
     $('#panels').classList.toggle('overlaying', has && S.mineOverlay);
     setSeg($('#view-seg'), 'view', S.view);
     updateCaption();
+    renderSteps();
   }
 
   function setOverlay(on) {
@@ -1037,23 +1382,51 @@
     cvMineOverlay.style.opacity = String(S.mineOpacity / 100);
     save();
   });
+  $('#mine-style').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.mineStyle = b.dataset.style;
+    flick.mine = true;
+    syncMineUi();
+    save();
+  });
+  $('#mine-diff').addEventListener('change', (e) => {
+    S.mineDiff = e.target.checked;
+    renderValueDiff();
+    renderCompareRead();
+    save();
+  });
+  // Flicker: a tap on the picture swaps my study and the reference, in place
+  $('#panels').addEventListener('click', (e) => {
+    if (!(hasMine() && S.view === 'compare' && S.mineOverlay && S.mineStyle === 'flicker') || reveal.active || e.target.closest('button, a, input, label')) return;
+    if (!e.target.closest('#panel-study')) return;
+    flick.mine = !flick.mine;
+    cvMineOverlay.style.opacity = flick.mine ? '1' : '0';
+    updateCaption();
+  });
 
 
   /* ================= Sidebar tabs: Images / Study / Canvas ================= */
 
-  const PANELS = ['images', 'study', 'canvas', 'log'];
+  const PANELS = ['images', 'study', 'color', 'canvas', 'log'];
+  const TABS = PANELS.filter((p) => p !== 'log'); // the practice log is opened from a link, not a tab
+  let panelBeforeLog = 'images';
 
   function setPanel(name) {
     if (!PANELS.includes(name)) name = 'images';
+    if (name === 'log' && S.panel !== 'log') panelBeforeLog = S.panel || 'images';
     S.panel = name;
     PANELS.forEach((p) => {
       const on = p === name;
       $(`#panel-${p}`).hidden = !on;
       const tab = $(`#ptab-${p}`);
+      if (!tab) return;
       tab.setAttribute('aria-selected', String(on));
-      tab.tabIndex = on ? 0 : -1;
+      tab.tabIndex = on || (name === 'log' && p === 'images') ? 0 : -1;
     });
     if (name === 'study') drawHistogram(); // it can't be measured while hidden
+    if (name === 'color') renderGamut();
+    $('#panels').classList.toggle('spot-pick', name === 'color');
     if (name === 'log') {
       LG.tick();
       LG.flush();
@@ -1064,20 +1437,30 @@
 
   $$('.side-tabs [role="tab"]').forEach((tab) => {
     tab.addEventListener('click', () => {
+      if (tab.dataset.panel === 'study') modeState.seen.add('values');
+      if (tab.dataset.panel === 'color') modeState.seen.add('palette');
       setPanel(tab.dataset.panel);
       $('.sidebar').scrollTop = 0;
+      renderSteps();
     });
     // arrow keys move between tabs, as in any tab list
     tab.addEventListener('keydown', (e) => {
-      const i = PANELS.indexOf(tab.dataset.panel);
-      const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? PANELS.length - 1 : null;
+      const i = TABS.indexOf(tab.dataset.panel);
+      const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
       if (next == null) return;
       e.preventDefault();
-      const p = PANELS[(next + PANELS.length) % PANELS.length];
+      const p = TABS[(next + TABS.length) % TABS.length];
       setPanel(p);
       $(`#ptab-${p}`).focus();
     });
   });
+  const openLog = () => {
+    setPanel('log');
+    $('.sidebar').scrollTop = 0;
+  };
+  $('#open-log').addEventListener('click', openLog);
+  $('#t-log').addEventListener('click', openLog);
+  $('#log-done').addEventListener('click', () => setPanel(panelBeforeLog));
 
   /* Pop-up screens: move keyboard focus in when they open and back to where it was when they close. */
   function manageFocus(modal) {
@@ -1093,8 +1476,1398 @@
       }
     }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
   }
-  ['#crop-modal', '#square-modal', '#tryon-modal'].forEach((sel) => manageFocus($(sel)));
+  ['#crop-modal', '#square-modal', '#tryon-modal', '#space-modal', '#palcmp-modal'].forEach((sel) => manageFocus($(sel)));
 
+
+  /* ================= Color tab: folded sections ================= */
+
+  /*
+   * The palette leads the Color tab; the deeper tools fold away (what stands
+   * in for each hue and the wheel, the color space, the gamut mask). Each
+   * fold remembers whether it was open, and draws when it's opened.
+   */
+  const FOLDS = { explore: '#fold-explore', space: '#sec-gamut', mask: '#sec-mask' };
+  for (const [key, sel] of Object.entries(FOLDS)) {
+    const el = $(sel);
+    el.open = !!S.folds[key];
+    el.addEventListener('toggle', () => {
+      if (S.folds[key] === el.open) return;
+      S.folds[key] = el.open;
+      if (key === 'explore' && el.open) {
+        modeState.seen.add('explore');
+        renderSteps();
+      }
+      save();
+      if (el.open) requestAnimationFrame(renderGamut);
+    });
+  }
+  /** The mask's folded heading says whether it's painting the study. */
+  function renderMaskSummary() {
+    $('#mask-sum').textContent = S.maskOn
+      ? `On: the study is painted inside the mask${S.maskStrength < 100 ? ` (${S.maskStrength}%)` : ''}`
+      : 'Plan a color scheme on the wheel, then find paints for it';
+  }
+
+  /* ================= Color tab: the color space ================= */
+
+  /*
+   * The picture's colors in a Munsell-style 3D space (value up the middle,
+   * hue around, chroma outward), small in the sidebar and large in a
+   * full-screen view you can turn, zoom, slice by value and tap to read.
+   */
+  const CS = VST.colorspace;
+  const MX = VST.munsellExact;
+
+  /**
+   * A color in Munsell terms: from the renotation data when it's loaded
+   * (exact notation, e.g. 7.8R 5.2/20), else the Lab approximation.
+   */
+  function munsellOf(L, a, b) {
+    const m = MX && MX.fromLab(L, a, b);
+    if (!m) {
+      const r = CS.munsell(L, a, b);
+      return { exact: false, neutral: r.hue === 'N', code: r.hue, name: r.hueName, value: r.value, chroma: r.chroma };
+    }
+    const f = m.hue == null ? null : MX.family(m.hue);
+    return {
+      exact: true,
+      neutral: !f,
+      code: f ? f.code : 'N',
+      name: f ? f.name : 'neutral gray',
+      hue: f ? MX.notation(m).split(' ')[0] : null, // e.g. 7.8R
+      value: Math.round(m.value * 10) / 10,
+      chroma: Math.round(m.chroma),
+      notation: MX.notation(m),
+    };
+  }
+  const toRgb = (L, a, b) => C.labToRgb8(L, a, b, [0, 0, 0]);
+  const colorCache = { lab: null, stats: null, cells: null };
+  let shell = null; // the rest of the color space, made once when first shown
+  const spaceSmall = CS.createView($('#space-small'), { toRgb });
+  const spaceBig = CS.createView($('#space-big'), { toRgb, interactive: true, onPick: showReading });
+
+  function colorData() {
+    if (!work.lab) return null;
+    if (colorCache.lab !== work.lab) {
+      colorCache.lab = work.lab;
+      colorCache.stats = G.analyze(work.lab).stats;
+      colorCache.cells = CS.sample(work.lab);
+    }
+    const marks = S.tone === 'poster' && work.centroids ? work.centroids.map((c) => ({ L: c[0], a: c[1], b: c[2] })) : [];
+    if (S.spaceUnused && !shell) shell = CS.solidShell((r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]));
+    const pal = paletteReach();
+    return {
+      cells: colorCache.cells,
+      shell: S.spaceUnused ? shell : [],
+      marks,
+      stats: colorCache.stats,
+      palette: S.palShow && pal ? ensurePalette().mixes : [],
+      out: S.palShow && pal ? pal.outCells : null,
+    };
+  }
+
+  /** The strongest colors' chroma in Munsell steps, at the main hue and a middle value. */
+  function strongMunsell(st) {
+    const t = ((st.hue == null ? 0 : st.hue) * Math.PI) / 180;
+    const m = munsellOf(50, st.strongChroma * Math.cos(t), st.strongChroma * Math.sin(t));
+    return m.exact ? m.chroma : Math.round(st.strongChroma / 5);
+  }
+
+  function renderGamut() {
+    if ($('#panel-color').hidden) return;
+    renderPaletteUi();
+    renderMask();
+    const d = colorData();
+    $('#gamut-empty').hidden = !!d;
+    if ($('#space-small').clientWidth) {
+      // folded away, it may have no size yet (Safari); it draws when its fold opens
+      spaceSmall.setShowUnused(S.spaceUnused);
+      spaceSmall.setData(d || {});
+    }
+    const box = $('#gamut-stats');
+    if (!d) {
+      box.innerHTML = '';
+      $('#space-sum').textContent = 'The picture’s colors in 3D, with its main hue and value range';
+      return;
+    }
+    const st = d.stats;
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    // the main hue in the same Munsell terms as the 3D view
+    const t = st.hue == null ? null : (st.hue * Math.PI) / 180;
+    const mh = t == null ? null : munsellOf(50, 20 * Math.cos(t), 20 * Math.sin(t));
+    box.innerHTML =
+      stat(mh && !mh.neutral ? `${cap(mh.name)} (${mh.exact ? mh.hue : mh.code})` : 'Gray', 'main hue') +
+      stat(cap(G.strength(st.strongChroma)), `strongest colors · chroma ≈ ${strongMunsell(st)}`) +
+      stat(`${Math.round(st.neutralShare * 100)}%`, 'near gray') +
+      stat(`${st.valueLow}–${st.valueHigh}`, 'value range');
+    // the figures on the folded heading, so they read without opening it
+    $('#space-sum').textContent = `Main hue ${mh && !mh.neutral ? `${mh.name} ${mh.exact ? mh.hue : mh.code}` : 'gray'} · strongest chroma ≈ ${strongMunsell(st)} · values ${st.valueLow}–${st.valueHigh}`;
+    $('#space-open').setAttribute(
+      'aria-label',
+      `Open the color space larger. Main hue ${mh && !mh.neutral ? mh.name : 'none (gray)'}; strongest colors ${G.strength(st.strongChroma)}; ${Math.round(st.neutralShare * 100)}% near gray; values ${st.valueLow} to ${st.valueHigh}.`
+    );
+    $('#gamut-marks-hint').hidden = !d.marks.length;
+    $('#pal-out-hint').hidden = !(d.out && d.out.size);
+    if (!$('#space-modal').hidden) spaceBig.setData(d);
+  }
+
+  function setSpaceUnused(on) {
+    S.spaceUnused = on;
+    $('#space-unused').checked = on;
+    $('#space-unused-big').checked = on;
+    const d = colorData();
+    spaceSmall.setShowUnused(on);
+    spaceBig.setShowUnused(on);
+    if (d) {
+      spaceSmall.setData(d);
+      spaceBig.setData(d);
+    }
+    save();
+  }
+  $('#space-unused').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
+  $('#space-unused-big').addEventListener('change', (e) => setSpaceUnused(e.target.checked));
+
+  /** What the tapped color is, in Munsell-style terms, and where it is in the picture. */
+  function showReading(cell) {
+    const box = $('#space-readout');
+    box.hidden = !cell;
+    showWhere(cell);
+    if (!cell) return;
+    const m = munsellOf(cell.L, cell.a, cell.b);
+    const [r, g, b] = toRgb(cell.L, cell.a, cell.b);
+    box.querySelector('.sw').style.background = `rgb(${r},${g},${b})`;
+    if (m.exact) {
+      box.querySelector('b').textContent = `${m.notation} · ${m.name}`;
+      box.querySelector('.mun').textContent = m.neutral ? `Munsell value ${m.value}, no chroma` : `Munsell hue ${m.hue}, value ${m.value}, chroma ${m.chroma}`;
+    } else {
+      box.querySelector('b').textContent = m.neutral ? `Value ${m.value} · neutral gray` : `Value ${m.value} · chroma ≈ ${m.chroma} · hue ≈ ${m.code} (${m.name})`;
+      box.querySelector('.mun').textContent = '';
+    }
+    const model = ensurePalette();
+    const hit = model && PAL.nearest(model, cell.L, cell.a, cell.b);
+    const near = hit && model.mixes[hit.i];
+    $('#space-palette').textContent = !near
+      ? ''
+      : hit.d <= PAL.REACH
+        ? `Your palette: ${PAL.recipe(near.parts)} (ΔE ${Math.round(hit.d)})`
+        : `Out of your palette’s reach: the closest mix is ${Math.round(hit.d)} ΔE away (${PAL.recipe(near.parts)})`;
+    const pct = cell.share * 100;
+    box.querySelector('.share').textContent = pct < 0.1 ? 'under 0.1% of the picture' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}% of the picture`;
+  }
+
+  /*
+   * Where the tapped color is: a copy of the picture beside the space with
+   * the matching pixels in color and the rest in faded gray. Tapping the
+   * picture finds that pixel's color in the space.
+   */
+  const MATCHES = [0, 6, 12, 20];
+  let whereCell = null;
+  function showWhere(cell) {
+    whereCell = cell;
+    const panel = $('#space-pic');
+    const was = !panel.hidden;
+    panel.hidden = !cell || !work.lab;
+    if (was !== !panel.hidden) spaceBig.request(); // the space's room changed
+    if (panel.hidden) return;
+    const cv = $('#space-pic-canvas');
+    if (cv.width !== work.w || cv.height !== work.h) {
+      cv.width = work.w;
+      cv.height = work.h;
+    }
+    cv.classList.toggle('flipped', S.flip);
+    const within = MATCHES.includes(S.spaceMatch) ? S.spaceMatch : 0;
+    $('#space-match').value = String(within);
+    const { mask, share } = CS.matchMask(work.lab, cell, within);
+    const ctx = cv.getContext('2d');
+    const out = ctx.createImageData(work.w, work.h);
+    // the white edge is about 1.5 screen pixels wide however large the picture is shown
+    const shownW = cv.getBoundingClientRect().width || 400;
+    CS.paintMatch(work.lab, mask, out.data, toRgb, { width: work.w, edge: Math.max(1, Math.round((1.5 * work.w) / shownW)) });
+    ctx.putImageData(out, 0, 0);
+    const pct = share * 100;
+    $('#space-pic-share').textContent = !share
+      ? 'Not in the picture at these settings.'
+      : `${pct < 0.1 ? 'Under 0.1%' : `${pct >= 1 ? Math.round(pct) : pct.toFixed(1)}%`} of the picture${within ? `, within ${within} ΔE of this color` : ''}.`;
+  }
+  $('#space-match').addEventListener('change', (e) => {
+    S.spaceMatch = +e.target.value;
+    save();
+    if (whereCell) showWhere(whereCell);
+  });
+  $('#space-pic-clear').addEventListener('click', () => spaceBig.pick(null));
+  $('#space-pic-canvas').addEventListener('click', (e) => {
+    const cv = e.currentTarget;
+    const r = cv.getBoundingClientRect();
+    if (!work.lab || !r.width || !r.height) return;
+    let x = Math.floor(((e.clientX - r.left) / r.width) * cv.width);
+    const y = Math.floor(((e.clientY - r.top) / r.height) * cv.height);
+    if (S.flip) x = cv.width - 1 - x; // shown mirrored, like the study
+    if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) return;
+    const i = y * cv.width + x;
+    const key = CS.cellKey(work.lab.L[i], work.lab.A[i], work.lab.B[i]);
+    const cell = (colorCache.cells || []).find((c) => c.key === key);
+    if (cell) spaceBig.pick(cell);
+  });
+
+  function openSpace() {
+    const d = colorData();
+    if (!d) return toast('Load an image first.');
+    $('#space-modal').hidden = false;
+    $('#space-unused-big').checked = S.spaceUnused;
+    spaceBig.setShowUnused(S.spaceUnused);
+    spaceBig.setData(d);
+    spaceBig.pick(null);
+    requestAnimationFrame(() => spaceBig.render());
+  }
+  function closeSpace() {
+    $('#space-modal').hidden = true;
+  }
+  $('#space-open').addEventListener('click', openSpace);
+  $('#space-close').addEventListener('click', closeSpace);
+  $('#space-top').addEventListener('click', () => spaceBig.view('top'));
+  $('#space-side').addEventListener('click', () => spaceBig.view('side'));
+  $('#space-reset').addEventListener('click', () => {
+    $('#space-slice').value = '';
+    spaceBig.setSlice(null);
+    spaceBig.view('default');
+  });
+  $('#space-slice').addEventListener('change', (e) => {
+    spaceBig.setSlice(e.target.value);
+    // one value at a time reads best from above, like a page of a Munsell book
+    if (e.target.value !== '') spaceBig.view('top');
+  });
+  window.addEventListener('resize', () => {
+    if (!$('#space-modal').hidden) spaceBig.request();
+  });
+  window.addEventListener('keydown', (e) => {
+    if ($('#space-modal').hidden) return;
+    const k = e.key;
+    if (k === 'Escape') closeSpace();
+    else if (e.target.tagName === 'SELECT') return;
+    else if (k === 'ArrowLeft') spaceBig.turn(-10, 0);
+    else if (k === 'ArrowRight') spaceBig.turn(10, 0);
+    else if (k === 'ArrowUp') spaceBig.turn(0, 8);
+    else if (k === 'ArrowDown') spaceBig.turn(0, -8);
+    else if (k === '+' || k === '=') spaceBig.zoomBy(1.2);
+    else if (k === '-') spaceBig.zoomBy(1 / 1.2);
+    else return;
+    e.preventDefault();
+  });
+
+  /* ================= Limited palette ================= */
+
+  /*
+   * A few paints, what they can mix (simulated with spectral.js), how much
+   * of the picture that reaches, and a Palette study that repaints the
+   * picture with the nearest mixes, striping what's out of reach.
+   */
+  const palState = { key: '', model: null, reachKey: '', reach: null };
+
+  // what each palette mixes, kept for the palettes tried lately (suggestions and the compare sheet)
+  const palModels = new Map();
+  function paletteModel(ids) {
+    if (!window.spectral) return null;
+    const key = PAL.paintsFor(ids).map((p) => p.id).join(',');
+    let m = palModels.get(key);
+    if (m) {
+      palModels.delete(key); // most recent last
+    } else {
+      m = PAL.build(ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]));
+      if (palModels.size >= 48) palModels.delete(palModels.keys().next().value);
+    }
+    palModels.set(key, m);
+    return m;
+  }
+
+  function ensurePalette() {
+    const key = S.palette.join(',');
+    if (palState.key !== key) {
+      palState.key = key;
+      palState.model = paletteModel(S.palette);
+      palState.reachKey = '';
+    }
+    return palState.model;
+  }
+
+  /** "Blue-greens and blues": the one or two hue families that make up most of some colors. */
+  function hueFamilies(cells) {
+    const families = new Map();
+    let total = 0;
+    for (const c of cells) {
+      const m = CS.munsell(c.L, c.a, c.b);
+      const name = m.hue === 'N' ? (c.L < 50 ? 'dark grays' : 'light grays') : `${m.hueName}s`;
+      families.set(name, (families.get(name) || 0) + c.share);
+      total += c.share;
+    }
+    const ranked = [...families.entries()].sort((p, q) => q[1] - p[1]);
+    return ranked.filter(([, v], i) => i === 0 || (i === 1 && v >= total * 0.25)).map(([n]) => n).join(' and ');
+  }
+  const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const pctLabel = (v) => (v > 0 && v < 0.01 ? '<1' : Math.round(v * 100));
+
+  /** How much of the current picture the palette reaches (cached per image and palette). */
+  function paletteReach() {
+    const model = ensurePalette();
+    if (!model || !work.lab) return null;
+    if (colorCache.lab !== work.lab) colorData();
+    const key = `${palState.key}|${work.blurKey}|${work.w}x${work.h}`;
+    if (palState.reachKey !== key || !palState.reach) {
+      palState.reach = PAL.reach(model, colorCache.cells);
+      palState.reachKey = key;
+    }
+    return palState.reach;
+  }
+
+  function samePaints(a, b) {
+    return a.length === b.length && a.every((id) => b.includes(id));
+  }
+  const MP = VST.myPalettes;
+  /** Your own palette with exactly these paints, if any (preferred over a preset of the same paints). */
+  const myMatch = (ids) => MP.all().find((x) => samePaints(PAL.paintsFor(x.paints).map((p) => p.id), PAL.paintsFor(ids).map((p) => p.id))) || null;
+  function paletteName() {
+    const mine = myMatch(S.palette);
+    if (mine) return mine.name;
+    const p = PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
+    return p ? p.name.replace(/ \(.*\)$/, '') : 'my palette';
+  }
+
+  /** The study, repainted with the palette's nearest mixes. */
+  function renderPalette(lab, out, width) {
+    const model = ensurePalette();
+    const n = lab.L.length;
+    if (!model) {
+      P.renderColor(lab, out);
+      return null;
+    }
+    const counts = PAL.paint(model, lab, out, width, { mark: S.palMark });
+    // swatches: the mixes that cover the most, light to dark
+    return [...counts.entries()]
+      .sort((p, q) => q[1] - p[1])
+      .slice(0, 6)
+      .map(([i, c]) => ({ L: model.mixes[i].L, rgb: model.mixes[i].rgb, share: c / n }))
+      .sort((p, q) => p.L - q.L);
+  }
+
+  /*
+   * A value study in your paints: the values grouped (2 to 6, with the same
+   * splits as Gray), each pixel keeping its hue and chroma, then painted
+   * with the nearest mix. With white and one dark it's a monochrome study;
+   * with a few more paints, a color thumbnail in that palette.
+   */
+  function renderPaletteValues(lab, hist, out) {
+    const model = ensurePalette();
+    const levels = currentLevels(hist);
+    const flat = P.flattenValues(lab, currentThresholds(), levels);
+    if (!model) {
+      P.renderColor(flat.lab, out);
+      return levels.map((L, i) => ({ L, share: flat.shares[i] }));
+    }
+    // the value first, then the closest hue and chroma at that value (see PAL.paintValues)
+    const rgbs = PAL.paintValues(model, flat, levels, out);
+    return levels.map((L, i) => ({ L, rgb: rgbs[i], share: flat.shares[i] }));
+  }
+
+  function renderPaletteUi() {
+    const sel = $('#pal-preset');
+    const mine = myMatch(S.palette);
+    if (mine) S.palMine = mine.id;
+    const match = mine ? null : PAL.PRESETS.find((x) => samePaints(x.paints, S.palette));
+    sel.value = mine ? `mine:${mine.id}` : match ? match.id : 'custom';
+    $('#pal-source').hidden = !(match && match.source);
+    $('#pal-source').textContent = match && match.source ? match.source : '';
+    $('#pal-rename').hidden = !mine;
+    $('#pal-delete').hidden = !mine;
+    // changed the paints of one of yours: offer to save them back to it
+    const edited = !mine && S.palMine ? MP.get(S.palMine) : null;
+    $('#pal-update').hidden = !edited;
+    if (edited) $('#pal-update').textContent = `Save these paints to “${edited.name}”`;
+    const box = $('#pal-paints');
+    box.innerHTML = '';
+    for (const p of PAL.paintsFor(S.palette)) {
+      const chip = document.createElement('span');
+      chip.className = 'pal-chip';
+      chip.innerHTML = '<i></i><span></span><button type="button" class="pal-remove">×</button>';
+      chip.querySelector('i').style.background = p.hex;
+      chip.querySelector('span').textContent = p.name;
+      const rm = chip.querySelector('button');
+      rm.setAttribute('aria-label', `Remove ${p.name}`);
+      rm.title = `Remove ${p.name}`;
+      rm.disabled = S.palette.length <= 1;
+      rm.addEventListener('click', () => choosePalette(S.palette.filter((id) => id !== p.id)));
+      box.appendChild(chip);
+    }
+    const add = $('#pal-add');
+    add.innerHTML = '<option value="">+ Add a paint…</option>';
+    for (const p of [...PAL.PIGMENTS].sort((x, y) => x.name.localeCompare(y.name))) {
+      if (S.palette.includes(p.id)) continue;
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      add.appendChild(o);
+    }
+    $('#pal-range').checked = S.palShow;
+    $('#space-pal').checked = S.palShow;
+    renderStandins();
+    const stats = $('#pal-stats');
+    const r = paletteReach();
+    if (!r) {
+      stats.innerHTML = '';
+      $('#pal-suggest').hidden = true;
+      sugg.token++;
+      return;
+    }
+    const stat = (big, small) => `<div class="stat"><b>${big}</b><span>${small}</span></div>`;
+    // name the one or two hue families that make up most of what's out of reach
+    // (an average hue of, say, greens and blues would name neither)
+    const outLabel = r.outShare >= 0.005 ? capFirst(hueFamilies(r.outCells)) : 'Nothing';
+    stats.innerHTML = stat(`${pctLabel(r.reached)}%`, 'of the picture it can mix') + stat(outLabel, r.outShare >= 0.005 ? `can’t mix (${pctLabel(r.outShare)}%)` : 'it can’t mix');
+    renderOverlap();
+    suggestPaints(r);
+  }
+
+  /*
+   * What stands in for each hue: the palette's strongest color in each of
+   * the ten hue families, with how strong it is and, tapped, its recipe and
+   * Munsell notation. Shows what a palette (say, phthalo green, dioxazine
+   * violet and cad orange) uses for its red, yellow and blue.
+   */
+  const stand = { key: '', list: null, pick: null };
+  function renderStandins() {
+    const box = $('#pal-standins');
+    const model = ensurePalette();
+    box.hidden = !model;
+    if (!model) return;
+    if (stand.key !== palState.key) {
+      stand.key = palState.key;
+      stand.list = PAL.standIns(model, CS.HUES);
+      stand.pick = null;
+    }
+    const grid = $('#standin-grid');
+    grid.innerHTML = '';
+    for (const st of stand.list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'standin';
+      b.setAttribute('aria-pressed', String(stand.pick === st.code));
+      const munsellChroma = st.mix ? munsellOf(st.mix.L, st.mix.a, st.mix.b).chroma : 0;
+      b.innerHTML = `<span class="sw${st.mix ? '' : ' none'}"></span><span class="bar"><i></i></span><span class="cd"></span>`;
+      if (st.mix) b.querySelector('.sw').style.background = `rgb(${st.mix.rgb.join(',')})`;
+      b.querySelector('.bar i').style.width = `${Math.min(100, (munsellChroma / 16) * 100)}%`;
+      b.querySelector('.cd').textContent = st.code;
+      b.setAttribute('aria-label', st.mix ? `${st.name}: chroma ${munsellChroma}` : `${st.name}: none`);
+      b.addEventListener('click', () => {
+        stand.pick = stand.pick === st.code ? null : st.code;
+        renderStandins();
+      });
+      grid.appendChild(b);
+    }
+    $('#standin-detail').textContent = standinText();
+    renderContrast();
+  }
+
+  /*
+   * Contrast check: the tapped stand-in as the same small square on three
+   * grounds (a gray of the same value, the palette's own complement, and
+   * the picture as this palette would paint it), so simultaneous contrast
+   * shows on screen: a weak red reads redder inside its green.
+   */
+  const contrastPic = { key: '', canvas: null };
+  function renderContrast() {
+    const box = $('#standin-contrast');
+    const pick = stand.list && stand.list.find((s) => s.code === stand.pick);
+    box.hidden = !pick || !pick.mix;
+    if (box.hidden) return;
+    const mix = pick.mix;
+    const rgb = (m) => `rgb(${m.rgb.join(',')})`;
+    box.querySelectorAll('.cc-chip').forEach((c) => (c.style.background = rgb(mix)));
+    const gray = C.lToGray8(mix.L);
+    $('#cc-gray').style.background = `rgb(${gray},${gray},${gray})`;
+    const comp = PAL.complementOf(ensurePalette(), mix);
+    const g = $('#cc-comp');
+    g.classList.toggle('none', !comp);
+    g.style.background = comp ? rgb(comp) : '';
+    $('#cc-comp-cap').textContent = comp ? 'In its complement' : 'No complement in this palette';
+    g.title = comp ? `The palette’s opposite: ${PAL.recipe(comp.parts)}` : '';
+    // the picture, painted with this palette (no stripes), under the square
+    const fig = $('#cc-pic-fig');
+    fig.hidden = !work.lab;
+    if (!work.lab) return;
+    const small = smallLab();
+    const key = `${palState.key}|${small.w}x${small.h}|${work.blurKey}|${S.flip}`;
+    const cv = $('#cc-pic canvas');
+    if (contrastPic.key !== key || contrastPic.small !== small) {
+      cv.width = small.w;
+      cv.height = small.h;
+      const ctx = cv.getContext('2d');
+      const data = ctx.createImageData(small.w, small.h);
+      PAL.paint(ensurePalette(), small.lab, data.data, small.w, { mark: false });
+      ctx.putImageData(data, 0, 0);
+      cv.style.transform = S.flip ? 'scaleX(-1)' : '';
+      Object.assign(contrastPic, { key, small });
+    }
+  }
+  function standinText() {
+    const list = stand.list;
+    const pick = list.find((s) => s.code === stand.pick);
+    if (pick) {
+      if (!pick.mix) return `${capFirst(pick.name)}: nothing. The palette can’t mix a ${pick.name} with any strength; the colors around it would have to suggest one.`;
+      const m = munsellOf(pick.mix.L, pick.mix.a, pick.mix.b);
+      const weak = m.chroma < 4 ? ' A weak stand-in: let the colors around it push it.' : '';
+      return `${capFirst(pick.name)}: ${PAL.recipe(pick.mix.parts)} (${m.exact ? m.notation : `chroma ≈ ${m.chroma}`}, ${m.name}).${weak}`;
+    }
+    const ranked = list.map((s) => ({ ...s, c: s.mix ? munsellOf(s.mix.L, s.mix.a, s.mix.b).chroma : 0 })).sort((p, q) => q.c - p.c);
+    const names = (xs) => xs.map((x) => `${x.name}s`).join(' and ');
+    const none = ranked.filter((x) => !x.c);
+    const weakest = none.length ? none.slice(0, 2) : ranked.slice(-2).reverse();
+    return `Strongest: ${names(ranked.slice(0, 2))}. ${none.length ? 'None' : 'Weakest'}: ${names(weakest)}. Tap a hue for its mix.`;
+  }
+
+  /*
+   * The gamut overlap wheel: the picture's colors (outlined) over what the
+   * palette can mix (in color), with what it needs but can't mix striped,
+   * for all values or just the darks, middles or lights.
+   */
+  const OV = VST.overlap;
+  const ov = { model: null, small: null, band: '', data: null };
+  const BAND_NAMES = { darks: 'darks', middles: 'middle values', lights: 'lights' };
+  function renderOverlap() {
+    const box = $('#pal-overlap');
+    const model = ensurePalette();
+    box.hidden = !model || !work.lab;
+    if (box.hidden) return;
+    const band = OV.BANDS[S.overlapBand] ? S.overlapBand : 'all';
+    setSeg($('#overlap-band'), 'band', band);
+    const small = smallLab();
+    if (ov.model !== model || ov.small !== small || ov.band !== band) {
+      ov.data = OV.compute(small.lab, model, (L, a, b) => PAL.nearestCached(model, L, a, b), { band, reach: PAL.REACH, toRgb: (L, a, b) => toRgb(L, a, b) });
+      Object.assign(ov, { model, small, band });
+    }
+    const o = ov.data;
+    OV.draw($('#overlap-wheel'), o, CS.HUES);
+    const pct = (v) => `${pctLabel(v)}%`;
+    let note;
+    if (band === 'all') note = o.outShare >= 0.005 ? `Striped: colors the picture needs that this palette can’t mix (${pct(o.outShare)} of the picture).` : 'The palette can mix all of the picture’s colors.';
+    else if (o.shareIn < 0.01) note = `Almost none of the picture is in the ${BAND_NAMES[band]}.`;
+    else note = `The ${BAND_NAMES[band]} are ${pct(o.shareIn)} of the picture; the palette ${o.outShare >= 0.005 ? `can’t mix ${pct(o.outShare)} of them` : 'can mix them all'}.`;
+    $('#overlap-note').textContent = note;
+    $('#overlap-wheel').setAttribute('aria-label', `Hue and chroma wheel of the picture’s colors and what ${paletteName()} can mix. ${note}`);
+  }
+  $('#overlap-band').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.overlapBand = b.dataset.band;
+    save();
+    renderOverlap();
+  });
+  window.addEventListener('resize', () => {
+    if (ov.data && $('#overlap-wheel').clientWidth) OV.draw($('#overlap-wheel'), ov.data, CS.HUES);
+  });
+
+  /*
+   * Gamut mask (Color tab): the picture's colors on the wheel with the mask
+   * over them, filled with the colors it allows; drag a corner to reshape,
+   * inside to move, outside to turn. The study can be painted inside it.
+   */
+  const mk = { o: null, small: null, scale: 0, drag: null };
+  const MM = VST.myMasks;
+
+  /* ---------- saved masks (they sync, with sync on) ---------- */
+
+  const samePoints = (p, q) => p.length === q.length && p.every((x, i) => Math.abs(x[0] - q[i][0]) < 0.05 && Math.abs(x[1] - q[i][1]) < 0.05);
+  /** The saved mask with exactly this shape, if any. */
+  const maskMatch = (m) => MM.all().find((x) => samePoints(x.points, m.points)) || null;
+
+  function renderMaskSaved() {
+    const sel = $('#mask-saved');
+    const m = ensureMask();
+    const list = MM.all();
+    const mine = maskMatch(m);
+    if (mine) S.maskMine = mine.id;
+    sel.innerHTML = '';
+    const opt = (value, text, disabled) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      o.disabled = !!disabled;
+      sel.appendChild(o);
+    };
+    opt('', list.length ? (mine ? 'Saved masks' : 'This mask isn’t saved') : 'No saved masks yet', true);
+    for (const x of list) opt(x.id, x.name);
+    sel.value = mine ? mine.id : '';
+    sel.disabled = !list.length;
+    $('#mask-rename').hidden = !mine;
+    $('#mask-delete').hidden = !mine;
+    const edited = !mine && S.maskMine ? MM.get(S.maskMine) : null;
+    $('#mask-update').hidden = !edited;
+    if (edited) $('#mask-update').textContent = `Save this shape to “${edited.name}”`;
+  }
+  $('#mask-saved').addEventListener('change', (e) => {
+    const x = MM.get(e.target.value);
+    if (!x) return;
+    S.maskMine = x.id;
+    setMask({ shape: x.shape, points: x.points.map((p) => [p[0], p[1]]) });
+  });
+  $('#mask-save').addEventListener('click', () => {
+    const shapeName = MK.SHAPES[ensureMask().shape] ? MK.SHAPES[ensureMask().shape].name : 'My mask';
+    const name = prompt('Name this mask:', maskMatch(S.mask) ? '' : shapeName);
+    if (name == null) return;
+    const x = MM.save(name, S.mask);
+    S.maskMine = x.id;
+    save();
+    renderMaskSaved();
+    toast(`Saved the mask “${x.name}”.`);
+  });
+  $('#mask-update').addEventListener('click', () => {
+    const x = S.maskMine && MM.setMask(S.maskMine, S.mask);
+    if (!x) return;
+    renderMaskSaved();
+    toast(`Saved the shape to “${x.name}”.`);
+  });
+  $('#mask-rename').addEventListener('click', () => {
+    const x = maskMatch(S.mask);
+    if (!x) return;
+    const name = prompt('Rename this mask:', x.name);
+    if (name == null || !name.trim()) return;
+    MM.rename(x.id, name);
+    renderMaskSaved();
+  });
+  $('#mask-delete').addEventListener('click', () => {
+    const x = maskMatch(S.mask);
+    if (!x || !confirm(`Delete the saved mask “${x.name}”? The mask on the wheel stays.`)) return;
+    MM.remove(x.id);
+    S.maskMine = null;
+    save();
+    renderMaskSaved();
+  });
+  function ensureMask() {
+    S.mask = MK.valid(S.mask) || MK.make('triad', 60, 60);
+    return S.mask;
+  }
+  const maskReach = (m) => Math.max(...m.points.map(([a, b]) => Math.hypot(a, b)));
+
+  function renderMask() {
+    renderMaskSummary();
+    const cv = $('#mask-wheel');
+    if (!cv.clientWidth) return; // hidden
+    const m = ensureMask();
+    setSeg($('#mask-shape'), 'shape', m.shape);
+    $('#mask-on').checked = S.maskOn;
+    $('#mask-strength-ctl').hidden = !S.maskOn;
+    $('#mask-strength').value = S.maskStrength;
+    $('#mask-strength-out').textContent = `${S.maskStrength}%`;
+    const reachNow = Math.round(maskReach(m));
+    $('#mask-size').value = Math.max(15, Math.min(110, reachNow));
+    $('#mask-size-out').textContent = `chroma ≈ ${Math.round(reachNow / 5)}`;
+    const have = work.lab ? smallLab() : null;
+    // the wheel's extent: the picture's strongest colors or the mask, whichever reaches further
+    // (kept while dragging, so the wheel doesn't change under the pointer)
+    const palModel = S.maskShowPal ? ensurePalette() : null;
+    const palReach = palModel ? palModel.mixes.reduce((mx, x) => Math.max(mx, Math.hypot(x.a, x.b)), 0) : 0;
+    if (!mk.drag) mk.scale = Math.max(40, Math.min(115, Math.max(have ? OV.pictureChroma(have.lab) : 0, reachNow, palReach) * 1.1));
+    const scale = mk.scale;
+    const empty = { L: new Float32Array(0), A: new Float32Array(0), B: new Float32Array(0) };
+    const o = OV.grid(have ? have.lab : empty, { scale, toRgb: (L, a, b) => toRgb(L, a, b), outside: (L, a, b) => !MK.contains(m.points, a, b) });
+    // inside the mask: the colors it allows, at a middle value
+    const size = (2 * scale) / o.n;
+    for (let k = 0; k < o.n * o.n; k++) {
+      const a = -scale + ((k % o.n) + 0.5) * size;
+      const b = scale - (Math.floor(k / o.n) + 0.5) * size;
+      if (!MK.contains(m.points, a, b)) continue;
+      const rgb = toRgb(62, a, b);
+      o.pal[k * 3] = rgb[0];
+      o.pal[k * 3 + 1] = rgb[1];
+      o.pal[k * 3 + 2] = rgb[2];
+    }
+    mk.o = o;
+    OV.draw(cv, o, CS.HUES);
+    $('#mask-pal').checked = S.maskShowPal;
+    if (palModel) {
+      // the palette's range: kept per palette and wheel size, so dragging stays quick
+      const key = `${palState.key}|${scale}|${o.n}`;
+      if (mk.palKey !== key) {
+        const cells = OV.paletteCells(palModel, { n: o.n, scale });
+        Object.assign(mk, { palKey: key, palRegion: OV.solid((k) => cells[k * 3] >= 0, o.n) });
+      }
+      OV.outline(cv, o, (k) => mk.palRegion[k]);
+    }
+    drawMaskShape(cv, o, m);
+    let note = 'Load an image to see how its colors fit.';
+    if (have) {
+      if (colorCache.lab !== work.lab) colorData();
+      const out = MK.outside(m.points, colorCache.cells || []);
+      note = out.outShare < 0.005 ? 'All of the picture’s colors are inside this mask.' : `${pctLabel(out.outShare)}% of the picture is outside this mask (mostly ${hueFamilies(out.outCells)}).`;
+    }
+    if (palModel) note += ` Dashed gold: what ${paletteName()} can mix.`;
+    $('#mask-note').textContent = note;
+    if (!mk.drag) {
+      renderMaskSaved();
+      renderMaskFit();
+    }
+    cv.setAttribute('aria-label', `Gamut mask: ${MK.SHAPES[m.shape] ? MK.SHAPES[m.shape].name : 'your own shape'}, pointing at ${CS.munsell(50, 20 * Math.cos((MK.heading(m) * Math.PI) / 180), 20 * Math.sin((MK.heading(m) * Math.PI) / 180)).hueName}. ${note} Arrow keys turn it.`);
+  }
+
+  /*
+   * Paints for the mask: how much of the picture, moved into the mask (what
+   * you'd paint), your palette can mix; which paints to add or take out; and
+   * a palette built for it, a paint at a time.
+   */
+  const maskFit = { key: '', cells: null, sugg: { key: '', token: 0, result: null }, buildToken: 0, built: null };
+  /** What paints for the mask aim at: the picture in it, or (with no picture, or by choice) the whole mask. */
+  const maskAim = () => (work.lab && S.maskTarget !== 'whole' ? 'picture' : 'whole');
+  const AIM_TEXT = { picture: 'the picture in this mask', whole: 'the colors in this mask' };
+  /** A color a screen can show (so a paint could plausibly match it). */
+  function realColor(L, a, b) {
+    const rgb = C.labToRgb8(L, a, b, [0, 0, 0]);
+    const back = C.rgbToLab(rgb[0], rgb[1], rgb[2], [0, 0, 0]);
+    return Math.hypot(back[0] - L, back[1] - a, back[2] - b) < 3;
+  }
+  /**
+   * The colors paints for the mask aim at, as cells: the picture moved into
+   * the mask (at the strength in use, from the small copy), or every color
+   * a screen can show inside the mask, at a range of values.
+   */
+  function maskCells() {
+    if (maskAim() === 'whole') {
+      const key = `whole|${JSON.stringify(S.mask.points)}`;
+      if (maskFit.key !== key) {
+        Object.assign(maskFit, { key, small: null, cells: MK.sampleInside(S.mask.points, { real: realColor }) });
+        if (maskFit.built && maskFit.built.key !== key) maskFit.built = null;
+      }
+      return maskFit.cells;
+    }
+    const small = smallLab();
+    const strength = S.maskOn ? S.maskStrength / 100 : 1;
+    const key = `${JSON.stringify(S.mask.points)}|${strength}|${small.w}x${small.h}|${work.blurKey}`;
+    if (maskFit.key !== key || maskFit.small !== small) {
+      Object.assign(maskFit, { key, small, cells: CS.sample(MK.apply(small.lab, S.mask, strength)) });
+      if (maskFit.built && maskFit.built.key !== key) maskFit.built = null;
+    }
+    return maskFit.cells;
+  }
+
+  function renderMaskFit() {
+    const box = $('#mask-fit');
+    const model = ensurePalette();
+    box.hidden = !model;
+    if (box.hidden) return;
+    const aim = maskAim();
+    setSeg($('#mask-aim'), 'aim', aim);
+    $('#mask-aim [data-aim="picture"]').disabled = !work.lab;
+    const m = S.mask;
+    const cells = maskCells();
+    if (!cells.length) {
+      $('#mask-fit-note').textContent = 'This mask is too small to hold any colors.';
+      $('#mask-suggest').hidden = true;
+      return;
+    }
+    const base = PAL.reach(model, cells);
+    $('#mask-fit-note').textContent = `${capFirst(paletteName())} can mix ${pctLabel(base.reached)}% of ${AIM_TEXT[aim]}${base.outShare >= 0.005 ? `; not ${hueFamilies(base.outCells)}` : ''}.`;
+    suggestFor(maskFit.sugg, { box: $('#mask-suggest'), key: `${maskFit.key}|${palState.key}`, base, cells, what: 'this mask', inside: (a, b) => MK.contains(m.points, a, b) });
+    renderMaskBuilt();
+  }
+
+  function renderMaskBuilt() {
+    const out = $('#mask-build-out');
+    const b = maskFit.built;
+    out.hidden = !b;
+    if (!b) return;
+    out.innerHTML = '';
+    if (b.working) {
+      out.innerHTML = `<p class="pal-sg-wait">Trying paints… ${b.working}</p>`;
+      return;
+    }
+    const paints = document.createElement('div');
+    paints.className = 'mb-paints';
+    for (const p of PAL.paintsFor(b.ids)) {
+      const span = document.createElement('span');
+      span.innerHTML = `<i style="background:${p.hex}"></i>`;
+      span.append(p.name);
+      paints.appendChild(span);
+    }
+    const steps = document.createElement('p');
+    steps.className = 'mb-steps hint';
+    steps.textContent = `Mixes ${pctLabel(b.reached)}% of ${AIM_TEXT[b.aim] || AIM_TEXT.picture}. ` + b.steps.map((s) => `+ ${PAL.byId.get(s.id).name.toLowerCase()} ${pctLabel(s.reached)}%`).join(' → ');
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'btn tiny';
+    use.textContent = samePaints(b.ids, PAL.paintsFor(S.palette).map((p) => p.id)) ? 'This is your palette' : 'Use this palette';
+    use.disabled = samePaints(b.ids, PAL.paintsFor(S.palette).map((p) => p.id));
+    use.addEventListener('click', () => {
+      S.palMine = null;
+      choosePalette(b.ids);
+      toast('Palette chosen. Save… keeps it under My palettes.');
+    });
+    out.append(paints, steps, use);
+  }
+
+  $('#mask-pal').addEventListener('change', (e) => {
+    S.maskShowPal = e.target.checked;
+    save();
+    renderMask();
+  });
+
+  $('#mask-aim').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    S.maskTarget = b.dataset.aim;
+    save();
+    renderMaskFit();
+  });
+
+  $('#mask-build').addEventListener('click', () => {
+    if (!window.spectral) return toast('Mixing isn’t available in this browser.');
+    const colors = +$('#mask-build-n').value;
+    const aim = maskAim();
+    const m = ensureMask();
+    const cells = maskCells();
+    const key = maskFit.key;
+    const token = ++maskFit.buildToken;
+    const g = PAL.grow(cells, { colors, spectral: window.spectral, toLab: (r, gg, b) => C.rgbToLab(r, gg, b, [0, 0, 0]), inside: (a, b) => MK.contains(m.points, a, b) });
+    let tried = 0;
+    const per = PAL.PIGMENTS.length;
+    maskFit.built = { key, working: 'paint 1' };
+    renderMaskBuilt();
+    const step = () => {
+      if (token !== maskFit.buildToken || maskFit.key !== key) return;
+      const t0 = performance.now();
+      let r;
+      while (performance.now() - t0 < 25) {
+        r = g.next();
+        if (r.done) break;
+        tried++;
+      }
+      if (!r.done) {
+        maskFit.built = { key, working: `paint ${Math.min(colors, Math.floor(tried / per) + 1)} of ${colors}` };
+        renderMaskBuilt();
+        return setTimeout(step, 0);
+      }
+      maskFit.built = { key, aim, ...r.value };
+      renderMaskBuilt();
+    };
+    setTimeout(step, 30);
+  });
+
+  function drawMaskShape(cv, o, m) {
+    const ctx = cv.getContext('2d');
+    const g = OV.geometry(cv, o);
+    const px = m.points.map(([a, b]) => g.toPx(a, b));
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    px.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 4 * g.dpr;
+    ctx.stroke();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2 * g.dpr;
+    ctx.stroke();
+    for (const [x, y] of px) {
+      ctx.beginPath();
+      ctx.arc(x, y, 6 * g.dpr, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.lineWidth = 1.5 * g.dpr;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** A changed mask: redraw it, and the study if it's painted inside the mask. */
+  function setMask(m) {
+    S.mask = m;
+    renderMask();
+    if (S.maskOn) requestStudy();
+    save();
+  }
+
+  {
+    const cv = $('#mask-wheel');
+    const toAb = (e) => {
+      const r = cv.getBoundingClientRect();
+      const g = OV.geometry(cv, mk.o);
+      return g.toAb(((e.clientX - r.left) / r.width) * cv.width, ((e.clientY - r.top) / r.height) * cv.height);
+    };
+    cv.addEventListener('pointerdown', (e) => {
+      if (!mk.o) return;
+      const m = ensureMask();
+      const [a, b] = toAb(e);
+      const g = OV.geometry(cv, mk.o);
+      const r = cv.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * cv.width;
+      const y = ((e.clientY - r.top) / r.height) * cv.height;
+      // a corner within reach of a finger, else move (inside) or turn (outside)
+      const reach = (e.pointerType === 'touch' ? 22 : 12) * g.dpr;
+      let corner = -1;
+      let best = reach;
+      m.points.forEach(([pa, pb], i) => {
+        const [px, py] = g.toPx(pa, pb);
+        const d = Math.hypot(px - x, py - y);
+        if (d < best) {
+          best = d;
+          corner = i;
+        }
+      });
+      const kind = corner >= 0 ? 'corner' : MK.contains(m.points, a, b) ? 'move' : 'turn';
+      mk.drag = { kind, corner, start: [a, b], mask: m, angle: Math.atan2(b, a) };
+      cv.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!mk.drag) return;
+      const [a, b] = toAb(e);
+      const d = mk.drag;
+      const lim = (v) => Math.max(-mk.scale, Math.min(mk.scale, v));
+      if (d.kind === 'corner') S.mask = MK.setCorner(d.mask, d.corner, lim(a), lim(b));
+      else if (d.kind === 'move') S.mask = MK.move(d.mask, a - d.start[0], b - d.start[1]);
+      else S.mask = MK.rotate(d.mask, ((Math.atan2(b, a) - d.angle) * 180) / Math.PI);
+      renderMask();
+    });
+    const end = () => {
+      if (!mk.drag) return;
+      mk.drag = null;
+      setMask(S.mask);
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('keydown', (e) => {
+      const turn = { ArrowLeft: 10, ArrowRight: -10, ArrowUp: 10, ArrowDown: -10 }[e.key];
+      if (!turn) return;
+      e.preventDefault();
+      setMask(MK.rotate(ensureMask(), e.shiftKey ? turn / 5 : turn));
+    });
+  }
+  $('#mask-shape').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const m = ensureMask();
+    setMask(MK.make(b.dataset.shape, MK.heading(m), Math.max(30, maskReach(m))));
+  });
+  $('#mask-size').addEventListener('input', (e) => {
+    const m = ensureMask();
+    const now = maskReach(m) || 1;
+    S.mask = MK.scale(m, +e.target.value / now);
+    renderMask();
+  });
+  $('#mask-size').addEventListener('change', () => setMask(S.mask));
+  $('#mask-on').addEventListener('change', (e) => {
+    S.maskOn = e.target.checked;
+    // the mask changes colors, not values: show it in color if the study is in grays
+    if (S.maskOn && S.tone === 'gray') setTone('color');
+    renderMask();
+    syncStudyControls();
+    requestStudy();
+    save();
+  });
+  $('#mask-strength').addEventListener('input', (e) => {
+    S.maskStrength = +e.target.value;
+    $('#mask-strength-out').textContent = `${S.maskStrength}%`;
+    renderMaskSummary();
+    requestStudy();
+    save();
+  });
+  window.addEventListener('resize', () => {
+    if (mk.o && $('#mask-wheel').clientWidth) renderMask();
+  });
+
+  /*
+   * Which paint would help this picture: the palette is tried with each
+   * other paint added and each of its own taken out, a few at a time so the
+   * page stays responsive, and the biggest gains and smallest losses shown.
+   */
+  const sugg = { key: '', token: 0, result: null };
+  function suggestPaints(base) {
+    suggestFor(sugg, { box: $('#pal-suggest'), key: palState.reachKey, base, cells: colorCache.cells, what: 'this picture' });
+  }
+
+  /**
+   * Which paints to add or take out, for some colors (`cells`) the palette
+   * reaches as `base`: tried a few at a time so the page stays responsive,
+   * remembered under `key` in `st`, and shown in `box`. With `inside(a, b)`
+   * (a gamut mask), paints whose mixes mostly fall outside it are flagged.
+   */
+  function suggestFor(st, { box, key, base, cells, what, inside }) {
+    if (st.key === key && st.result) return renderSuggestions(st, box, what);
+    const token = ++st.token;
+    box.hidden = false;
+    box.innerHTML = `<p class="pal-sg-wait">Trying other paints on ${what}…</p>`;
+    const model = ensurePalette();
+    // a paint taken out: the palette's own mixes without it (no new mixing needed);
+    // a paint added: mixed afresh, unless the palette already mixes nearly everything
+    const vars = PAL.variations(S.palette).filter((v) => v.kind === 'drop' || base.reached < 0.98);
+    const tried = [];
+    const stray = new Map();
+    let i = 0;
+    const step = () => {
+      if (token !== st.token) return;
+      const t0 = performance.now();
+      while (i < vars.length && performance.now() - t0 < 25) {
+        const v = vars[i++];
+        let rr;
+        if (v.kind === 'drop') rr = PAL.reach(model, cells, PAL.REACH, PAL.without(v.id));
+        else {
+          const extra = PAL.build(v.ids, window.spectral, (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]), { include: v.id });
+          rr = PAL.gain(base, extra);
+          if (inside) stray.set(v.id, PAL.strayShare(extra, inside));
+        }
+        tried.push({ kind: v.kind, id: v.id, reached: rr.reached, outCells: rr.outCells });
+      }
+      if (i < vars.length) return setTimeout(step, 0);
+      st.key = key;
+      st.full = base.reached >= 0.98;
+      st.result = PAL.rank(base, tried);
+      st.stray = stray;
+      renderSuggestions(st, box, what);
+    };
+    setTimeout(step, 50);
+  }
+
+  function renderSuggestions(st, box, what) {
+    const { adds, drops } = st.result;
+    box.hidden = false;
+    box.innerHTML = '';
+    const row = (label, list, empty) => {
+      const div = document.createElement('div');
+      div.className = 'pal-sg-row';
+      div.innerHTML = `<span class="pal-sg-label">${label}</span>`;
+      if (!list.length) {
+        const p = document.createElement('span');
+        p.className = 'pal-sg-none';
+        p.textContent = empty;
+        div.appendChild(p);
+      }
+      for (const { id, text, why, title, apply } of list) {
+        const p = PAL.byId.get(id);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pal-sg';
+        b.title = title;
+        b.innerHTML = `<i style="background:${p.hex}"></i><span class="nm"></span>${text ? '<b></b>' : ''}${why ? '<small></small>' : ''}`;
+        b.querySelector('.nm').textContent = p.name;
+        if (text) b.querySelector('b').textContent = text;
+        if (why) b.querySelector('small').textContent = why;
+        b.addEventListener('click', apply);
+        div.appendChild(b);
+      }
+      box.appendChild(div);
+    };
+    const strays = (id) => st.stray && st.stray.get(id) > 0.6;
+    const useful = adds.filter((a) => a.gain >= 0.01).slice(0, 3);
+    row(
+      `Add for ${what}`,
+      useful.map((a) => ({
+        id: a.id,
+        text: `+${pctLabel(a.gain)}%`,
+        why: [a.gained.length ? hueFamilies(a.gained) : '', strays(a.id) ? 'mostly mixes outside the mask' : ''].filter(Boolean).join(' · '),
+        title: `Add ${PAL.byId.get(a.id).name.toLowerCase()}: it would reach ${pctLabel(a.gain)}% more of ${what}${strays(a.id) ? '; but most of its mixes fall outside the mask, which makes it easy to stray from the scheme' : ''}`,
+        apply: () => choosePalette([...S.palette, a.id]),
+      })),
+      st.full ? `It already mixes nearly all of ${what}.` : `No one paint adds much to ${what}.`
+    );
+    if (S.palette.length > 1) {
+      const spare = drops.filter((d) => d.loss < 0.03).slice(0, 2);
+      row(
+        'Least needed here',
+        spare.map((d) => ({
+          id: d.id,
+          text: d.loss < 0.005 ? '' : `−${pctLabel(d.loss)}%`,
+          why: d.loss < 0.005 ? 'not needed here' : '',
+          title: `Take out ${PAL.byId.get(d.id).name.toLowerCase()}: the palette would reach ${d.loss < 0.005 ? 'about the same' : `${pctLabel(d.loss)}% less`} of ${what}`,
+          apply: () => choosePalette(S.palette.filter((x) => x !== d.id)),
+        })),
+        'Every paint is doing work here.'
+      );
+    }
+  }
+
+  /** A new set of paints: rebuild what it mixes and repaint what shows it. */
+  function setPalette(ids) {
+    S.palette = ids.slice();
+    ensurePalette();
+    renderPaletteUi();
+    syncStudyControls();
+    if (S.tone === 'palette') requestStudy();
+    renderGamut();
+    save();
+  }
+  /**
+   * Paints you chose (a palette from the menu, a paint added or taken out, a
+   * suggestion, a built or compared palette): set them, and paint the study
+   * with them, so you see the picture change. The tab you're on stays.
+   */
+  function choosePalette(ids) {
+    setPalette(ids);
+    if (S.tone !== 'palette') setTone('palette');
+    modeState.seen.add('palette'); // choosing paints is the Palette step
+    renderSteps();
+  }
+  $('#pal-preset').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v.startsWith('mine:')) {
+      const mine = MP.get(v.slice(5));
+      if (mine) {
+        S.palMine = mine.id;
+        choosePalette(mine.paints);
+      }
+      return;
+    }
+    const p = PAL.PRESETS.find((x) => x.id === v);
+    if (p) {
+      S.palMine = null;
+      choosePalette(p.paints);
+    }
+  });
+
+  /* your own named palettes (they sync, with sync on) */
+  $('#pal-save').addEventListener('click', () => {
+    const suggestion = myMatch(S.palette) ? '' : paletteName() === 'my palette' ? '' : `${paletteName()}, mine`;
+    const name = prompt('Name this palette:', suggestion);
+    if (name == null) return;
+    const p = MP.save(name, PAL.paintsFor(S.palette).map((x) => x.id));
+    S.palMine = p.id;
+    save();
+    buildPaletteSelect();
+    renderPaletteUi();
+    toast(`Saved the palette “${p.name}”.`);
+  });
+  $('#pal-update').addEventListener('click', () => {
+    const p = S.palMine && MP.setPaints(S.palMine, PAL.paintsFor(S.palette).map((x) => x.id));
+    if (!p) return;
+    buildPaletteSelect();
+    renderPaletteUi();
+    toast(`Saved the paints to “${p.name}”.`);
+  });
+  $('#pal-rename').addEventListener('click', () => {
+    const mine = myMatch(S.palette);
+    if (!mine) return;
+    const name = prompt('Rename this palette:', mine.name);
+    if (name == null || !name.trim()) return;
+    MP.rename(mine.id, name);
+    buildPaletteSelect();
+    renderPaletteUi();
+  });
+  $('#pal-delete').addEventListener('click', () => {
+    const mine = myMatch(S.palette);
+    if (!mine || !confirm(`Delete the palette “${mine.name}”? The paints stay chosen.`)) return;
+    MP.remove(mine.id);
+    S.palMine = null;
+    save();
+    buildPaletteSelect();
+    renderPaletteUi();
+  });
+  $('#pal-add').addEventListener('change', (e) => {
+    if (e.target.value) choosePalette([...S.palette, e.target.value]);
+  });
+  /** Shows or hides the palette in the color space (in the Color tab and the large view). */
+  function setPalShow(on) {
+    S.palShow = on;
+    $('#pal-range').checked = on;
+    $('#space-pal').checked = on;
+    const d = colorData();
+    if (d && !$('#space-modal').hidden) spaceBig.setData(d);
+  }
+  $('#space-pal').addEventListener('change', (e) => {
+    setPalShow(e.target.checked);
+    renderGamut();
+    save();
+  });
+  $('#pal-range').addEventListener('change', (e) => {
+    setPalShow(e.target.checked);
+    renderGamut();
+    save();
+  });
+  $('#pal-mark').addEventListener('change', (e) => {
+    S.palMark = e.target.checked;
+    requestStudy();
+    save();
+  });
+  // on: paint the study with the palette; off: back to the tone you had before
+  $('#pal-live').addEventListener('change', (e) => setTone(e.target.checked ? 'palette' : S.tonePrev || 'gray'));
+  $('#pal-choose').addEventListener('click', () => setPanel('color'));
+
+  /*
+   * Compare palettes: this picture painted with each palette (yours and the
+   * presets), how much of it each reaches and what it can't mix, the one
+   * that reaches the most first. Tap one to paint the study with it.
+   */
+  const palcmp = { token: 0, small: null, smallFor: null };
+
+  /** The working image at a tile's size (Lab averaged over blocks), made once per image. */
+  function smallLab(max = 360) {
+    if (palcmp.smallFor === work.lab) return palcmp.small;
+    const k = Math.max(1, Math.ceil(Math.max(work.w, work.h) / max));
+    const w = Math.max(1, Math.floor(work.w / k));
+    const h = Math.max(1, Math.floor(work.h / k));
+    const L = new Float32Array(w * h);
+    const A = new Float32Array(w * h);
+    const B = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sl = 0;
+        let sa = 0;
+        let sb = 0;
+        for (let dy = 0; dy < k; dy++) {
+          const row = (y * k + dy) * work.w + x * k;
+          for (let dx = 0; dx < k; dx++) {
+            sl += work.lab.L[row + dx];
+            sa += work.lab.A[row + dx];
+            sb += work.lab.B[row + dx];
+          }
+        }
+        const i = y * w + x;
+        const n = k * k;
+        L[i] = sl / n;
+        A[i] = sa / n;
+        B[i] = sb / n;
+      }
+    }
+    palcmp.small = { lab: { L, A, B }, w, h };
+    palcmp.smallFor = work.lab;
+    return palcmp.small;
+  }
+
+  function comparePalettes() {
+    const mine = PAL.paintsFor(S.palette).map((p) => p.id);
+    const list = [];
+    const preset = PAL.PRESETS.find((x) => samePaints(x.paints, mine));
+    const own = MP.all().map((p) => ({ name: p.name, ids: PAL.paintsFor(p.paints).map((x) => x.id) }));
+    if (!preset && !own.some((p) => samePaints(p.ids, mine))) list.push({ name: 'My palette', ids: mine });
+    list.push(...own);
+    for (const p of PAL.PRESETS) list.push({ name: p.name.replace(/ \(.*\)$/, ''), full: p.name, ids: PAL.paintsFor(p.paints).map((x) => x.id) });
+    return list.map((p) => ({ ...p, current: samePaints(p.ids, mine) }));
+  }
+
+  function renderPalCompare() {
+    const grid = $('#palcmp-grid');
+    const token = ++palcmp.token;
+    grid.innerHTML = '<p class="pal-sg-wait">Mixing each palette…</p>';
+    const list = comparePalettes();
+    const small = smallLab();
+    let i = 0;
+    // build and measure a palette at a time, so the page stays responsive
+    const step = () => {
+      if (token !== palcmp.token) return;
+      const t0 = performance.now();
+      while (i < list.length && performance.now() - t0 < 30) {
+        const p = list[i++];
+        p.model = paletteModel(p.ids);
+        p.reach = PAL.reach(p.model, colorCache.cells);
+      }
+      if (i < list.length) return setTimeout(step, 0);
+      list.sort((p, q) => q.reach.reached - p.reach.reached);
+      grid.innerHTML = '';
+      for (const p of list) grid.appendChild(palTile(p, small));
+    };
+    setTimeout(step, 30);
+  }
+
+  function palTile(p, small) {
+    const fig = document.createElement('figure');
+    fig.className = 'tryon-tile pal-tile' + (p.current ? ' current' : '');
+    fig.tabIndex = 0;
+    fig.setAttribute('role', 'button');
+    const c = document.createElement('canvas');
+    c.width = small.w;
+    c.height = small.h;
+    if (S.flip) c.style.transform = 'scaleX(-1)';
+    const ctx = c.getContext('2d');
+    const data = ctx.createImageData(small.w, small.h);
+    PAL.paint(p.model, small.lab, data.data, small.w, { mark: S.palMark });
+    ctx.putImageData(data, 0, 0);
+    const box = document.createElement('div');
+    box.className = 'tt-img';
+    box.appendChild(c);
+    fig.appendChild(box);
+    const cap = document.createElement('figcaption');
+    const name = document.createElement('div');
+    name.className = 'pt-name';
+    name.textContent = p.name;
+    if (p.full) name.title = p.full;
+    const dots = document.createElement('div');
+    dots.className = 'pt-dots';
+    for (const paint of PAL.paintsFor(p.ids)) {
+      const d = document.createElement('i');
+      d.style.background = paint.hex;
+      d.title = paint.name;
+      dots.appendChild(d);
+    }
+    if (p.current) {
+      const tag = document.createElement('span');
+      tag.className = 'pt-yours';
+      tag.textContent = 'Yours';
+      dots.appendChild(tag);
+    }
+    const reach = document.createElement('div');
+    reach.className = 'pt-reach';
+    const r = p.reach;
+    reach.innerHTML = `<b>${pctLabel(r.reached)}%</b> `;
+    reach.append(r.outShare >= 0.005 ? `· can’t mix ${hueFamilies(r.outCells)}` : '· mixes it all');
+    cap.append(name, dots, reach);
+    fig.appendChild(cap);
+    const names = PAL.paintsFor(p.ids).map((x) => x.name.toLowerCase()).join(', ');
+    fig.setAttribute('aria-label', `${p.name}${p.current ? ' (your palette)' : ''}: ${names}. Reaches ${pctLabel(r.reached)}% of the picture.`);
+    const use = () => {
+      closePalCompare();
+      choosePalette(p.ids);
+    };
+    fig.addEventListener('click', use);
+    fig.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), use()));
+    return fig;
+  }
+
+  function openPalCompare() {
+    if (!img.el || !work.lab) return toast('Load an image first.');
+    if (!ensurePalette()) return toast('Mixing isn’t available in this browser.');
+    if (colorCache.lab !== work.lab) colorData();
+    $('#palcmp-mark').checked = S.palMark;
+    $('#palcmp-modal').hidden = false;
+    renderPalCompare();
+  }
+  function closePalCompare() {
+    $('#palcmp-modal').hidden = true;
+    palcmp.token++;
+  }
+  $('#pal-compare').addEventListener('click', openPalCompare);
+  $('#palcmp-close').addEventListener('click', closePalCompare);
+  $('#palcmp-mark').addEventListener('change', (e) => {
+    S.palMark = e.target.checked;
+    $('#pal-mark').checked = S.palMark;
+    if (S.tone === 'palette') requestStudy();
+    save();
+    renderPalCompare();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (!$('#palcmp-modal').hidden && e.key === 'Escape') closePalCompare();
+  });
+  /** The palette menu: your palettes, the presets, the artists' palettes, and "My palette" for any other mix. */
+  function buildPaletteSelect() {
+    const sel = $('#pal-preset');
+    sel.innerHTML = '';
+    const group = (label) => {
+      const g = document.createElement('optgroup');
+      g.label = label;
+      sel.appendChild(g);
+      return g;
+    };
+    const option = (parent, value, text) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      parent.appendChild(o);
+      return o;
+    };
+    const mine = MP.all();
+    if (mine.length) {
+      const g = group('My palettes');
+      for (const p of mine) option(g, `mine:${p.id}`, p.name);
+    }
+    const groups = { '': group('Palettes'), artist: group('Artists’ palettes') };
+    for (const p of PAL.PRESETS) option(groups[p.group || ''], p.id, p.name);
+    option(sel, 'custom', 'My palette').disabled = true;
+  }
+  buildPaletteSelect();
 
   /* ================= Log tab ================= */
 
@@ -1192,7 +2965,10 @@
       return;
     }
     const t = LG.totals(day);
-    sum.textContent = `${fmtDur(t.secs)} · ${plural(t.images, 'image')}` + (t.rounds ? ` · ${plural(t.rounds, 'timed round')} (${fmtDur(t.drawSecs)})` : '');
+    sum.textContent =
+      `${fmtDur(t.secs)} · ${plural(t.images, 'image')}` +
+      (t.rounds ? ` · ${plural(t.rounds, 'timed round')} (${fmtDur(t.drawSecs)})` : '') +
+      (t.memRounds ? `, ${t.memRounds} from memory` : '');
     box.appendChild(sum);
     const ul = document.createElement('ul');
     ul.className = 'log-list';
@@ -1208,7 +2984,7 @@
       if (thumb) row.querySelector('img').src = thumb;
       row.querySelector('b').textContent = e.title || 'Untitled';
       row.querySelector('.lr-text span').textContent = [e.artist, e.museum || (e.source === 'upload' ? 'My photo' : '')].filter(Boolean).join(' · ');
-      row.querySelector('.lr-time').textContent = fmtDur(e.secs) + (e.rounds ? ` · ${e.rounds}×` : '');
+      row.querySelector('.lr-time').textContent = fmtDur(e.secs) + (e.rounds ? ` · ${e.rounds}×` : '') + (e.memRounds ? ` · ${e.memRounds} from memory` : '');
       row.title = `Study ${e.title || 'this image'} again`;
       row.addEventListener('click', () => openItem(item));
       li.appendChild(row);
@@ -1270,16 +3046,21 @@
     const src = document.createElement('canvas');
     const sctx = src.getContext('2d', { willReadFrequently: true });
     const rgba = drawSource(sctx, w, h);
-    const lab = P.blurLab(P.computeLab(rgba, w * h), w, h, blurSigma(w, h));
+    const lab = masked(P.blurLab(P.computeLab(rgba, w * h), w, h, blurSigma(w, h)));
     const hist = P.histogram(lab.L);
     ensureLab();
     if (S.tone === 'poster') ensureCentroids(); // same palette as the preview
     const out = new Uint8ClampedArray(w * h * 4);
-    const bands = produceStudy(lab, hist, out);
+    const bands = produceStudy(lab, hist, out, w);
     return { w, h, original: src, study: canvasFrom(out, w, h), bands };
   }
 
-  /** Applies flip and (optionally) the grid, returning a new canvas. */
+  /** Downloads include the grid and guides that are showing, if asked to. */
+  function exportLines() {
+    return S.exportGrid && (S.grid.on || S.compose.on);
+  }
+
+  /** Applies flip and (optionally) the grid and guides, returning a new canvas. */
   function finish(source, withGrid) {
     const c = document.createElement('canvas');
     c.width = source.width;
@@ -1291,7 +3072,11 @@
     }
     ctx.drawImage(source, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (withGrid) drawGrid(ctx, c.width, c.height, Math.max(2, Math.round(Math.max(c.width, c.height) / 900)));
+    if (withGrid) {
+      const lw = Math.max(2, Math.round(Math.max(c.width, c.height) / 900));
+      drawGrid(ctx, c.width, c.height, lw);
+      drawCompose(ctx, c.width, c.height, lw);
+    }
     return c;
   }
 
@@ -1343,7 +3128,7 @@
     if (!exportGuard()) return;
     try {
       const r = renderForExport();
-      download(finish(r.study, S.exportGrid && S.grid.on), studyName());
+      download(finish(r.study, exportLines()), studyName());
     } catch (e) {
       toast(CORS_HELP, true);
     }
@@ -1353,7 +3138,7 @@
     if (!exportGuard()) return;
     try {
       const r = renderForExport();
-      download(finish(r.original, S.exportGrid && S.grid.on), `${slug(img.name)}-reference`);
+      download(finish(r.original, exportLines()), `${slug(img.name)}-reference`);
     } catch (e) {
       toast(CORS_HELP, true);
     }
@@ -1368,7 +3153,7 @@
     } catch (e) {
       return toast(CORS_HELP, true);
     }
-    const withGrid = S.exportGrid && S.grid.on;
+    const withGrid = exportLines();
     const W = 3300;
     const H = 2550;
     const m = 120;
@@ -1512,6 +3297,10 @@
     loadFromFile(e.target.files[0]);
     e.target.value = '';
   });
+  // a first try without a picture of your own: an open-access landscape
+  $('#try-sample').addEventListener('click', () =>
+    studyItem(M.ngaItem([30776, 'The Lackawanna Valley', 'George Inness', 'c. 1856', '41934d82-bfb0-447b-b36e-d06dca991243', 5132]))
+  );
   $('#url-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const url = $('#url-input').value.trim();
@@ -1856,7 +3645,14 @@
         renderLibrary();
         return true;
       } catch (e) {
-        toast('That photo is no longer stored in this browser.', true);
+        toast(
+          SY.status().on && item.photo
+            ? 'Couldn’t get that photo from your synced copy. Check the connection and try again.'
+            : SY.status().on
+              ? 'That photo hasn’t synced yet: open the app on the device it was added on, and it will upload.'
+              : 'That photo is no longer stored in this browser.',
+          true
+        );
         return false;
       } finally {
         setBusy(false);
@@ -1869,6 +3665,12 @@
   /** Remembers what's being studied, for history and "Add current image". */
   function remember(item) {
     img.item = item;
+    if (img.crop) {
+      rememberCrop(); // cropped before the image was saved: keep that crop with it
+    } else {
+      restoreCrop(item); // seen before (here or, with sync, elsewhere): bring its crop back
+      if (img.crop) buildSource();
+    }
     L.record(item);
     VST.log.start(item);
     renderLibrary();
@@ -1927,7 +3729,8 @@
     sel.value = S.currentSet || '';
     sel.disabled = !all.length;
     const set = currentSet();
-    ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).disabled = !set));
+    ['set-rename', 'set-delete', 'set-export'].forEach((id) => ($(`#${id}`).hidden = !set));
+    $('#set-actions').hidden = !all.length && !img.el; // + Add current image makes the first set
     $('#set-session').disabled = !set || !set.items.length;
     $('#set-tryon').disabled = !set || !set.items.length;
     const box = $('#set-items');
@@ -2071,8 +3874,8 @@
 
   const PR = VST.presets;
 
-  /** The current study settings as a preset. */
-  function currentPreset(name) {
+  /** The current study settings as a preset, with what you chose to keep alongside. */
+  function currentPreset(name, keep = {}) {
     const p = { name, tone: S.tone, posterK: S.posterK, blur: S.blur, bands: S.tone === 'poster' ? 0 : S.bands };
     if (S.tone !== 'poster' && S.bands >= 2) {
       p.splits = S.splitSource[S.bands] || 'fixed';
@@ -2080,12 +3883,22 @@
       p.levelsMode = S.levelsMode;
       if (S.levelsMode === 'custom') p.customLevels = (S.customLevels[S.bands] || []).slice();
     }
+    if (S.tone === 'palette') p.palette = PAL.paintsFor(S.palette).map((x) => x.id);
+    if (keep.grid) p.grid = { ...S.grid };
+    if (keep.compose) p.compose = { ...S.compose };
+    if (keep.view) p.view = S.view === 'compare' ? 'both' : S.view;
     return p;
   }
+  const sameGrid = (a, b) => ['on', 'cols', 'rows', 'diag', 'color', 'opacity'].every((k) => a[k] === b[k]);
+  const sameCompose = (a, b) => ['on', 'thirds', 'golden', 'diag', 'cross', 'color'].every((k) => a[k] === b[k]);
 
   /** True when the current settings are exactly this preset. */
   function presetMatches(p) {
     if (p.tone !== S.tone || (p.blur || 0) !== S.blur) return false;
+    if (p.tone === 'palette' && !(Array.isArray(p.palette) && samePaints(p.palette, S.palette))) return false;
+    if (p.grid && !sameGrid(p.grid, S.grid)) return false;
+    if (p.compose && !sameCompose(p.compose, S.compose)) return false;
+    if (p.view && p.view !== S.view) return false;
     if (p.tone === 'poster') return (p.posterK || 5) === S.posterK;
     if ((p.bands || 0) !== (S.bands >= 2 ? S.bands : 0)) return false;
     if (!(p.bands >= 2)) return true;
@@ -2098,7 +3911,7 @@
   }
 
   function applyPreset(p) {
-    S.tone = p.tone || 'gray';
+    switchTone(p.tone || 'gray');
     S.blur = p.blur || 0;
     if (p.posterK) S.posterK = p.posterK;
     if (S.tone !== 'poster') {
@@ -2112,8 +3925,24 @@
         if (S.levelsMode === 'custom' && Array.isArray(p.customLevels)) S.customLevels[S.bands] = p.customLevels.slice();
       }
     }
+    if (p.tone === 'palette' && Array.isArray(p.palette) && p.palette.length) {
+      S.palMine = null;
+      setPalette(p.palette);
+    }
+    if (p.grid) {
+      Object.assign(S.grid, p.grid);
+      syncGridControls();
+      drawOverlays();
+    }
+    if (p.compose) {
+      Object.assign(S.compose, p.compose);
+      syncComposeControls();
+      drawOverlays();
+    }
+    if (p.view && p.view !== S.view) setView(p.view);
     syncStudyControls();
     requestStudy();
+    save();
   }
 
   function renderPresetSelect() {
@@ -2140,7 +3969,7 @@
     group('Built-in', all.filter((p) => p.builtin));
     group('My presets', all.filter((p) => !p.builtin));
     sel.value = match ? match.id : '';
-    $('#preset-delete').disabled = !match || match.builtin;
+    $('#preset-delete').hidden = !match || match.builtin;
     $('#preset-desc').textContent = match ? PR.describe(match) : '';
   }
 
@@ -2149,10 +3978,32 @@
     if (p) applyPreset(p);
     else renderPresetSelect();
   });
-  $('#preset-save').addEventListener('click', () => {
-    const name = prompt('Name this preset:', '');
-    if (name == null) return;
-    const p = PR.save(currentPreset(name));
+  /*
+   * Saving a preset: its name, and what else it keeps besides the study's
+   * look. The paints always go with a Palette preset; the grid, the
+   * composition guides and the view are kept only if you tick them (they
+   * start ticked when they're on), and a preset without them leaves them
+   * as they are.
+   */
+  const presetForm = $('#preset-form');
+  function openPresetForm() {
+    presetForm.hidden = false;
+    $('#preset-name').value = '';
+    $('#preset-keep-paints').closest('label').hidden = S.tone !== 'palette';
+    $('#preset-keep-paints-name').textContent = paletteName();
+    $('#preset-keep-grid').checked = S.grid.on;
+    $('#preset-keep-compose').checked = S.compose.on;
+    $('#preset-keep-view').checked = false;
+    $('#preset-keep-view-name').textContent = { both: 'Both', study: 'Study', original: 'Original', compare: 'Both' }[S.view] || 'Both';
+    $('#preset-name').focus();
+  }
+  $('#preset-save').addEventListener('click', () => (presetForm.hidden ? openPresetForm() : (presetForm.hidden = true)));
+  $('#preset-cancel').addEventListener('click', () => (presetForm.hidden = true));
+  presetForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const keep = { grid: $('#preset-keep-grid').checked, compose: $('#preset-keep-compose').checked, view: $('#preset-keep-view').checked };
+    const p = PR.save(currentPreset($('#preset-name').value, keep));
+    presetForm.hidden = true;
     renderPresetSelect();
     toast(`Saved preset “${p.name}”.`);
   });
@@ -2318,42 +4169,93 @@
 
   /*
    * One flow covers both modes:
-   *   draw (minutes) -> [break] -> next round of the same image, or
+   *   [look] -> draw (minutes) -> [break] -> next round of the same image, or
    *   in a Master Copy session, the next painting in the queue.
+   * In memory mode each round starts with a look phase (the image shows for
+   * S.memorySec), then the image is hidden while you draw, and comes back
+   * when the round ends so you can compare.
    */
-  const flow = { session: false, index: 0, round: 1, phase: 'draw', pending: null };
+  const flow = { session: false, index: 0, round: 1, phase: 'draw', pending: null, memory: false, peeked: false };
 
   const countdown = new T.Countdown({
     onTick(ms, running) {
       VST.log.setTimerRunning(running && flow.phase === 'draw');
       $('#timer-clock').textContent = T.format(ms);
       $('#timer-clock').classList.toggle('break', flow.phase === 'break');
+      $('#timer-clock').classList.toggle('look', flow.phase === 'look');
       $('#timerbar').classList.toggle('ending', flow.phase === 'draw' && running && ms <= 10000);
       $('#t-play').textContent = running ? 'Pause' : ms < countdown.duration * 1000 && ms > 0 ? 'Resume' : 'Start';
+      timedReveal(ms, running);
     },
     onEnd: onPhaseEnd,
   });
 
-  function drawSeconds() {
-    return Math.round(S.minutes * 60);
+  /*
+   * Time is one length for every round (e.g. 10), or a list for rounds that
+   * get shorter (e.g. '10,5,2': 10 minutes, then 5, then 2). A list sets
+   * the number of rounds itself.
+   */
+  function timeList() {
+    const list = String(S.minutes).split(',').map(Number).filter((m) => m > 0);
+    return list.length ? list : [10];
+  }
+  function totalRounds() {
+    const list = timeList();
+    return list.length > 1 ? list.length : S.rounds;
+  }
+  function drawSeconds(round = flow.round) {
+    const list = timeList();
+    return Math.round(list[Math.min(Math.max(1, round), list.length) - 1] * 60);
+  }
+
+  /** Hidden while drawing from memory, unless you chose to peek. */
+  function memoryHiding() {
+    return flow.phase === 'draw' && flow.memory && !flow.peeked;
   }
 
   function updateTimerUi() {
     const visible = S.timerVisible || flow.session;
     $('#timerbar').hidden = !visible;
     $('#btn-timer').setAttribute('aria-pressed', String(visible));
+    const fresh = countdown.remainingMs >= countdown.duration * 1000;
     const parts = [];
     if (flow.phase === 'break') {
       parts.push(flow.pending === 'image' ? 'Break · next painting' : flow.pending === 'round' ? `Break · round ${flow.round + 1} next` : 'Break');
+      if (flow.memory) parts.push('compare with the reference');
     } else {
-      if (S.rounds > 1) parts.push(`Round ${flow.round} of ${S.rounds}`);
-      parts.push(countdown.running ? 'Drawing' : 'Ready');
+      if (totalRounds() > 1) parts.push(`Round ${flow.round} of ${totalRounds()}`);
+      if (flow.phase === 'look') parts.push(countdown.running ? 'Look and remember' : fresh ? 'Ready · look first, then draw from memory' : 'Paused · looking');
+      else if (memoryHiding()) parts.push(countdown.running ? 'Drawing from memory' : 'Paused');
+      else if (flow.reveal && fresh && !countdown.running) parts.push('Ready · reveals in stages');
+      else parts.push(countdown.running ? 'Drawing' : fresh ? 'Ready' : 'Paused');
+      if (reveal.active && flow.phase === 'draw') parts.push(stageLabel(reveal.stages[reveal.index]));
     }
     if (flow.session) parts.unshift(`Painting ${flow.index + 1} of ${queue.length}`);
     $('#timer-status').textContent = parts.join(' · ');
-    $('#t-skip').hidden = !(flow.session || S.rounds > 1 || flow.phase === 'break');
+    $('#t-skip').hidden = !(flow.session || totalRounds() > 1 || flow.phase === 'break' || flow.phase === 'look' || flow.memory);
     $('#btn-session').textContent = flow.session ? 'Stop session' : 'Start timed session';
+    const hide = memoryHiding();
+    $('#memory-cover').hidden = !hide;
+    $('#panels').classList.toggle('memory-hidden', hide);
     requestAnimationFrame(layout);
+  }
+
+  /** Get the first phase of a round ready (look in memory mode, else draw) without starting it. */
+  function armRound() {
+    flow.memory = S.memorySec > 0;
+    flow.peeked = false;
+    flow.pending = null;
+    flow.phase = flow.memory ? 'look' : 'draw';
+    flow.reveal = !!S.revealSeq && !flow.memory;
+    reveal.skipRound = false;
+    countdown.set(flow.memory ? S.memorySec : drawSeconds());
+  }
+
+  function startRound() {
+    armRound();
+    countdown.start();
+    T.keepAwake(true);
+    updateTimerUi();
   }
 
   function startDraw() {
@@ -2366,14 +4268,21 @@
   }
 
   function onPhaseEnd(natural) {
-    if (natural && flow.phase === 'draw') VST.log.round(countdown.duration);
-    if (flow.phase === 'break') {
-      if (flow.pending === 'round') flow.round++;
+    if (flow.phase === 'look') {
+      // time's up for looking: hide the image and draw
+      if (S.chime) T.chime('soft');
       startDraw();
       return;
     }
+    if (natural && flow.phase === 'draw') VST.log.round(countdown.duration, { memory: flow.memory && !flow.peeked });
+    if (flow.phase === 'draw') endReveal(); // the break (or the end) shows your usual view to compare
+    if (flow.phase === 'break') {
+      if (flow.pending === 'round') flow.round++;
+      startRound();
+      return;
+    }
     let next = null;
-    if (flow.round < S.rounds) next = 'round';
+    if (flow.round < totalRounds()) next = 'round';
     else if (flow.session && flow.index < queue.length - 1) next = 'image';
     if (!next) {
       if (S.chime) T.chime('done');
@@ -2395,35 +4304,37 @@
       updateTimerUi();
     } else {
       if (next === 'round') flow.round++;
-      startDraw();
+      startRound();
     }
   }
 
   function finishFlow() {
     const wasSession = flow.session;
+    const wasMemory = flow.memory;
+    endReveal();
     Object.assign(flow, { session: false, index: 0, round: 1, phase: 'draw', pending: null });
-    countdown.set(drawSeconds());
+    armRound();
     T.keepAwake(presenting);
     updateTimerUi();
     renderQueue();
-    $('#timer-status').textContent = wasSession ? 'Session complete. Nice work.' : 'Done';
+    $('#timer-status').textContent = (wasSession ? 'Session complete. Nice work.' : 'Done') + (wasMemory ? ' Compare with the reference.' : '');
   }
 
   function stopFlow() {
     finishFlow();
-    $('#timer-status').textContent = 'Ready';
+    updateTimerUi();
   }
 
   async function startSession() {
     if (!queue.length) return toast('Add some paintings to the session first.');
     T.unlockAudio();
-    Object.assign(flow, { session: true, index: 0, round: 1, phase: 'draw', pending: null });
+    Object.assign(flow, { session: true, index: 0, round: 1, phase: 'draw', pending: null, memory: false, peeked: false });
     S.timerVisible = true;
     renderQueue();
     updateTimerUi();
     const ok = await openItem(queue[0]);
     if (!ok || !flow.session) return;
-    startDraw();
+    startRound();
   }
 
   $('#btn-session').addEventListener('click', () => (flow.session ? stopFlow() : startSession()));
@@ -2436,7 +4347,7 @@
   });
   function playPause() {
     T.unlockAudio();
-    if (!countdown.running && countdown.remainingMs <= 0) countdown.set(drawSeconds());
+    if (!countdown.running && countdown.remainingMs <= 0) armRound();
     countdown.toggle();
     T.keepAwake(presenting || countdown.running);
     updateTimerUi();
@@ -2444,20 +4355,76 @@
   $('#t-play').addEventListener('click', playPause);
   $('#t-restart').addEventListener('click', () => {
     countdown.restart();
+    if (reveal.active && reveal.timed && flow.phase === 'draw') showStage(0);
     updateTimerUi();
   });
-  $('#t-skip').addEventListener('click', () => countdown.finish());
+  $('#t-skip').addEventListener('click', () => {
+    T.unlockAudio();
+    countdown.finish();
+  });
   $('#t-stop').addEventListener('click', stopFlow);
+  $('#memory-peek').addEventListener('click', () => {
+    // seeing the image again means this round no longer counts as from memory
+    flow.peeked = true;
+    updateTimerUi();
+  });
+
+  /** Memory mode: look for `sec` seconds before each round (0 = off). */
+  function setMemory(sec) {
+    S.memorySec = sec;
+    if (sec) S.memoryLast = sec;
+    if (sec && S.revealSeq) S.revealSeq = ''; // a hidden image can't also be revealed in stages
+    $('#t-practice').value = practiceValue();
+    // a round that hasn't started yet picks up the change
+    if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
+    updateTimerUi();
+    save();
+  }
+  /** The Practice menu's value for the current settings: '', 'm30' (memory) or 'r2,3,full' (reveal). */
+  function practiceValue() {
+    if (S.memorySec > 0) return `m${S.memorySec}`;
+    if (S.revealSeq) return `r${S.revealSeq}`;
+    return '';
+  }
+  $('#t-practice').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v.startsWith('m')) setMemory(+v.slice(1));
+    else if (v.startsWith('r')) setReveal(v.slice(1));
+    else {
+      setMemory(0);
+      setReveal('');
+    }
+  });
+  function toggleMemory() {
+    const on = !(S.memorySec > 0);
+    if (on && !S.timerVisible && !flow.session) {
+      S.timerVisible = true;
+    }
+    setMemory(on ? S.memoryLast || 30 : 0);
+    toast(on ? `Memory mode: look for ${T.format(S.memorySec * 1000)}, then draw with the image hidden.` : 'Memory mode off.');
+  }
 
   function syncTimerControls() {
     $('#t-minutes').value = String(S.minutes);
     $('#t-rounds').value = String(S.rounds);
+    syncRoundsControl();
     $('#t-break').value = String(S.breakSec);
+    $('#t-practice').value = practiceValue();
     $('#t-chime').checked = S.chime;
   }
+  /** Shorter-and-shorter times set the rounds themselves. */
+  function syncRoundsControl() {
+    const fixed = timeList().length > 1;
+    $('#t-rounds').disabled = fixed;
+    $('#t-rounds').title = fixed ? 'Set by the time: one round per length' : 'Draw the same image more than once';
+    if (fixed) $('#t-rounds').value = String(timeList().length);
+    else $('#t-rounds').value = String(S.rounds);
+  }
   $('#t-minutes').addEventListener('change', (e) => {
-    S.minutes = +e.target.value;
+    S.minutes = e.target.value.includes(',') ? e.target.value : +e.target.value;
+    syncRoundsControl();
     if (flow.phase === 'draw' && !countdown.running) countdown.set(drawSeconds());
+    updateTimerUi();
     save();
   });
   $('#t-rounds').addEventListener('change', (e) => {
@@ -2478,6 +4445,129 @@
     save();
   });
 
+  /* ================= Staged reveal ================= */
+
+  /*
+   * Commit to the big masses first: the study shows 2 values, then 3 (and
+   * so on), and finally the original. Step through by hand (Reveal button,
+   * R, or tapping the image), or set Reveal in the timer to spread the
+   * stages evenly over each drawing round.
+   */
+  const parseStages = (seq) => String(seq || '2,3,full').split(',').map((x) => (x === 'full' ? 'full' : +x));
+  const stageLabel = (st) => (st === 'full' ? 'Full image' : `${st} values`);
+
+  function beginReveal(timed) {
+    if (reveal.active || !img.el) return false;
+    reveal.stages = parseStages(timed ? S.revealSeq : S.revealSeq || S.revealLast);
+    reveal.snapshot = { view: S.view, bands: S.bands, tone: S.tone };
+    reveal.active = true;
+    reveal.timed = !!timed;
+    reveal.index = -1;
+    showStage(0);
+    return true;
+  }
+
+  function showStage(i) {
+    i = Math.max(0, Math.min(reveal.stages.length - 1, i));
+    if (!reveal.active || i === reveal.index) return;
+    reveal.index = i;
+    const st = reveal.stages[i];
+    if (st === 'full') {
+      setView('original');
+    } else {
+      const tone = reveal.snapshot.tone;
+      S.tone = tone === 'gray' || tone === 'color' ? tone : 'gray'; // main colors and palette have no values to step through
+      S.bands = st;
+      if (S.splitSource[st] === 'auto') work.refit = true;
+      syncStudyControls();
+      requestStudy();
+      if (S.view !== 'study') setView('study');
+    }
+    updateRevealUi();
+  }
+
+  /** Back to your own view and settings. */
+  function endReveal() {
+    if (!reveal.active) return;
+    const s = reveal.snapshot;
+    reveal.active = false;
+    reveal.snapshot = null;
+    reveal.index = -1;
+    S.tone = s.tone;
+    S.bands = s.bands;
+    if (S.tone !== 'poster' && S.splitSource[S.bands] === 'auto') work.refit = true;
+    syncStudyControls();
+    requestStudy();
+    setView(s.view);
+    updateRevealUi();
+  }
+
+  /** Ended by hand: a timed round doesn't start it again. */
+  function stopReveal() {
+    if (reveal.timed) reveal.skipRound = true;
+    endReveal();
+  }
+
+  /** Reveal button, R, or a tap on the image: start, step, then finish. */
+  function nextStage() {
+    if (!reveal.active) {
+      if (!img.el) return toast('Load an image first.');
+      beginReveal(false);
+      return;
+    }
+    if (reveal.index < reveal.stages.length - 1) showStage(reveal.index + 1);
+    else if (!reveal.timed) endReveal();
+  }
+
+  /** In a timed round, the stage follows the clock (tapping can still move ahead). */
+  function timedReveal(ms, running) {
+    if (flow.phase !== 'draw' || !flow.reveal || reveal.skipRound || !img.el) return;
+    const total = countdown.duration * 1000;
+    if (!running && ms >= total) return; // not started yet
+    if (!reveal.active) beginReveal(true);
+    else reveal.timed = true; // a reveal you started by hand joins the clock
+    const n = reveal.stages.length;
+    const due = Math.min(n - 1, Math.floor((1 - ms / total) * n));
+    if (due > reveal.index) {
+      showStage(due);
+      if (S.chime && running) T.chime('soft');
+      updateTimerUi();
+    }
+  }
+
+  function updateRevealUi() {
+    const chip = $('#reveal-chip');
+    chip.hidden = !reveal.active;
+    $('#btn-reveal').setAttribute('aria-pressed', String(reveal.active));
+    if (!reveal.active) return;
+    const n = reveal.stages.length;
+    const last = reveal.index === n - 1;
+    $('#reveal-stage').textContent = `${stageLabel(reveal.stages[reveal.index])} · ${reveal.index + 1} of ${n}`;
+    $('#reveal-hint').textContent = reveal.timed ? (last ? '' : 'Tap to move ahead') : last ? 'Tap to finish' : 'Tap for the next stage';
+  }
+
+  $('#btn-reveal').addEventListener('click', nextStage);
+  $('#reveal-end').addEventListener('click', (e) => {
+    e.stopPropagation();
+    stopReveal();
+  });
+  $('#panels').addEventListener('click', (e) => {
+    if (!reveal.active || e.target.closest('button, a, input, label')) return;
+    nextStage();
+  });
+
+  /** Reveal during timed rounds: a list of stages, or '' for off. */
+  function setReveal(seq) {
+    S.revealSeq = seq;
+    if (seq) S.revealLast = seq;
+    $('#t-practice').value = practiceValue();
+    if (seq && S.memorySec) setMemory(0);
+    $('#t-practice').value = practiceValue();
+    if (!countdown.running && flow.phase !== 'break' && countdown.remainingMs >= countdown.duration * 1000 && !memoryHiding()) armRound();
+    updateTimerUi();
+    save();
+  }
+
   /* ================= Present mode ================= */
 
   /*
@@ -2485,13 +4575,17 @@
    * presentation mode. Goes full screen where the browser allows it and
    * keeps the screen awake. Shortcuts (G, F, V, K, 2-6, Space) still work.
    */
-  let exitHideTimer = 0;
-  function showExitButton() {
+  let barHideTimer = 0;
+  /** The floating bar: shown on a tap or when the pointer moves, gone again after a few seconds. */
+  function showPresentBar() {
     if (!presenting) return;
-    const b = $('#btn-present-exit');
-    b.classList.add('show');
-    clearTimeout(exitHideTimer);
-    exitHideTimer = setTimeout(() => b.classList.remove('show'), 2500);
+    const bar = $('#present-bar');
+    bar.classList.add('show');
+    clearTimeout(barHideTimer);
+    barHideTimer = setTimeout(() => {
+      if (!bar.matches(':hover') && !bar.contains(document.activeElement)) bar.classList.remove('show');
+      else showPresentBar();
+    }, 3000);
   }
 
   function fullscreenElement() {
@@ -2503,7 +4597,9 @@
     if (on === presenting) return;
     presenting = on;
     document.body.classList.toggle('presenting', on);
-    $('#btn-present-exit').hidden = !on;
+    $('#present-bar').hidden = !on;
+    $('#present-view [data-view="compare"]').hidden = !mine.el;
+    setSeg($('#present-view'), 'view', S.view);
     const root = document.documentElement;
     try {
       if (on && !fullscreenElement()) {
@@ -2519,8 +4615,12 @@
       /* full screen isn't available here; the controls are still hidden */
     }
     T.keepAwake(presenting || countdown.running);
-    if (on) showExitButton();
-    else $('#btn-present-exit').classList.remove('show');
+    if (on) {
+      modeState.seen.add('present');
+      renderSteps();
+    }
+    if (on) showPresentBar();
+    else $('#present-bar').classList.remove('show');
     requestAnimationFrame(layout);
   }
 
@@ -2534,23 +4634,510 @@
       enteredFullscreen = !!fullscreenElement();
     })
   );
-  ['pointermove', 'pointerdown'].forEach((ev) => document.addEventListener(ev, showExitButton, { passive: true }));
+  ['pointermove', 'pointerdown'].forEach((ev) => document.addEventListener(ev, showPresentBar, { passive: true }));
+  $('#present-view').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) setView(b.dataset.view);
+  });
+  $('#pz-grid').addEventListener('click', () => toggleGrid());
+
+  /* ---------- Present: zoom and move around, both pictures in step ---------- */
+
+  /*
+   * Pinch or double-tap to zoom, drag to move around; on a Mac, pinch the
+   * trackpad (or scroll with Ctrl) to zoom and scroll to move. The original
+   * and the study always show the same part of the picture, so you can work
+   * sight-size from one area (an eye, a tree line) and flick between them.
+   * The zoom is kept for each image, so the next session starts the same.
+   */
+  const PZ_MAX = 8;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const zoomKey = () => (img.item && img.item.id ? String(img.item.id) : null);
+
+  function clampZoom() {
+    pz.z = clamp(pz.z, 1, PZ_MAX);
+    const half = 0.5 / pz.z;
+    pz.cx = clamp(pz.cx, half, 1 - half);
+    pz.cy = clamp(pz.cy, half, 1 - half);
+  }
+
+  /** This image's kept zoom, the first time it's shown (or a fresh fit). */
+  function loadZoom() {
+    const key = zoomKey();
+    if (key === pz.key) return;
+    const kept = key && S.zooms[key];
+    // an image that's still being saved gets its id a moment later: keep what's on screen
+    if (!kept && pz.key === null && key && pz.z > 1) pz.key = key;
+    else Object.assign(pz, kept ? { z: kept.z, cx: kept.cx, cy: kept.cy } : { z: 1, cx: 0.5, cy: 0.5 }, { key });
+    clampZoom();
+  }
+
+  /** Keep the zoom for this image (the 60 most recent). */
+  function keepZoom() {
+    const key = zoomKey();
+    if (!key) return;
+    delete S.zooms[key];
+    if (pz.z > 1.001) S.zooms[key] = { z: +pz.z.toFixed(3), cx: +pz.cx.toFixed(4), cy: +pz.cy.toFixed(4) };
+    const keys = Object.keys(S.zooms);
+    for (let i = 0; i < keys.length - 60; i++) delete S.zooms[keys[i]];
+    save();
+  }
+
+  /** Moves the pictures (and the grid over them) to the zoom; outside Present they sit as usual. */
+  function applyZoom() {
+    loadZoom();
+    const on = presenting && pz.z > 1.001;
+    $$('.panel .frame').forEach((frame) => {
+      frame.classList.toggle('zoomed', on);
+      const W = frame.clientWidth;
+      const H = frame.clientHeight;
+      const t = on ? `translate(${W / 2 - pz.cx * W * pz.z}px, ${H / 2 - pz.cy * H * pz.z}px) scale(${pz.z})` : '';
+      frame.querySelectorAll('canvas:not(.overlay)').forEach((c) => (c.style.transform = t));
+    });
+    $('#pz-level').textContent = `${Math.round(pz.z * 100)}%`;
+    $('#pz-out').disabled = pz.z <= 1.001;
+    $('#pz-fit').disabled = pz.z <= 1.001;
+    $('#pz-in').disabled = pz.z >= PZ_MAX - 0.001;
+    drawOverlays();
+  }
+
+  /** The visible frame under a point (or the first one), and the point in it, 0..1 across the frame. */
+  function frameAt(x, y) {
+    const frames = $$('.panel .frame').filter((f) => f.offsetParent);
+    if (!frames.length) return null;
+    const hit = frames.find((f) => {
+      const r = f.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    }) || frames[0];
+    const r = hit.getBoundingClientRect();
+    const fx = (x - r.left) / r.width;
+    return { frame: hit, w: r.width, h: r.height, fx: S.flip ? 1 - fx : fx, fy: (y - r.top) / r.height };
+  }
+
+  /** Zoom to z, keeping the picture's point under (x, y) where it is (the center when no point is given). */
+  function zoomTo(z, x, y, { keep = true } = {}) {
+    const at = x == null ? null : frameAt(x, y);
+    const fx = at ? at.fx : 0.5;
+    const fy = at ? at.fy : 0.5;
+    // the picture's point under (fx, fy) now
+    const px = pz.cx + (fx - 0.5) / pz.z;
+    const py = pz.cy + (fy - 0.5) / pz.z;
+    pz.z = clamp(z, 1, PZ_MAX);
+    pz.cx = px - (fx - 0.5) / pz.z;
+    pz.cy = py - (fy - 0.5) / pz.z;
+    clampZoom();
+    applyZoom();
+    if (keep) keepZoom();
+  }
+  /** Move the pictures by (dx, dy) screen pixels. */
+  function panBy(dx, dy) {
+    const at = frameAt(0, 0);
+    if (!at || pz.z <= 1.001) return;
+    pz.cx -= ((S.flip ? -dx : dx) / at.w) / pz.z;
+    pz.cy -= dy / at.h / pz.z;
+    clampZoom();
+    applyZoom();
+  }
+  const zoomStep = (f) => zoomTo(pz.z * f);
+  $('#pz-in').addEventListener('click', () => zoomStep(1.5));
+  $('#pz-out').addEventListener('click', () => zoomStep(1 / 1.5));
+  $('#pz-fit').addEventListener('click', () => zoomTo(1));
+
+  // touch and pen: one finger moves, two pinch; a quick second tap zooms in, or back out to fit
+  const touch = { pts: new Map(), start: null, moved: false, lastTap: 0 };
+  const panels = $('#panels');
+  panels.addEventListener('pointerdown', (e) => {
+    if (!presenting || e.button > 0 || e.target.closest('button')) return;
+    touch.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try {
+      panels.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* a synthetic event can't be captured; moving still works over the pictures */
+    }
+    if (touch.pts.size === 1) touch.moved = false;
+    touch.start = pinchState();
+  });
+  function pinchState() {
+    const p = [...touch.pts.values()];
+    if (p.length < 2) return { x: p[0].x, y: p[0].y, d: 0, z: pz.z };
+    return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), z: pz.z };
+  }
+  panels.addEventListener('pointermove', (e) => {
+    if (!presenting || !touch.pts.has(e.pointerId)) return;
+    const before = touch.pts.get(e.pointerId);
+    touch.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const now = pinchState();
+    if (Math.hypot(now.x - touch.start.x, now.y - touch.start.y) > 6 || (now.d && Math.abs(now.d - touch.start.d) > 6)) touch.moved = true;
+    if (touch.pts.size >= 2 && touch.start.d) {
+      // pinch: zoom about the fingers' midpoint, and follow it as it moves
+      zoomTo(touch.start.z * (now.d / touch.start.d), now.x, now.y, { keep: false });
+      panBy(now.x - (touch.last ? touch.last.x : now.x), now.y - (touch.last ? touch.last.y : now.y));
+      touch.last = now;
+    } else if (touch.pts.size === 1) {
+      panBy(e.clientX - before.x, e.clientY - before.y);
+    }
+  });
+  function endPointer(e) {
+    if (!touch.pts.delete(e.pointerId)) return;
+    touch.last = null;
+    if (touch.pts.size) {
+      touch.start = pinchState();
+      return;
+    }
+    if (touch.moved) {
+      keepZoom();
+      touch.noClickUntil = Date.now() + 400; // a drag isn't a tap: it doesn't step a staged reveal
+      return;
+    }
+    const now = Date.now();
+    if (now - touch.lastTap < 320) {
+      touch.lastTap = 0;
+      if (pz.z > 1.001) zoomTo(1);
+      else zoomTo(2.5, e.clientX, e.clientY);
+    } else touch.lastTap = now;
+  }
+  ['pointerup', 'pointercancel'].forEach((ev) => panels.addEventListener(ev, endPointer));
+  panels.addEventListener('click', (e) => Date.now() < (touch.noClickUntil || 0) && e.stopImmediatePropagation(), { capture: true });
+  // trackpad: pinch (sent as a wheel with Ctrl) zooms; scrolling moves around
+  panels.addEventListener(
+    'wheel',
+    (e) => {
+      if (!presenting) return;
+      e.preventDefault();
+      if (e.ctrlKey) zoomTo(pz.z * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, { keep: false });
+      else if (pz.z > 1.001) panBy(-e.deltaX, -e.deltaY);
+      else return;
+      clearTimeout(touch.wheelKeep);
+      touch.wheelKeep = setTimeout(keepZoom, 300);
+    },
+    { passive: false }
+  );
   // the browser drops the wake lock when the tab is hidden; take it back on return
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && (presenting || countdown.running)) T.keepAwake(true);
   });
 
+  /* ================= A spot on the picture: how to mix it ================= */
+
+  /*
+   * Tap a spot on the picture while the Color tab is open, or press and hold
+   * anywhere (in Present too): a small card shows its color, how your
+   * palette comes closest to it, and, if that isn't close enough, which one
+   * paint would reach it. It uses the same mixing as the rest of the palette
+   * tools.
+   */
+  const spot = { x: 0, y: 0, token: 0, open: false };
+  const spotModels = new Map(); // palette + added paint -> its new mixes (the most recent 80)
+  const SPOT_NEAR = 18; // ΔE: past "can mix" (10), still near enough to read as the same color
+
+  /** The picture's color under a screen point (averaged over a few pixels), or null off the pictures. */
+  function spotAt(x, y) {
+    if (!work.lab0 || !work.w) return null;
+    const frame = $$('#panel-original .frame, #panel-study .frame').find((f) => {
+      if (!f.offsetParent) return false;
+      const r = f.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    });
+    if (!frame) return null;
+    const r = frame.getBoundingClientRect();
+    let fx = (x - r.left) / r.width;
+    let fy = (y - r.top) / r.height;
+    if (S.flip) fx = 1 - fx;
+    if (frame.classList.contains('zoomed')) {
+      fx = pz.cx + (fx - 0.5) / pz.z;
+      fy = pz.cy + (fy - 0.5) / pz.z;
+    }
+    const px = Math.min(work.w - 1, Math.max(0, Math.floor(fx * work.w)));
+    const py = Math.min(work.h - 1, Math.max(0, Math.floor(fy * work.h)));
+    const rad = Math.max(1, Math.round(Math.max(work.w, work.h) / 400));
+    const lab = work.lab0;
+    let L = 0;
+    let a = 0;
+    let b = 0;
+    let n = 0;
+    for (let yy = Math.max(0, py - rad); yy <= Math.min(work.h - 1, py + rad); yy++) {
+      for (let xx = Math.max(0, px - rad); xx <= Math.min(work.w - 1, px + rad); xx++) {
+        const i = yy * work.w + xx;
+        L += lab.L[i];
+        a += lab.A[i];
+        b += lab.B[i];
+        n++;
+      }
+    }
+    return { L: L / n, a: a / n, b: b / n };
+  }
+
+  const rgbCss = (rgb) => `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`;
+
+  function closeSpot() {
+    spot.open = false;
+    spot.token++;
+    $('#spot-pop').hidden = true;
+    $('#spot-ring').hidden = true;
+  }
+
+  /** Puts the card beside the spot, inside the window. */
+  function placeSpot() {
+    const pop = $('#spot-pop');
+    const ring = $('#spot-ring');
+    ring.style.left = `${spot.x}px`;
+    ring.style.top = `${spot.y}px`;
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    let left = spot.x + 24;
+    if (left + w > innerWidth - 12) left = spot.x - w - 24;
+    left = Math.max(12, Math.min(innerWidth - w - 12, left));
+    const top = Math.max(12, Math.min(innerHeight - h - 12, spot.y - h / 2));
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+  }
+
+  function showSpot(x, y) {
+    const c = spotAt(x, y);
+    if (!c) return false;
+    Object.assign(spot, { x, y, open: true });
+    const token = ++spot.token;
+    const m = munsellOf(c.L, c.a, c.b);
+    $('#spot-sw').style.background = rgbCss(toRgb(c.L, c.a, c.b));
+    $('#spot-name').textContent = m.exact ? `${m.notation} · ${m.name}` : m.neutral ? `Value ${m.value} · neutral gray` : `Value ${m.value} · ${m.name}`;
+    $('#spot-sub').textContent = `This spot · value ${(c.L / 10).toFixed(1)}`;
+    $('#spot-pal-label').textContent = `With your palette · ${capFirst(paletteName())}`;
+    $('#spot-add').innerHTML = '';
+    const model = ensurePalette();
+    const hit = model && PAL.nearest(model, c.L, c.a, c.b);
+    const near = hit && hit.i >= 0 ? model.mixes[hit.i] : null;
+    const d = near ? hit.d : Infinity;
+    $('#spot-mix-sw').hidden = !near;
+    if (near) $('#spot-mix-sw').style.background = rgbCss(near.rgb);
+    const mix = $('#spot-mix');
+    if (!model) mix.textContent = 'Mixing isn’t available in this browser.';
+    else if (!near) mix.textContent = 'Nothing your palette mixes comes close.';
+    else if (d <= PAL.REACH) mix.innerHTML = `<b>You can mix it:</b> ${PAL.recipe(near.parts)} (ΔE ${Math.round(d)}).`;
+    else mix.innerHTML = `<b>Closest you can get</b> (ΔE ${Math.round(d)}, ${d < SPOT_NEAR ? 'near, but visibly off' : 'well off'}): ${PAL.recipe(near.parts)}.`;
+    $('#spot-pop').hidden = false;
+    $('#spot-ring').hidden = false;
+    placeSpot();
+    if (model && d > PAL.REACH) findSpotPaints(c, d, token);
+    return true;
+  }
+
+  /** The one or two paints that would reach the spot, tried a few at a time. */
+  function findSpotPaints(c, d, token) {
+    const add = $('#spot-add');
+    add.innerHTML = '<p class="spot-wait">Looking for a paint that reaches it…</p>';
+    placeSpot();
+    const toLab = (r, g, b) => C.rgbToLab(r, g, b, [0, 0, 0]);
+    const palKey = PAL.paintsFor(S.palette).map((p) => p.id).join(',');
+    const vars = PAL.variations(S.palette).filter((v) => v.kind === 'add');
+    const found = [];
+    let i = 0;
+    const step = () => {
+      if (token !== spot.token) return;
+      const t0 = performance.now();
+      while (i < vars.length && performance.now() - t0 < 25) {
+        const v = vars[i++];
+        const key = `${palKey}+${v.id}`;
+        let extra = spotModels.get(key);
+        if (!extra) {
+          extra = PAL.build(v.ids, window.spectral, toLab, { include: v.id });
+          spotModels.set(key, extra);
+          if (spotModels.size > 80) spotModels.delete(spotModels.keys().next().value);
+        }
+        const h = PAL.nearest(extra, c.L, c.a, c.b);
+        if (h.i >= 0 && h.d < d - 2) found.push({ v, d: h.d, mix: extra.mixes[h.i] });
+      }
+      if (i < vars.length) return setTimeout(step, 0);
+      found.sort((p, q) => p.d - q.d);
+      add.innerHTML = '';
+      if (!found.length) {
+        const none = document.createElement('p');
+        none.className = 'spot-none';
+        none.textContent = 'No single paint brings it much closer.';
+        add.append(none);
+        return placeSpot();
+      }
+      const label = document.createElement('p');
+      label.className = 'spot-label';
+      label.textContent = 'To reach it, add one paint';
+      add.append(label);
+      for (const f of found.slice(0, 2)) {
+        const p = PAL.byId.get(f.v.id);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'spot-add-row';
+        b.innerHTML = '<i></i><span><b></b><small></small></span><em>+ Add</em>';
+        b.querySelector('i').style.background = p.hex;
+        b.querySelector('b').textContent = `${p.name} · ΔE ${Math.round(f.d)}`;
+        b.querySelector('small').textContent = PAL.recipe(f.mix.parts);
+        b.title = `Add ${p.name.toLowerCase()} to your palette`;
+        b.addEventListener('click', () => {
+          choosePalette(f.v.ids);
+          showSpot(spot.x, spot.y);
+        });
+        add.append(b);
+      }
+      placeSpot();
+    };
+    setTimeout(step, 30);
+  }
+
+  $('#spot-close').addEventListener('click', closeSpot);
+  // a tap elsewhere closes it (a tap on the picture moves it instead)
+  document.addEventListener('pointerdown', (e) => {
+    if (spot.open && !e.target.closest('#spot-pop, #panels')) closeSpot();
+  });
+  window.addEventListener('resize', () => spot.open && closeSpot());
+
+  // a tap with the Color tab open (unless a staged reveal is using taps)
+  $('#panels').addEventListener('click', (e) => {
+    if (S.panel !== 'color' || presenting || reveal.active || e.target.closest('button, a, input, label')) return;
+    if (!showSpot(e.clientX, e.clientY)) closeSpot();
+  });
+  // press and hold, anywhere (and in Present); a second finger is a pinch, not a hold
+  const hold = { timer: 0, x: 0, y: 0, id: null, down: new Set() };
+  $('#panels').addEventListener('pointerdown', (e) => {
+    clearTimeout(hold.timer);
+    hold.down.add(e.pointerId);
+    if (hold.down.size > 1 || e.button > 0 || e.target.closest('button')) return;
+    Object.assign(hold, { x: e.clientX, y: e.clientY, id: e.pointerId });
+    hold.timer = setTimeout(() => {
+      if (showSpot(hold.x, hold.y)) touch.noClickUntil = Date.now() + 600; // the release isn't a tap
+    }, 500);
+  });
+  $('#panels').addEventListener('pointermove', (e) => {
+    if (e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) clearTimeout(hold.timer);
+  });
+  ['pointerup', 'pointercancel'].forEach((ev) =>
+    document.addEventListener(ev, (e) => {
+      if (!hold.down.delete(e.pointerId)) return;
+      clearTimeout(hold.timer);
+    })
+  );
+  // no text-selection menu after a long press on a touch screen
+  $('#panels').addEventListener('contextmenu', (e) => {
+    if (spot.open) e.preventDefault();
+  });
+
+  /* ================= Modes: three ways in ================= */
+
+  function stepDone(step) {
+    if (step === 'image') return !!img.el;
+    if (step === 'crop') return !!img.crop || modeState.seen.has('crop');
+    if (step === 'grid') return S.grid.on || modeState.seen.has('grid');
+    if (step === 'paint') return modeState.seen.has('present');
+    if (step === 'check') return !!mine.el;
+    return modeState.seen.has(step);
+  }
+
+  /** The next step to take: the first one not done yet (optional steps can be skipped). */
+  function nextStep() {
+    const m = MODES[S.workMode];
+    return m ? m.steps.find((st) => !m.optional.includes(st) && !stepDone(st)) || null : null;
+  }
+
+  function renderSteps() {
+    const box = $('#mode-steps');
+    $$('.is-next').forEach((el) => el.classList.remove('is-next'));
+    const m = MODES[S.workMode];
+    $('#mode-select').value = S.workMode;
+    $$('.mode-card').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === S.workMode)));
+    box.hidden = !m;
+    box.innerHTML = '';
+    if (!m) return;
+    const now = nextStep();
+    for (const st of m.steps) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.step = st;
+      const optional = m.optional.includes(st);
+      b.className = [stepDone(st) ? 'done' : '', st === now ? 'now' : '', optional ? 'optional' : ''].filter(Boolean).join(' ');
+      b.textContent = STEPS[st].name;
+      b.title = STEPS[st].tip + (optional ? ' (optional)' : '');
+      if (st === now) b.setAttribute('aria-current', 'step');
+      b.addEventListener('click', () => doStep(st));
+      li.appendChild(b);
+      box.appendChild(li);
+    }
+    const target = now && img.el && STEP_TARGET[now];
+    if (target) $(target).classList.add('is-next');
+  }
+
+  /** Takes you to a step: its tab, its tool, or the action itself. */
+  function doStep(st) {
+    if (st !== 'image' && !img.el) {
+      setPanel('images');
+      return toast('Choose an image first.');
+    }
+    if (st === 'image') setPanel('images');
+    else if (st === 'crop') openCrop();
+    else if (st === 'values') setPanel('study');
+    else if (st === 'palette') setPanel('color');
+    else if (st === 'grid') {
+      setPanel('canvas');
+      toggleGrid(true);
+      $('#sec-overlay').scrollIntoView({ block: 'nearest' });
+    } else if (st === 'present' || st === 'paint') setPresenting(true);
+    else if (st === 'check') {
+      setPanel('study');
+      $('#sec-mine').scrollIntoView({ block: 'nearest' });
+    } else if (st === 'explore') {
+      setPanel('color');
+      $('#fold-explore').open = true;
+      $('#fold-explore').scrollIntoView({ block: 'nearest' });
+    }
+    if (!['image', 'check', 'grid'].includes(st)) modeState.seen.add(st);
+    if (st === 'grid') modeState.seen.add('grid');
+    renderSteps();
+  }
+
+  /** Choosing a mode sets things up for it (like a broader preset); everything can still be changed. */
+  function chooseMode(mode) {
+    S.workMode = mode;
+    if (mode === 'prepare' || mode === 'study') {
+      if (S.tone !== 'gray') setTone('gray');
+      S.splitSource[3] = 'auto';
+      setBands(3);
+      if (mode === 'study' && !S.blur) S.blur = 30; // a little squint simplifies a quick study
+      setView(mode === 'study' ? 'study' : 'both');
+      if (mode === 'prepare') toggleGrid(true);
+    } else if (mode === 'color') {
+      setView('both');
+      if (S.tone !== 'palette') setTone('palette');
+    }
+    syncStudyControls();
+    requestStudy();
+    save();
+    if (img.el) {
+      if (mode === 'study') setPanel('study');
+      if (mode === 'color') setPanel('color');
+    }
+    renderSteps();
+    if (mode) toast(`${MODES[mode].name}: the steps are at the top of the sidebar. Any setting can still be changed.`);
+  }
+  $('#mode-select').addEventListener('change', (e) => chooseMode(e.target.value));
+  $$('.mode-card').forEach((b) => b.addEventListener('click', () => chooseMode(b.dataset.mode)));
+
   /* ================= Keyboard shortcuts ================= */
 
   document.addEventListener('keydown', (e) => {
-    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (cropper.isOpen() || squarer.isOpen() || !$('#tryon-modal').hidden || !$('#space-modal').hidden || !$('#palcmp-modal').hidden || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    // changing the study by hand ends a staged reveal (and gives back your settings) first
+    if (reveal.active && (/^[02-6]$/.test(k) || k === 'k' || k === 'v' || (k === 'escape' && !presenting))) stopReveal();
+    if (k === 'escape' && spot.open) return closeSpot();
     if (k === 'escape' && presenting) setPresenting(false);
+    else if (k === 'escape') return;
+    else if (presenting && (k === '+' || k === '=')) zoomStep(1.5);
+    else if (presenting && (k === '-' || k === '_')) zoomStep(1 / 1.5);
+    else if (k === 'r') nextStage();
     else if (k === 'p') setPresenting(!presenting);
     else if (k === 'g') toggleGrid();
+    else if (k === 'l') toggleCompose();
     else if (k === 'f') toggleFlip();
     else if (k === 'c') openCrop();
     else if (k === 't') $('#btn-timer').click();
+    else if (k === 'm') toggleMemory();
     else if (k === 'v') {
       const order = mine.el ? ['both', 'study', 'original', 'compare'] : ['both', 'study', 'original'];
       setView(order[(order.indexOf(S.view) + 1) % order.length]);
@@ -2559,17 +5146,211 @@
     else if (k === 'o' && mine.el) {
       if (S.view !== 'compare') setView('compare');
       setOverlay(!S.mineOverlay);
-    } else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray' }[S.tone]);
+    } else if (k === 'k') setTone({ gray: 'color', color: 'poster', poster: 'gray', palette: 'gray' }[S.tone]);
     else if (k === ' ' && !$('#timerbar').hidden) {
       e.preventDefault();
       playPause();
     } else return;
   });
 
+  /* ================= Sync ================= */
+
+  const SY = VST.sync;
+
+  /** "just now", "12 min ago", "at 3:42 PM", or a date. */
+  function ago(t) {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    const d = new Date(t);
+    if (d.toDateString() === new Date().toDateString()) return `at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    return `on ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  }
+
+  /** A link that opens the app and offers to join with this code (the code is after #, so it's never sent to a server). */
+  function joinLink(code) {
+    return `${location.origin}${location.pathname}#sync=${code}`;
+  }
+
+  /** Draws the join link as a QR code: dark modules on white, with a quiet margin. */
+  function drawSyncQr(code) {
+    const cv = $('#sync-qr');
+    if (!window.qrcode || !code) return;
+    const q = window.qrcode(0, 'M');
+    q.addData(joinLink(code));
+    q.make();
+    const n = q.getModuleCount();
+    const margin = 4;
+    const cell = Math.max(4, Math.floor(336 / (n + margin * 2)));
+    cv.width = cv.height = (n + margin * 2) * cell;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+    cv.dataset.code = code;
+  }
+
+  function renderSync(st = SY.status()) {
+    $('#sec-sync').hidden = !st.available;
+    $('#sync-off').hidden = st.on;
+    $('#sync-on-box').hidden = !st.on;
+    if (!st.on) {
+      $('#sync-code-box').hidden = true;
+      $('#sync-show').setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const line = $('#sync-status');
+    line.classList.toggle('busy', st.busy);
+    line.classList.toggle('error', !!st.error && !st.busy);
+    const devices = st.devices > 1 ? ` · ${st.devices} devices` : '';
+    $('#sync-status-text').textContent = st.busy
+      ? 'Syncing…'
+      : st.error
+        ? st.error
+        : st.lastSync
+          ? `Synced ${ago(st.lastSync)}${devices}`
+          : 'Not synced yet';
+    if ($('#sync-qr').dataset.code !== st.code) drawSyncQr(st.code);
+    // one group per line break at most: wrap only between groups, never inside one
+    const codeEl = $('#sync-code');
+    codeEl.innerHTML = '';
+    st.code.split('-').forEach((g, i, all) => {
+      const span = document.createElement('span');
+      span.className = 'code-group';
+      span.textContent = i < all.length - 1 ? `${g}-` : g;
+      codeEl.appendChild(span);
+    });
+    $('#sync-now').disabled = st.busy;
+  }
+  SY.onStatus(renderSync);
+  // keep "synced 3 min ago" current
+  setInterval(() => SY.status().on && renderSync(), 30000);
+
+  // what another device changed: show it
+  SY.onApplied((changed) => {
+    if (changed.includes('sets') || changed.includes('history')) renderLibrary();
+    if (changed.includes('presets')) renderPresetSelect();
+    if (changed.includes('masks') && $('#mask-wheel').clientWidth) renderMaskSaved();
+    if (changed.includes('palettes')) {
+      buildPaletteSelect();
+      renderPaletteUi();
+    }
+    if (S.panel === 'log' && (changed.includes('log') || changed.includes('history'))) renderLog();
+  });
+
+  function syncMsg(text, isError = false) {
+    const m = $('#sync-msg');
+    m.textContent = text;
+    m.classList.toggle('error', isError);
+  }
+
+  $('#sync-turn-on').addEventListener('click', async () => {
+    syncMsg('');
+    try {
+      await SY.turnOn();
+      // show the new code straight away: it's needed on the other devices
+      $('#sync-code-box').hidden = false;
+      $('#sync-show').setAttribute('aria-expanded', 'true');
+      syncMsg('Sync is on. Scan the QR code with your other devices, or enter the code there.');
+    } catch (e) {
+      syncMsg(e.message, true);
+    }
+  });
+  $('#sync-join-open').addEventListener('click', () => {
+    const form = $('#sync-join');
+    form.hidden = !form.hidden;
+    $('#sync-join-open').setAttribute('aria-expanded', String(!form.hidden));
+    if (!form.hidden) $('#sync-code-input').focus();
+  });
+  $('#sync-join').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    syncMsg('');
+    const input = $('#sync-code-input');
+    if (!SY.normalize(input.value)) {
+      input.classList.add('invalid');
+      return syncMsg('That doesn’t look like a sync code: it has 25 letters and digits, in five groups.', true);
+    }
+    input.classList.remove('invalid');
+    try {
+      await SY.join(input.value);
+      input.value = '';
+      $('#sync-join').hidden = true;
+      const st = SY.status();
+      syncMsg(st.error ? '' : 'Joined. This device now has everything from your other devices.');
+    } catch (err) {
+      syncMsg(err.message, true);
+    }
+  });
+  $('#sync-code-input').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+  $('#sync-now').addEventListener('click', () => SY.syncNow());
+  $('#sync-show').addEventListener('click', () => {
+    const box = $('#sync-code-box');
+    box.hidden = !box.hidden;
+    $('#sync-show').setAttribute('aria-expanded', String(!box.hidden));
+  });
+  $('#sync-copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(SY.status().code);
+      toast('Sync code copied.');
+    } catch (e) {
+      toast('Couldn’t copy; select the code and copy it instead.', true);
+    }
+  });
+  if (navigator.share) $('#sync-share').hidden = false;
+  $('#sync-share').addEventListener('click', () => {
+    const code = SY.status().code;
+    navigator.share({ title: 'Value Study sync', text: `Sync code: ${code}`, url: joinLink(code) }).catch(() => {});
+  });
+
+  /*
+   * Opened from the QR code (or a shared link): #sync=<code>. Take the code
+   * out of the address bar right away, so it isn't left in history, then
+   * offer to join.
+   */
+  async function joinFromLink() {
+    const m = location.hash.match(/(?:^#|&)sync=([^&]+)/);
+    if (!m) return;
+    const code = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!SY.status().available) return;
+    if (!SY.normalize(code)) return toast('That link’s sync code isn’t complete. Ask for the code again.', true);
+    const st = SY.status();
+    if (st.on && SY.normalize(st.code) === SY.normalize(code)) return toast('This device is already syncing with that code.');
+    const ask = st.on
+      ? 'Switch this device to the sync code from the link? It stops syncing with its current code; everything stays on this device.'
+      : 'Join sync with the code from this link? This device will get the study sets, presets, history and log from your other devices.';
+    if (!confirm(ask)) return;
+    if (st.on) await SY.turnOff();
+    setPanel('images');
+    try {
+      await SY.join(code);
+      syncMsg(SY.status().error ? '' : 'Joined. This device now has everything from your other devices.');
+      toast('Sync is on.');
+    } catch (e) {
+      syncMsg(e.message, true);
+    }
+  }
+  $('#sync-stop').addEventListener('click', async () => {
+    if (!confirm('Stop syncing on this device? Everything stays on this device, and your other devices keep syncing.')) return;
+    await SY.turnOff();
+    syncMsg('Sync is off on this device.');
+  });
+  $('#sync-delete').addEventListener('click', async () => {
+    if (!confirm('Delete the synced copy for every device? Each device keeps what it has, but they’ll stop staying in step until sync is turned on again.')) return;
+    try {
+      await SY.turnOff({ removeCopy: true });
+      syncMsg('The synced copy is deleted, and sync is off on this device.');
+    } catch (e) {
+      syncMsg(`Couldn’t delete it: ${e.message}`, true);
+    }
+  });
+
   /* ================= Start up ================= */
 
   syncStudyControls();
   syncGridControls();
+  syncComposeControls();
   syncTimerControls();
   setSeg($('#view-seg'), 'view', S.view);
   $('#btn-flip').setAttribute('aria-pressed', String(S.flip));
@@ -2577,15 +5358,23 @@
   buildMuseumFilter();
   renderLibrary();
   renderPresetSelect();
+  renderSync();
+  SY.resume().then(joinFromLink);
   $('#export-format').value = S.exportFormat;
   $('#export-grid').checked = S.exportGrid;
   $('#panels').classList.add('is-empty');
-  countdown.set(drawSeconds());
+  syncImageTools();
+  armRound();
   renderQueue();
   setMode(S.mode);
   setPanel(S.panel);
+  renderSteps();
   syncMineUi();
-  window.addEventListener('resize', () => drawHistogram());
+  window.addEventListener('resize', () => {
+    drawHistogram();
+    if (S.panel === 'color') renderGamut();
+  });
+  $('#space-unused').checked = S.spaceUnused;
 
   // exposed for automated tests
   VST.app = { settings: S, work, img, loadFromUrl, setImage, flow, countdown, isPresenting: () => presenting, squarer, mine, openItem, setPanel };

@@ -13,5 +13,12 @@
      * Art Institute of Chicago.
      */
     imageRelay: 'https://value-study-relay.jeffrey-63e.workers.dev',
+
+    /*
+     * Address of the sync service (see sync/README.md), for keeping sets,
+     * presets, history and the log the same across devices. Leave empty to
+     * hide the Sync section.
+     */
+    syncService: 'https://value-study-sync.jeffrey-63e.workers.dev',
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -7,7 +7,7 @@
   <meta name="description" content="Turn any reference into simplified value and color studies, and run timed master-copy sessions from public-domain museum collections.">
   <meta name="theme-color" content="#2a2a2a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='4' height='16' fill='%23111'/%3E%3Crect x='4' width='4' height='16' fill='%23555'/%3E%3Crect x='8' width='4' height='16' fill='%23999'/%3E%3Crect x='12' width='4' height='16' fill='%23eee'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-19i">
 </head>
 <body>
   <header class="topbar">
@@ -23,11 +23,22 @@
 
   <div class="layout">
     <aside class="sidebar" aria-label="Controls">
+      <div class="mode-bar" id="mode-bar">
+        <label class="mode-row">Mode
+          <select id="mode-select">
+            <option value="">Just the tools</option>
+            <option value="prepare">Prepare a painting</option>
+            <option value="study">Value study</option>
+            <option value="color">Color and palette</option>
+          </select>
+        </label>
+        <ol class="mode-steps" id="mode-steps" aria-label="Steps" hidden></ol>
+      </div>
       <div class="side-tabs" role="tablist" aria-label="Sidebar">
         <button role="tab" id="ptab-images" data-panel="images" aria-controls="panel-images" aria-selected="true">Images</button>
         <button role="tab" id="ptab-study" data-panel="study" aria-controls="panel-study" aria-selected="false">Study</button>
+        <button role="tab" id="ptab-color" data-panel="color" aria-controls="panel-color" aria-selected="false">Color</button>
         <button role="tab" id="ptab-canvas" data-panel="canvas" aria-controls="panel-canvas" aria-selected="false">Canvas</button>
-        <button role="tab" id="ptab-log" data-panel="log" aria-controls="panel-log" aria-selected="false">Log</button>
       </div>
 
       <!-- Images: everything for choosing what to study -->
@@ -110,73 +121,138 @@
           <button class="btn tiny" id="history-clear" type="button">Clear history</button>
         </details>
       </section>
+
+      <!-- Sync: the same sets, presets, history and log on every device -->
+      <section class="group" id="sec-sync" hidden>
+        <h2>Sync</h2>
+        <div id="sync-off">
+          <p class="hint">Keep study sets, presets, history and the practice log the same on your iPad, Mac and iPhone.</p>
+          <div class="row tight">
+            <button class="btn" id="sync-turn-on" type="button">Turn on sync</button>
+            <button class="btn" id="sync-join-open" type="button" aria-expanded="false" aria-controls="sync-join">Join with a code</button>
+          </div>
+          <form id="sync-join" class="inline-form sync-join" hidden>
+            <input type="text" id="sync-code-input" class="code-input" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-…" aria-label="Sync code">
+            <button class="btn primary" type="submit">Join</button>
+          </form>
+        </div>
+        <div id="sync-on-box" hidden>
+          <p class="sync-status" id="sync-status"><span class="sync-dot" aria-hidden="true"></span><span id="sync-status-text"></span></p>
+          <div class="row tight">
+            <button class="btn tiny" id="sync-now" type="button">Sync now</button>
+            <button class="btn tiny" id="sync-show" type="button" aria-expanded="false" aria-controls="sync-code-box">Show my code</button>
+            <span class="spacer"></span>
+            <button class="btn tiny" id="sync-stop" type="button">Stop syncing</button>
+          </div>
+          <div class="sync-code-box" id="sync-code-box" hidden>
+            <figure class="sync-qr">
+              <canvas id="sync-qr" role="img" aria-label="QR code for joining sync"></canvas>
+              <figcaption>Scan with your iPad or iPhone camera to join.</figcaption>
+            </figure>
+            <code class="sync-code" id="sync-code"></code>
+            <div class="row tight">
+              <button class="btn tiny" id="sync-copy" type="button">Copy</button>
+              <button class="btn tiny" id="sync-share" type="button" hidden>Share…</button>
+            </div>
+            <p class="hint">Or, on another device, choose <b>Join with a code</b> and enter this. Keep the code and the QR code private: they’re the key to your synced copy, and they can’t be recovered if lost.</p>
+            <details class="howto">
+              <summary>Delete the synced copy</summary>
+              <p>Removes the copy kept online, for every device. Each device keeps what it has.</p>
+              <button class="btn tiny danger" id="sync-delete" type="button">Delete the synced copy</button>
+            </details>
+          </div>
+          <p class="fine">Your own photos sync too: each is uploaded once, encrypted, and fetched on another device the first time it’s opened there.</p>
+        </div>
+        <p class="msg" id="sync-msg" role="status"></p>
+      </section>
+
+      <section class="group" id="sec-log-link">
+        <button class="btn block" id="open-log" type="button">Practice log</button>
+        <p class="hint">Time this week, streaks, and what you studied each day.</p>
+      </section>
       </div>
 
       <!-- Study: the value study settings and comparing my own study -->
       <div class="side-panel" id="panel-study" data-panel="study" role="tabpanel" aria-labelledby="ptab-study" hidden>
       <!-- Study settings (both modes) -->
       <section class="group" id="sec-study">
-        <div class="field preset-field">
-          <span class="label">Preset</span>
-          <select id="preset-select" aria-label="Preset"></select>
-          <div class="row tight preset-actions">
-            <button class="btn tiny" id="preset-save" type="button" title="Save the current settings as a preset">Save as preset…</button>
-            <button class="btn tiny" id="preset-delete" type="button" title="Delete this preset">Delete</button>
+        <div class="preset-row">
+          <label class="label" for="preset-select">Preset</label>
+          <div class="preset-bar">
+            <select id="preset-select"></select>
+            <button class="btn tiny" id="preset-save" type="button" title="Save the current settings as a preset">Save…</button>
+            <button class="btn tiny" id="preset-delete" type="button" title="Delete this preset" hidden>Delete</button>
           </div>
           <p class="hint" id="preset-desc"></p>
-        </div>
-        <span class="label">Color</span>
-        <div class="seg" id="tone-seg" role="radiogroup" aria-label="Color">
-          <button data-tone="gray" role="radio" title="Values only (K cycles)">Grayscale</button>
-          <button data-tone="color" role="radio" title="Keep the image's colors (K cycles)">Color</button>
-          <button data-tone="poster" role="radio" title="Repaint with the few colors that best sum up the image (K cycles)">Main colors</button>
+          <form class="preset-form" id="preset-form" hidden>
+            <input type="text" id="preset-name" placeholder="Name this preset" aria-label="Preset name" maxlength="50" autocomplete="off">
+            <p class="label">It keeps the study’s look, and also</p>
+            <label class="check"><input type="checkbox" id="preset-keep-paints" checked disabled> <span>The paints (<span id="preset-keep-paints-name"></span>)</span></label>
+            <label class="check"><input type="checkbox" id="preset-keep-grid"> The grid</label>
+            <label class="check"><input type="checkbox" id="preset-keep-compose"> The composition guides</label>
+            <label class="check"><input type="checkbox" id="preset-keep-view"> <span>The view (<span id="preset-keep-view-name"></span>)</span></label>
+            <p class="hint">What a preset doesn’t keep stays as it is when you apply it.</p>
+            <div class="row tight">
+              <button class="btn primary tiny" type="submit">Save preset</button>
+              <button class="btn tiny" type="button" id="preset-cancel">Cancel</button>
+            </div>
+          </form>
         </div>
 
-        <div id="values-ctl">
-          <div class="field">
-            <span class="label">Number of values</span>
-            <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
-              <button data-n="0" role="radio" title="Full range, no grouping (0)">All</button>
-              <button data-n="2" role="radio" title="Two values (notan)">2</button>
-              <button data-n="3" role="radio">3</button>
-              <button data-n="4" role="radio">4</button>
-              <button data-n="5" role="radio">5</button>
-              <button data-n="6" role="radio">6</button>
-            </div>
-          </div>
-          <div class="field" id="split-ctl">
-            <div class="label-row">
-              <span class="label">Where values split</span>
-              <span class="row tight">
-                <button class="btn tiny" id="btn-auto" title="Find the natural breaks in this image">Fit to image</button>
-                <button class="btn tiny" id="btn-even" title="Evenly spaced breaks">Even</button>
-              </span>
-            </div>
-            <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
-            <div id="thresholds" class="thresholds"></div>
-          </div>
-          <div class="field" id="levels-ctl">
-            <label class="label" for="levels-mode">Paint each value as</label>
-            <select id="levels-mode">
-              <option value="average">Average of each area (true to the image)</option>
-              <option value="even">Even steps, dark to light</option>
-              <option value="custom">Custom (start from the average)</option>
-            </select>
+        <div class="field">
+          <span class="label">Color</span>
+          <div class="seg tone-seg" id="tone-seg" role="radiogroup" aria-label="Color">
+            <button data-tone="gray" role="radio" title="Values only (K cycles)">Gray</button>
+            <button data-tone="color" role="radio" title="Keep the image's colors (K cycles)">Color</button>
+            <button data-tone="poster" role="radio" title="Repaint with the few colors that best sum up the image (K cycles)">Main colors</button>
+            <button data-tone="palette" role="radio" title="Repaint with what your limited palette can mix (choose the paints in the Color tab)">Palette</button>
           </div>
         </div>
 
-        <div id="poster-ctl" hidden>
-          <div class="field">
-            <span class="label">Number of colors</span>
-            <div class="seg small" id="k-seg" role="radiogroup" aria-label="Number of colors">
-              <button data-k="2" role="radio">2</button>
-              <button data-k="3" role="radio">3</button>
-              <button data-k="4" role="radio">4</button>
-              <button data-k="5" role="radio">5</button>
-              <button data-k="6" role="radio">6</button>
-              <button data-k="8" role="radio">8</button>
-            </div>
+        <div class="field" id="values-ctl">
+          <span class="label">Number of values</span>
+          <div class="seg small" id="bands-seg" role="radiogroup" aria-label="Number of values">
+            <button data-n="0" role="radio" title="Full range, no grouping (0)">All</button>
+            <button data-n="2" role="radio" title="Two values (notan)">2</button>
+            <button data-n="3" role="radio">3</button>
+            <button data-n="4" role="radio">4</button>
+            <button data-n="5" role="radio">5</button>
+            <button data-n="6" role="radio">6</button>
           </div>
+        </div>
+
+        <div class="field reveal-row">
+          <button class="btn tiny" id="btn-reveal" type="button" aria-pressed="false" title="Show 2 values, then 3, then the full image: tap to step through (R)">Reveal in stages</button>
+          <span class="hint">2 values, then 3, then the full image; tap the picture to step, or press R.</span>
+        </div>
+
+        <div class="field" id="poster-ctl" hidden>
+          <span class="label">Number of colors</span>
+          <div class="seg small" id="k-seg" role="radiogroup" aria-label="Number of colors">
+            <button data-k="2" role="radio">2</button>
+            <button data-k="3" role="radio">3</button>
+            <button data-k="4" role="radio">4</button>
+            <button data-k="5" role="radio">5</button>
+            <button data-k="6" role="radio">6</button>
+            <button data-k="8" role="radio">8</button>
+          </div>
+        </div>
+
+        <div class="field palette-ctl" id="palette-ctl" hidden>
+          <div class="label-row">
+            <span class="label">Paints</span>
+            <button class="btn tiny" id="pal-choose" type="button" title="Choose the paints in the Color tab">Change…</button>
+          </div>
+          <div class="palette-summary"><span class="palette-dots" id="palette-dots" aria-hidden="true"></span><b id="palette-name"></b></div>
+          <label class="check" title="Thin diagonal lines over the parts of the picture the palette can't mix"><input type="checkbox" id="pal-mark" checked> Mark what it can’t mix</label>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label class="label" for="blur">Squint</label>
+            <output id="blur-out" for="blur">Off</output>
+          </div>
+          <input type="range" id="blur" min="0" max="100" step="1" value="0">
         </div>
 
         <p class="label swatch-title" id="swatches-master-label" hidden>Reference</p>
@@ -185,14 +261,27 @@
           <p class="label swatch-title">My study</p>
           <div class="swatches" id="swatches-mine" aria-label="Values in my study"></div>
         </div>
-        <p class="hint" id="swatch-hint">Value scale 0 (black) to 10 (white), like Munsell value.</p>
+        <p class="compare-read" id="compare-read" hidden aria-live="polite"></p>
+        <p class="hint" id="swatch-hint">Values from 0 (black) to 10 (white), like Munsell.</p>
 
-        <div class="field">
+        <div class="field" id="split-ctl">
           <div class="label-row">
-            <label class="label" for="blur">Squint (blur)</label>
-            <output id="blur-out" for="blur">0</output>
+            <span class="label">Where values split</span>
+            <span class="row tight">
+              <button class="btn tiny" id="btn-auto" title="Find the natural breaks in this image">Fit to image</button>
+              <button class="btn tiny" id="btn-even" title="Evenly spaced breaks">Even</button>
+            </span>
           </div>
-          <input type="range" id="blur" min="0" max="100" step="1" value="0">
+          <canvas id="histogram" class="histogram" height="64" aria-label="Value histogram. Drag to move the splits."></canvas>
+          <div id="thresholds" class="thresholds"></div>
+        </div>
+        <div class="field" id="levels-ctl">
+          <label class="label" for="levels-mode">Paint each value as</label>
+          <select id="levels-mode">
+            <option value="average">Average of each area</option>
+            <option value="even">Even steps</option>
+            <option value="custom">Custom values</option>
+          </select>
         </div>
       </section>
 
@@ -210,6 +299,14 @@
           </div>
           <label class="check" title="Phone photos make white paper look gray, which would skew every value"><input type="checkbox" id="mine-paper" checked> Correct paper to white</label>
           <label class="check"><input type="checkbox" id="mine-overlay"> Overlay on the reference <kbd>O</kbd></label>
+          <div class="field" id="mine-style-field" hidden>
+            <div class="seg small" id="mine-style" role="radiogroup" aria-label="Overlay style">
+              <button data-style="blend" role="radio" title="My study over the reference, at the strength below">Blend</button>
+              <button data-style="flicker" role="radio" title="Tap the picture to swap between my study and the reference, in place">Flicker</button>
+              <button data-style="difference" role="radio" title="Where the two line up goes dark; what doesn't line up glows">Difference</button>
+            </div>
+            <p class="hint" id="mine-style-hint"></p>
+          </div>
           <div class="field" id="mine-opacity-field" hidden>
             <div class="label-row">
               <label class="label" for="mine-opacity">My study's strength</label>
@@ -217,13 +314,161 @@
             </div>
             <input type="range" id="mine-opacity" min="0" max="100" step="1" value="50">
           </div>
+          <label class="check" id="mine-diff-row" title="Blue where my study is a value lighter than the reference, red where it's darker (with a number of values)"><input type="checkbox" id="mine-diff"> Show where my values differ</label>
         </div>
       </section>
       </div>
 
+      <!-- Color: the picture's colors on a wheel -->
+      <div class="side-panel" id="panel-color" data-panel="color" role="tabpanel" aria-labelledby="ptab-color" hidden>
+      <section class="group" id="sec-palette">
+        <h2>Limited palette</h2>
+        <div class="preset-bar">
+          <select id="pal-preset" aria-label="Palette"></select>
+          <button class="btn tiny" id="pal-save" type="button" title="Save these paints as a palette of your own">Save…</button>
+        </div>
+        <div class="pal-mine-row">
+          <button class="btn tiny pal-update" id="pal-update" type="button" hidden></button>
+          <button class="btn tiny" id="pal-rename" type="button" title="Rename this palette" hidden>Rename…</button>
+          <button class="btn tiny" id="pal-delete" type="button" title="Delete this palette" hidden>Delete</button>
+        </div>
+        <p class="hint pal-source" id="pal-source" hidden></p>
+        <label class="check pal-live" title="Repaint the study with what these paints can mix. Choosing paints turns it on; off goes back to the tone you had."><input type="checkbox" id="pal-live"> Paint the study with it</label>
+        <div class="pal-paints" id="pal-paints" aria-label="Paints in this palette"></div>
+        <select id="pal-add" aria-label="Add a paint"></select>
+        <div class="log-stats pal-stats" id="pal-stats"></div>
+        <div class="pal-suggest" id="pal-suggest" hidden aria-live="polite" aria-label="Paints to add or take out, for this picture"></div>
+        <button class="btn block" id="pal-compare" type="button">Compare palettes on this picture…</button>
+        <p class="hint">Tap a spot on the picture to see how to mix it with these paints. In other tabs, and in Present, press and hold.</p>
+        <details class="fold" id="fold-explore">
+          <summary><span class="fold-title">Explore this palette</span><span class="fold-sub">What stands in for each hue, and the wheel of what it can mix</span></summary>
+          <div class="standins" id="pal-standins" hidden>
+            <p class="label">What stands in for each hue</p>
+            <div class="standin-grid" id="standin-grid"></div>
+            <p class="hint" id="standin-detail" aria-live="polite"></p>
+            <div class="contrast" id="standin-contrast" hidden>
+              <figure><div class="cc-ground" id="cc-gray"><span class="cc-chip"></span></div><figcaption>On gray, same value</figcaption></figure>
+              <figure><div class="cc-ground" id="cc-comp"><span class="cc-chip"></span></div><figcaption id="cc-comp-cap">In its complement</figcaption></figure>
+              <figure id="cc-pic-fig"><div class="cc-ground cc-pic" id="cc-pic"><canvas></canvas><span class="cc-chip"></span></div><figcaption>In this picture</figcaption></figure>
+            </div>
+          </div>
+          <div class="overlap" id="pal-overlap" hidden>
+            <div class="seg small" id="overlap-band" role="radiogroup" aria-label="Values shown on the wheel">
+              <button data-band="all" role="radio" title="All values">All</button>
+              <button data-band="darks" role="radio" title="Values 0 to 3.5">Darks</button>
+              <button data-band="middles" role="radio" title="Values 3.5 to 6.5">Middles</button>
+              <button data-band="lights" role="radio" title="Values 6.5 to 10">Lights</button>
+            </div>
+            <canvas id="overlap-wheel" class="overlap-wheel" role="img"></canvas>
+            <ul class="overlap-key" aria-hidden="true">
+              <li><i class="k-pal"></i>What the palette can mix</li>
+              <li><i class="k-pic"></i>The picture’s colors (bigger where they cover more)</li>
+              <li><i class="k-gap"></i>Colors it needs but can’t mix</li>
+            </ul>
+            <p class="hint" id="overlap-note" aria-live="polite"></p>
+          </div>
+          <label class="check"><input type="checkbox" id="pal-range"> Show it in the color space</label>
+          <p class="hint" id="pal-out-hint" hidden>The faint cloud is what the palette can mix; faded dots are colors in the picture it can’t.</p>
+          <details class="howto">
+            <summary>How mixing is worked out</summary>
+            <p>Mixes are simulated with <a href="https://github.com/rvanwijnen/spectral.js" target="_blank" rel="noopener">spectral.js</a> (Kubelka–Munk: how paint absorbs and scatters light) from typical colors of each paint, up to three at a time, with white and black where the palette has them. Brands vary, so treat it as a guide.</p>
+            <p>“Can mix” means within ΔE 10, a small but visible difference.</p>
+          </details>
+        </details>
+      </section>
+      <details class="group fold" id="sec-gamut">
+        <summary><h2>Color space</h2><span class="fold-sub" id="space-sum">The picture’s colors in 3D, with its main hue and value range</span></summary>
+        <button class="space-open" id="space-open" type="button" aria-label="Open the color space larger">
+          <canvas id="space-small" class="space-small" aria-hidden="true"></canvas>
+          <span class="space-open-tag" aria-hidden="true">Tap to open larger</span>
+        </button>
+        <p class="hint" id="gamut-empty">Load an image to see its colors in the color space.</p>
+        <div class="log-stats gamut-stats" id="gamut-stats"></div>
+        <label class="check"><input type="checkbox" id="space-unused"> Show colors not in the picture</label>
+        <p class="hint">Each dot is a color in the picture, bigger where it covers more.</p>
+        <details class="howto">
+          <summary>How to read this</summary>
+          <p>It’s laid out like the Munsell color solid: <b>value</b> runs up the middle from black to white, <b>hue</b> goes around (R, YR, Y, GY, G, BG, B, PB, P, RP), and <b>chroma</b> gets stronger away from the gray center. Tap the view to open it large, turn it, and see one value at a time.</p>
+          <p>Positions come from CIE Lab, so the layout is close to Munsell, not exact. Tapping a color reads it in true Munsell notation (for example 7.5R 5/14), from the Munsell renotation data. <b>Squint</b> (in Study) smooths out photo noise first.</p>
+        </details>
+        <p class="hint" id="gamut-marks-hint" hidden>The ringed dots are the main colors.</p>
+      </details>
+
+      <details class="group fold" id="sec-mask">
+        <summary><h2>Gamut mask</h2><span class="fold-sub" id="mask-sum">Plan a color scheme on the wheel, then find paints for it</span></summary>
+        <p class="hint">A shape on the color wheel. Paint with only the colors inside it, and the whole picture holds together.</p>
+        <div class="seg small" id="mask-shape" role="radiogroup" aria-label="Mask shape">
+          <button data-shape="triad" role="radio" title="Shifted triad: one strong hue and two weaker ones">Triad</button>
+          <button data-shape="complement" role="radio" title="Two opposite hues and the grays between">Complement</button>
+          <button data-shape="analogous" role="radio" title="Neighboring hues, with a touch of their opposite">Analogous</button>
+          <button data-shape="atmospheric" role="radio" title="A small range near gray, for muted, atmospheric schemes">Muted</button>
+        </div>
+        <div class="preset-bar mask-saved-bar">
+          <select id="mask-saved" aria-label="Saved masks"></select>
+          <button class="btn tiny" id="mask-save" type="button" title="Save this mask under a name">Save…</button>
+        </div>
+        <div class="pal-mine-row">
+          <button class="btn tiny pal-update" id="mask-update" type="button" hidden></button>
+          <button class="btn tiny" id="mask-rename" type="button" title="Rename this mask" hidden>Rename…</button>
+          <button class="btn tiny" id="mask-delete" type="button" title="Delete this mask" hidden>Delete</button>
+        </div>
+        <canvas id="mask-wheel" class="overlap-wheel mask-wheel" tabindex="0" role="img"></canvas>
+        <label class="check" title="A dashed gold outline around every hue and chroma your palette can mix, at any value"><input type="checkbox" id="mask-pal"> Show my palette on the wheel</label>
+        <div class="field">
+          <div class="label-row">
+            <label class="label" for="mask-size">Size</label>
+            <output id="mask-size-out" for="mask-size"></output>
+          </div>
+          <input type="range" id="mask-size" min="15" max="110" step="1" value="60">
+        </div>
+        <p class="hint" id="mask-note" aria-live="polite"></p>
+        <div class="mask-fit" id="mask-fit" hidden>
+          <p class="label">Paints for this mask</p>
+          <div class="seg small" id="mask-aim" role="radiogroup" aria-label="Aim at">
+            <button data-aim="picture" role="radio" title="The picture moved into the mask: the colors you’d paint">The picture in it</button>
+            <button data-aim="whole" role="radio" title="Every color inside the mask, at every value a screen can show">The whole mask</button>
+          </div>
+          <p class="hint" id="mask-fit-note" aria-live="polite"></p>
+          <div class="pal-suggest" id="mask-suggest" aria-live="polite" aria-label="Paints to add or take out, for the picture in this mask"></div>
+          <div class="mask-build-row">
+            <label class="label" for="mask-build-n">Build a palette for this mask</label>
+            <div class="preset-bar">
+              <select id="mask-build-n">
+                <option value="2">2 colors and white</option>
+                <option value="3">3 colors and white</option>
+                <option value="4" selected>4 colors and white</option>
+                <option value="5">5 colors and white</option>
+                <option value="6">6 colors and white</option>
+              </select>
+              <button class="btn tiny" id="mask-build" type="button">Build</button>
+            </div>
+          </div>
+          <div class="mask-build-out" id="mask-build-out" hidden aria-live="polite"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="mask-on"> Paint the study inside the mask</label>
+        <div class="field" id="mask-strength-ctl" hidden>
+          <div class="label-row">
+            <label class="label" for="mask-strength">Strength</label>
+            <output id="mask-strength-out" for="mask-strength"></output>
+          </div>
+          <input type="range" id="mask-strength" min="10" max="100" step="5" value="100">
+        </div>
+        <details class="howto">
+          <summary>How to use a gamut mask</summary>
+          <p>Drag a corner to reshape the mask, drag inside it to move it, or drag outside it to turn it to other hues (arrow keys turn it too). The striped dots are the picture’s colors that fall outside.</p>
+          <p>With <b>Paint the study inside the mask</b>, each color outside moves to the nearest color inside, at the same value, so the values don’t change. <b>Strength</b> moves them only part of the way. It works with Color, Main colors and Palette.</p>
+          <p>The technique was popularized by James Gurney in <i>Color and Light</i>.</p>
+        </details>
+      </details>
+      </div>
+
       <!-- Log: what you studied, on which days, for how long -->
-      <div class="side-panel" id="panel-log" data-panel="log" role="tabpanel" aria-labelledby="ptab-log" hidden>
+      <div class="side-panel" id="panel-log" data-panel="log" role="region" aria-labelledby="log-title" hidden>
       <section class="group" id="sec-log">
+        <div class="log-head">
+          <h2 id="log-title">Practice log</h2>
+          <button class="btn tiny" id="log-done" type="button">Done</button>
+        </div>
         <div class="log-stats" id="log-stats"></div>
         <div class="cal-head">
           <button class="btn tiny cal-nav" id="cal-prev" type="button" aria-label="Previous month">‹</button>
@@ -238,12 +483,33 @@
           <span class="spacer"></span>
           <button class="btn tiny danger" id="log-clear" type="button">Clear log</button>
         </div>
-        <p class="fine">Study time counts while an image is on screen (it pauses after 30 idle minutes unless a timer is running). Saved in this browser.</p>
+        <p class="fine">Study time counts while an image is on screen (it pauses after 30 idle minutes unless a timer is running). Rounds drawn from memory are counted separately. Saved in this browser.</p>
       </section>
       </div>
 
       <!-- Canvas: transferring to the canvas, and downloads -->
       <div class="side-panel" id="panel-canvas" data-panel="canvas" role="tabpanel" aria-labelledby="ptab-canvas" hidden>
+      <section class="group" id="sec-compose">
+        <h2>Composition</h2>
+        <label class="check"><input type="checkbox" id="compose-on"> Show guides <kbd>L</kbd></label>
+        <div class="compose-kinds" role="group" aria-label="Guides">
+          <label class="check" title="Lines at a third of the width and height"><input type="checkbox" data-compose="thirds"> Rule of thirds</label>
+          <label class="check" title="Lines at 0.382 and 0.618 of the width and height"><input type="checkbox" data-compose="golden"> Golden section</label>
+          <label class="check" title="Corner to corner, plus the lines at right angles to them from the other corners"><input type="checkbox" data-compose="diag"> Diagonals</label>
+          <label class="check" title="Verticals and horizontals through the points where the diagonals cross"><input type="checkbox" data-compose="cross"> Lines through the crossings</label>
+        </div>
+        <div class="grid-fields">
+          <label>Color
+            <select id="compose-color">
+              <option value="white">White</option>
+              <option value="black">Black</option>
+              <option value="red">Red</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">The guides you choose also show in <b>Crop</b>, so you can place the horizon and the big shapes on them as you frame the picture.</p>
+      </section>
+
       <section class="group" id="sec-overlay">
         <h2>Grid</h2>
         <label class="check"><input type="checkbox" id="grid-on"> Show grid <kbd>G</kbd></label>
@@ -279,7 +545,7 @@
               <option value="jpeg">JPG</option>
             </select>
           </label>
-          <label class="check"><input type="checkbox" id="export-grid" checked> Include grid</label>
+          <label class="check"><input type="checkbox" id="export-grid" checked> Include grid and guides</label>
         </div>
         <div class="stack">
           <button class="btn" id="btn-dl-study">Download study</button>
@@ -288,10 +554,26 @@
         </div>
       </section>
 
+      <details class="howto keys">
+        <summary>Keyboard shortcuts</summary>
+        <dl class="key-list">
+          <dt><kbd>2</kbd>–<kbd>6</kbd> <kbd>0</kbd></dt><dd>number of values (0 = all)</dd>
+          <dt><kbd>K</kbd></dt><dd>gray, color, main colors</dd>
+          <dt><kbd>V</kbd></dt><dd>view: both, study, original</dd>
+          <dt><kbd>G</kbd> <kbd>L</kbd></dt><dd>grid, composition guides</dd>
+          <dt><kbd>C</kbd> <kbd>F</kbd></dt><dd>crop, flip</dd>
+          <dt><kbd>R</kbd></dt><dd>reveal in stages</dd>
+          <dt><kbd>P</kbd></dt><dd>present</dd>
+          <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>zoom, while presenting</dd>
+          <dt><kbd>T</kbd> <kbd>Space</kbd></dt><dd>timer, start or pause</dd>
+          <dt><kbd>M</kbd></dt><dd>memory mode</dd>
+          <dt><kbd>O</kbd></dt><dd>overlay my study</dd>
+          <dt><kbd>S</kbd></dt><dd>add to the study set</dd>
+        </dl>
+      </details>
       <p class="fine credits">Inspired by
         <a href="https://www.proko.com/values" target="_blank" rel="noopener">Proko's value tool</a> and the
-        <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.
-        Keys: <kbd>G</kbd> grid, <kbd>F</kbd> flip, <kbd>V</kbd> view, <kbd>C</kbd> crop, <kbd>0</kbd> all / <kbd>2</kbd>–<kbd>6</kbd> values, <kbd>K</kbd> color mode, <kbd>P</kbd> present, <kbd>O</kbd> overlay, <kbd>S</kbd> add to set, <kbd>Space</kbd> timer.</p>
+        <a href="https://drawingtimer.com/" target="_blank" rel="noopener">Massa Art drawing timer</a>.</p>
       </div>
     </aside>
 
@@ -303,15 +585,30 @@
           <button data-view="original" role="radio">Original</button>
           <button data-view="compare" role="radio" id="view-compare" disabled title="Compare with my study (add a photo first)">Compare</button>
         </div>
-        <div class="row tight">
+        <div class="row tight tools">
           <button class="btn" id="btn-save-set" title="Add this image to the current study set (S)">+ Set</button>
           <button class="btn" id="btn-crop" title="Crop (C)">Crop</button>
           <button class="btn" id="btn-flip" aria-pressed="false" title="Flip horizontally (F)">Flip</button>
           <button class="btn" id="btn-grid" aria-pressed="false" title="Grid (G)">Grid</button>
-          <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
         </div>
+        <button class="btn primary" id="btn-present" title="Hide all controls and show just the image (P)">Present</button>
       </div>
-      <button class="btn present-exit" id="btn-present-exit" hidden title="Show the controls again (Esc or P)">Exit presentation</button>
+      <div class="present-bar" id="present-bar" hidden role="toolbar" aria-label="Presentation">
+        <div class="seg" id="present-view" role="radiogroup" aria-label="View">
+          <button data-view="both" role="radio" title="Original and study side by side (V)">Both</button>
+          <button data-view="study" role="radio">Study</button>
+          <button data-view="original" role="radio">Original</button>
+          <button data-view="compare" role="radio" hidden>Compare</button>
+        </div>
+        <div class="present-zoom" role="group" aria-label="Zoom">
+          <button class="btn" id="pz-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+          <output id="pz-level" aria-live="polite">100%</output>
+          <button class="btn" id="pz-in" type="button" aria-label="Zoom in" title="Zoom in (+). Pinch or double-tap to zoom, drag to move around.">+</button>
+          <button class="btn" id="pz-fit" type="button" title="Show the whole picture (double-tap)">Fit</button>
+        </div>
+        <button class="btn" id="pz-grid" type="button" aria-pressed="false" title="Grid (G)">Grid</button>
+        <button class="btn" id="btn-present-exit" type="button" title="Show the controls again (Esc or P)">Exit</button>
+      </div>
 
       <div class="panels" id="panels" data-view="both">
         <figure class="panel" id="panel-original">
@@ -321,13 +618,20 @@
           <div class="frame-wrap"><div class="frame"><canvas id="cv-study"></canvas><canvas id="cv-mine-overlay" class="mine-overlay" hidden></canvas><canvas class="overlay"></canvas></div><figcaption id="study-caption">Study</figcaption></div>
         </figure>
         <figure class="panel" id="panel-mine">
-          <div class="frame-wrap"><div class="frame"><canvas id="cv-mine"></canvas><canvas class="overlay"></canvas></div><figcaption id="mine-caption">My study</figcaption></div>
+          <div class="frame-wrap"><div class="frame"><canvas id="cv-mine"></canvas><canvas id="cv-mine-diff" class="mine-diff" hidden></canvas><canvas class="overlay"></canvas></div><figcaption id="mine-caption">My study</figcaption></div>
         </figure>
         <div class="empty" id="empty">
           <div class="empty-box" id="empty-reference">
-            <p class="empty-title">Bring in a reference</p>
-            <p>Drop an image here, paste one, or</p>
+            <p class="empty-title">What are you working on?</p>
+            <p class="empty-lede">Pick one to set things up; you can change any setting afterwards. Or skip this and just bring in a reference.</p>
+            <div class="mode-cards" role="radiogroup" aria-label="Mode">
+              <button class="mode-card" type="button" role="radio" aria-checked="false" data-mode="prepare"><b>Prepare a painting</b><span>Crop to your canvas, see the values, plan the palette, grid it, then paint from the screen and check your study.</span></button>
+              <button class="mode-card" type="button" role="radio" aria-checked="false" data-mode="study"><b>Value study</b><span>Simplify a reference to a few values (or a tiny palette) and paint a quick study. Timer and log if you want them.</span></button>
+              <button class="mode-card" type="button" role="radio" aria-checked="false" data-mode="color"><b>Color and palette</b><span>See what a palette can mix for this picture, what to add or drop, and how each spot is mixed.</span></button>
+            </div>
+            <p>Then drop an image here, paste one, or</p>
             <label class="btn primary file-btn">Choose an image…<input type="file" id="file-input-2" accept="image/*"></label>
+            <p class="empty-sample">New here? <button class="link-btn" id="try-sample" type="button">Try it on a museum painting</button></p>
           </div>
           <div class="empty-box" id="empty-master" hidden>
             <p class="empty-title">Find a master painting</p>
@@ -335,6 +639,18 @@
           </div>
         </div>
         <div class="busy" id="busy" hidden>Loading…</div>
+        <div class="reveal-chip" id="reveal-chip" hidden role="status" aria-live="polite">
+          <b id="reveal-stage"></b>
+          <span id="reveal-hint"></span>
+          <button class="btn tiny" id="reveal-end" type="button" title="Back to your usual view (Esc)">End</button>
+        </div>
+        <div class="memory-cover" id="memory-cover" hidden>
+          <div class="memory-box">
+            <p class="empty-title">Draw from memory</p>
+            <p>The reference is hidden. It comes back when the round ends, so you can compare.</p>
+            <button class="btn" id="memory-peek" type="button" title="Show the reference again (this round then counts as a regular timed round)">Peek at the reference</button>
+          </div>
+        </div>
       </div>
 
       <p class="credit" id="credit"></p>
@@ -351,8 +667,8 @@
           <button class="btn" id="t-stop" title="Stop and reset">Stop</button>
         </div>
         <div class="timer-settings">
-          <label>Time
-            <select id="t-minutes">
+          <label><span class="vh">Time</span>
+            <select id="t-minutes" title="How long each round lasts">
               <option value="0.5">30 sec</option>
               <option value="1">1 min</option>
               <option value="2">2 min</option>
@@ -364,28 +680,52 @@
               <option value="30">30 min</option>
               <option value="45">45 min</option>
               <option value="60">60 min</option>
+              <optgroup label="Shorter rounds">
+                <option value="2,1,0.5">2, 1, ½ min</option>
+                <option value="5,2,1">5, 2, 1 min</option>
+                <option value="10,5,2">10, 5, 2 min</option>
+                <option value="20,10,5">20, 10, 5 min</option>
+              </optgroup>
             </select>
           </label>
-          <label title="Draw the same image more than once">Rounds
+          <label title="Draw the same image more than once"><span class="vh">Rounds</span>
             <select id="t-rounds">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
+              <option value="1">1 round</option>
+              <option value="2">2 rounds</option>
+              <option value="3">3 rounds</option>
+              <option value="4">4 rounds</option>
+              <option value="5">5 rounds</option>
             </select>
           </label>
-          <label title="A pause to turn the page">Break
+          <label title="A pause between rounds to turn the page"><span class="vh">Break</span>
             <select id="t-break">
-              <option value="0">None</option>
-              <option value="5">5 sec</option>
-              <option value="10">10 sec</option>
-              <option value="20">20 sec</option>
-              <option value="30">30 sec</option>
-              <option value="60">1 min</option>
+              <option value="0">No break</option>
+              <option value="5">5 sec break</option>
+              <option value="10">10 sec break</option>
+              <option value="20">20 sec break</option>
+              <option value="30">30 sec break</option>
+              <option value="60">1 min break</option>
+            </select>
+          </label>
+          <label title="Memory: look, then draw with the image hidden (M). Reveal: 2 values, then 3, then the full image over each round.">Practice
+            <select id="t-practice">
+              <option value="">Normal</option>
+              <optgroup label="Memory">
+                <option value="m15">Look 15 sec</option>
+                <option value="m30">Look 30 sec</option>
+                <option value="m45">Look 45 sec</option>
+                <option value="m60">Look 1 min</option>
+                <option value="m90">Look 90 sec</option>
+              </optgroup>
+              <optgroup label="Reveal">
+                <option value="r2,3,full">2 → 3 → full</option>
+                <option value="r2,3,4,full">2 → 3 → 4 → full</option>
+                <option value="r2,4,6,full">2 → 4 → 6 → full</option>
+              </optgroup>
             </select>
           </label>
           <label class="check"><input type="checkbox" id="t-chime" checked> Chime</label>
+          <button class="btn tiny" id="t-log" type="button" title="Your practice: time, streaks and what you studied">Log</button>
         </div>
       </div>
     </main>
@@ -400,6 +740,13 @@
         <input type="number" id="crop-ch" min="0" step="any" inputmode="decimal" aria-label="Canvas height" title="Height (any unit)">
       </span>
       <button class="btn" id="crop-orient" title="Switch between portrait and landscape">Portrait</button>
+      <span class="crop-break" aria-hidden="true"></span>
+      <span class="crop-guides" role="group" aria-label="Composition guides">
+        <button class="btn tiny" type="button" data-guide="thirds" aria-pressed="true" title="Rule of thirds">Thirds</button>
+        <button class="btn tiny" type="button" data-guide="golden" aria-pressed="false" title="Golden section">Golden</button>
+        <button class="btn tiny" type="button" data-guide="diag" aria-pressed="false" title="Diagonals">Diagonals</button>
+        <button class="btn tiny" type="button" data-guide="cross" aria-pressed="false" title="Lines through the crossings">Crossings</button>
+      </span>
       <span class="crop-info" id="crop-info"></span>
       <span class="spacer"></span>
       <button class="btn" id="crop-reset">Full image</button>
@@ -441,19 +788,104 @@
     <p class="modal-hint">Tap an image to study it with this preset.</p>
   </div>
 
+  <div class="modal" id="palcmp-modal" hidden role="dialog" aria-modal="true" aria-label="Compare palettes">
+    <div class="modal-bar">
+      <strong>Compare palettes</strong>
+      <label class="check"><input type="checkbox" id="palcmp-mark"> Mark what each can’t mix</label>
+      <span class="spacer"></span>
+      <button class="btn primary" id="palcmp-close" type="button">Close</button>
+    </div>
+    <p class="tryon-desc" id="palcmp-desc">This picture painted with each palette, the one that reaches the most first.</p>
+    <div class="tryon-grid" id="palcmp-grid"></div>
+    <p class="modal-hint">Tap a palette to paint the study with it.</p>
+  </div>
+
+  <div class="modal" id="space-modal" hidden role="dialog" aria-modal="true" aria-label="Color space">
+    <div class="modal-bar">
+      <strong>Color space</strong>
+      <label class="check"><input type="checkbox" id="space-unused-big"> Show colors not in the picture</label>
+      <label class="check" title="What your limited palette can mix; colors it can't are faded"><input type="checkbox" id="space-pal"> My palette</label>
+      <label>Value
+        <select id="space-slice">
+          <option value="">All values</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+        </select>
+      </label>
+      <button class="btn" id="space-top" type="button" title="Look down on the hue circle">Top</button>
+      <button class="btn" id="space-side" type="button" title="Look from the side: value goes up">Side</button>
+      <button class="btn" id="space-reset" type="button">Reset</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="space-close" type="button">Close</button>
+    </div>
+    <div class="crop-area space-area">
+      <div class="space-stage">
+        <div class="space-view"><canvas id="space-big" class="space-big" aria-label="The picture's colors in 3D. Drag to turn, scroll or pinch to zoom, tap a dot to read it and see where it is in the picture. Arrow keys turn, plus and minus zoom."></canvas></div>
+        <div class="space-readout" id="space-readout" hidden role="status" aria-live="polite"><span class="sw"></span><div class="rd"><b></b><span class="mun"></span><span class="share"></span><span class="pal" id="space-palette"></span></div></div>
+      </div>
+      <aside class="space-pic" id="space-pic" hidden aria-label="Where this color is in the picture">
+        <div class="space-pic-bar">
+          <label>Match
+            <select id="space-match" title="How close a color has to be to count">
+              <option value="0">This color</option>
+              <option value="6">Close colors</option>
+              <option value="12">Similar colors</option>
+              <option value="20">Broad range</option>
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button class="btn" id="space-pic-clear" type="button">Clear</button>
+        </div>
+        <div class="space-pic-frame"><canvas id="space-pic-canvas" aria-label="The picture with the chosen color in full and the rest in gray. Tap it to find another color in the space."></canvas></div>
+        <p class="space-pic-share" id="space-pic-share"></p>
+      </aside>
+    </div>
+    <p class="modal-hint">Drag to turn · scroll or pinch to zoom · tap a dot to read it and see where it is in the picture · tap the picture to find a color · pick a value to see one level at a time.</p>
+  </div>
+
+  <!-- a spot on the picture: its color, how your palette mixes it, and what to add if it can't -->
+  <div class="spot-ring" id="spot-ring" hidden aria-hidden="true"></div>
+  <div class="spot-pop" id="spot-pop" hidden role="dialog" aria-label="How to mix this spot">
+    <button class="spot-close" id="spot-close" type="button" aria-label="Close" title="Close (Esc)">×</button>
+    <div class="spot-row"><span class="spot-sw" id="spot-sw"></span><div><b id="spot-name"></b><span class="spot-sub" id="spot-sub"></span></div></div>
+    <p class="spot-label" id="spot-pal-label"></p>
+    <div class="spot-row"><span class="spot-sw" id="spot-mix-sw"></span><p class="spot-mix" id="spot-mix"></p></div>
+    <div class="spot-add" id="spot-add" aria-live="polite"></div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="js/color.js"></script>
-  <script src="js/process.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/museum.js"></script>
-  <script src="js/library.js"></script>
-  <script src="js/presets.js"></script>
-  <script src="js/log.js"></script>
-  <script src="js/timer.js"></script>
-  <script src="js/crop.js"></script>
-  <script src="js/warp.js"></script>
-  <script src="js/squareup.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/color.js?v=2026-11-19i"></script>
+  <script src="js/process.js?v=2026-11-19i"></script>
+  <script src="js/config.js?v=2026-11-19i"></script>
+  <script src="js/museum.js?v=2026-11-19i"></script>
+  <script src="js/sync-merge.js?v=2026-11-19i"></script>
+  <script src="js/library.js?v=2026-11-19i"></script>
+  <script src="js/presets.js?v=2026-11-19i"></script>
+  <script src="js/saved.js?v=2026-11-19i"></script>
+  <script src="js/log.js?v=2026-11-19i"></script>
+  <script src="js/vendor/qrcode.js?v=2026-11-19i"></script>
+  <script src="js/sync.js?v=2026-11-19i"></script>
+  <script src="js/timer.js?v=2026-11-19i"></script>
+  <script src="js/compose.js?v=2026-11-19i"></script>
+  <script src="js/vendor/spectral.js?v=2026-11-19i"></script>
+  <script src="js/palette.js?v=2026-11-19i"></script>
+  <script src="data/munsell-renotation.js?v=2026-11-19i"></script>
+  <script src="js/munsell.js?v=2026-11-19i"></script>
+  <script src="js/colorspace.js?v=2026-11-19i"></script>
+  <script src="js/overlap.js?v=2026-11-19i"></script>
+  <script src="js/mask.js?v=2026-11-19i"></script>
+  <script src="js/gamut.js?v=2026-11-19i"></script>
+  <script src="js/crop.js?v=2026-11-19i"></script>
+  <script src="js/warp.js?v=2026-11-19i"></script>
+  <script src="js/squareup.js?v=2026-11-19i"></script>
+  <script src="js/app.js?v=2026-11-19i"></script>
 </body>
 </html>

@@ -19,8 +19,8 @@ const studyColors = (pg) => pg.evaluate(() => {
 const settle = (pg) => pg.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
 
-// Sidebar controls live in tabs (Images / Study / Canvas). Like a person would,
-// open the tab that holds a control before using it.
+// Sidebar controls live in tabs (Images / Study / Canvas), some in folded
+// sections. Like a person would, open the tab and the fold before using it.
 function aware(pg) {
   const reveal = async (sel) => {
     if (typeof sel !== 'string') return;
@@ -30,6 +30,10 @@ function aware(pg) {
       try { el = document.querySelector(css); } catch (e) { return; }
       const panel = el && el.closest('.side-panel');
       if (panel && panel.hidden && window.VST && window.VST.app && window.VST.app.setPanel) window.VST.app.setPanel(panel.dataset.panel);
+      // and open a folded section that holds it (the Color tab folds its deeper tools)
+      // (but not for a fold's own heading: tapping that is what opens it)
+      const inside = el && el.matches('details.fold > summary') ? el.parentElement.parentElement : el;
+      for (let d = inside && inside.closest('details.fold:not([open])'); d; d = d.parentElement.closest('details.fold:not([open])')) d.open = true;
     }, css).catch(() => {});
   };
   for (const m of ['click', 'fill', 'selectOption', 'check', 'uncheck', 'isVisible']) {
@@ -52,7 +56,7 @@ function check(cond, msg) {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   // the main page runs without the image relay (Art Institute only), like a fresh setup
-  await page.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await page.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
 
   // a painted "landscape" test image, made in the browser
   await page.goto(BASE);
@@ -68,6 +72,42 @@ function check(cond, msg) {
     return c.toDataURL('image/png').split(',')[1];
   });
   const png = Buffer.from(pngB64, 'base64');
+
+  // ---- First run ----
+  check(await page.$$eval('#btn-save-set, #btn-crop, #btn-flip, #btn-grid, #btn-present, #btn-download', (bs) => bs.every((b) => b.disabled)), 'with no image, the tools that act on one wait (Present too)');
+  check(await page.isHidden('#set-actions') && await page.isHidden('#set-rename') && await page.isHidden('#set-delete') && await page.isVisible('#set-new'), 'with no sets, only New set and Import show');
+  check(!(await page.$('.toolbar #btn-reveal')) && !!(await page.$('#panel-study #btn-reveal')), 'Reveal lives in the Study tab, not the toolbar');
+  {
+    const fresh = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    await fresh.route('https://api.nga.gov/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
+    await fresh.goto(BASE);
+    await fresh.click('#try-sample');
+    await fresh.waitForFunction(() => window.VST.app.work.w > 0, null, { timeout: 5000 }).catch(() => {});
+    check(await fresh.evaluate(() => window.VST.app.img.meta && window.VST.app.img.meta.source === 'nga' && !document.getElementById('btn-present').disabled), 'Try it on a museum painting opens an open-access landscape, and the tools wake up');
+    await fresh.close();
+  }
+  // modes: three ways in, which set things up and show the steps (nothing is hidden)
+  {
+    const mp2 = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    await mp2.goto(BASE);
+    check(await mp2.isVisible('.mode-card[data-mode="prepare"]') && await mp2.isHidden('#mode-steps') && (await mp2.$eval('#mode-select', (x) => x.value)) === '', 'the first screen offers three ways in, and no mode is chosen until you pick one');
+    await mp2.click('.mode-card[data-mode="prepare"]');
+    const set = await mp2.evaluate(() => { const s = window.VST.app.settings; return [s.workMode, s.tone, s.bands, s.grid.on, s.view].join(); });
+    check(set === 'prepare,gray,3,true,both' && await mp2.isVisible('#mode-steps'), `Prepare a painting sets things up for it (${set}) and shows its steps`);
+    await mp2.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
+    await mp2.waitForFunction(() => window.VST.app.work.w > 0);
+    await mp2.waitForTimeout(100);
+    check(await mp2.$eval('#mode-steps .now', (b) => b.dataset.step) === 'crop' && await mp2.$eval('#btn-crop', (b) => b.classList.contains('is-next')), 'with an image in, Crop is next, and its button is ringed');
+    await mp2.click('#mode-steps [data-step="crop"]');
+    await mp2.waitForSelector('#crop-modal:not([hidden])');
+    await mp2.click('#crop-cancel');
+    check(await mp2.$eval('#mode-steps .now', (b) => b.dataset.step) === 'values', 'after Crop, Values is next');
+    await mp2.selectOption('#mode-select', 'color');
+    check(await mp2.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color'), 'Color and palette paints the study with the palette and opens the Color tab');
+    await mp2.selectOption('#mode-select', '');
+    check(await mp2.isHidden('#mode-steps') && !(await mp2.$('.is-next')), 'Just the tools takes the steps away');
+    await mp2.close();
+  }
 
   // ---- Reference mode ----
   await page.setInputFiles('#file-input', { name: 'river-landscape.png', mimeType: 'image/png', buffer: png });
@@ -111,7 +151,359 @@ function check(cond, msg) {
   check(await page.$eval('#panel-study .frame', (f) => f.classList.contains('flipped')), 'F flips');
   await page.keyboard.press('f');
 
-  // threshold slider changes the study
+  // Color tab: the palette first, the deeper tools folded away
+  await page.click('#ptab-color');
+  check(await page.evaluate(() => document.getElementById('panel-color').firstElementChild.id === 'sec-palette' && ['fold-explore', 'sec-gamut', 'sec-mask'].every((id) => !document.getElementById(id).open)), 'the Color tab leads with the palette, with the deeper tools folded');
+  await page.waitForFunction(() => document.querySelectorAll('#pal-stats .stat').length === 2 && /^Main hue .* values \d/.test(document.getElementById('space-sum').textContent));
+  check(true, `the palette's figures show, and the folded color space has its figures on its heading (${await page.textContent('#space-sum')})`);
+  await page.click('#sec-gamut > summary');
+  const foldKept = await page.waitForFunction(() => document.getElementById('sec-gamut').open && window.VST.app.settings.folds.space === true, null, { timeout: 2000 }).then(() => true, () => false);
+  check(foldKept, 'tapping a heading opens its section, and that is remembered');
+
+  // the picture's colors in a 3D color space
+  await page.waitForFunction(() => document.querySelectorAll('#gamut-stats .stat').length === 4);
+  const canvasSum = (sel) => page.$eval(sel, (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0, ink = 0; for (let i = 0; i < d.length; i++) { s = (s * 31 + d[i]) >>> 0; if (i % 4 === 3 && d[i]) ink++; } return { s, ink }; });
+  await settle(page);
+  const small = await canvasSum('#space-small');
+  check(small.ink > 1000, `the color space draws in the sidebar (${small.ink} px)`);
+  const gs = await page.$$eval('#gamut-stats .stat', (els) => els.map((e) => e.textContent));
+  check(/main hue/.test(gs[0]) && /value range/.test(gs[3]), `the color figures show (${gs.join(' | ')})`);
+  check(/\([\d.]+(R|YR|Y|GY|G|BG|B|PB|P|RP)\)|Gray/.test(gs[0]), `the main hue is a Munsell hue from the renotation data (${gs[0]})`);
+  await page.check('#space-unused');
+  await settle(page);
+  check((await canvasSum('#space-small')).ink > small.ink * 1.5, 'Show colors not in the picture adds the rest of the color space');
+  await page.uncheck('#space-unused');
+  await page.screenshot({ path: path.join(OUT, '2c-color-space.png') });
+  // tap to open it large: turn, zoom, slice by value, tap a dot to read it
+  check(!(await page.isChecked('#pal-range')), 'the palette isn’t shown in the color space unless asked for');
+  await page.uncheck('#pal-range'); // just the picture's own colors for these checks
+  await page.click('#space-open');
+  check(await page.isVisible('#space-modal'), 'tapping the color space opens it large');
+  await settle(page);
+  const bigView = await canvasSum('#space-big');
+  const box = await page.$eval('#space-big', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await page.mouse.move(box.x + box.w / 2, box.y + box.h / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.w / 2 + 120, box.y + box.h / 2 + 20, { steps: 5 });
+  await page.mouse.up();
+  await settle(page);
+  check((await canvasSum('#space-big')).s !== bigView.s, 'dragging turns it');
+  await page.selectOption('#space-slice', '7');
+  await settle(page);
+  check((await canvasSum('#space-big')).ink < bigView.ink, 'choosing a value shows one level');
+  // tap the biggest dot to read it
+  const dot = await page.evaluate(() => {
+    const c = document.getElementById('space-big'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const dpr = window.devicePixelRatio || 1;
+    for (let y = 0; y < c.height; y += 2) for (let x = 0; x < c.width; x += 2) { const i = (y * c.width + x) * 4; const r = d[i], g = d[i + 1], b = d[i + 2]; if (d[i + 3] && Math.max(r, g, b) - Math.min(r, g, b) > 40) return { x: x / dpr, y: y / dpr }; }
+    return null;
+  });
+  if (dot) await page.mouse.click(box.x + dot.x, box.y + dot.y);
+  check(dot && (await page.isVisible('#space-readout')) && /^([\d.]+(R|YR|Y|GY|G|BG|B|PB|P|RP) [\d.]+\/[\d.]+|N [\d.]+\/) · /.test(await page.textContent('#space-readout b')), `tapping a dot reads it in Munsell notation (${dot ? (await page.textContent('#space-readout')).trim() : 'no dot'})`);
+  check(/^Munsell (hue [\d.]+[A-Z]+, value [\d.]+, chroma \d+|value [\d.]+, no chroma)$/.test(await page.textContent('#space-readout .mun')), 'and spells the notation out');
+  // …and see where it is in the picture: matches in color, the rest in gray
+  await settle(page);
+  check(await page.isVisible('#space-pic'), 'tapping a dot shows where it is in the picture');
+  const colored = () => page.$eval('#space-pic-canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2]) n++; return { n, total: d.length / 4 }; });
+  const exact = await colored();
+  const readShare = (await page.textContent('#space-readout .share')).match(/[\d.]+%/);
+  const picShare = (await page.textContent('#space-pic-share')).match(/[\d.]+%/);
+  check(exact.n > 0 && exact.n < exact.total, `only the matching pixels keep their color (${exact.n} of ${exact.total})`);
+  check(readShare && picShare && readShare[0] === picShare[0], `the picture's match is the share the dot reads (${readShare && readShare[0]} = ${picShare && picShare[0]})`);
+  await page.screenshot({ path: path.join(OUT, '2d-color-space-large.png') });
+  await page.selectOption('#space-match', '20');
+  await settle(page);
+  const broad = await colored();
+  check(broad.n > exact.n, `a broader match takes in more of the picture (${exact.n} → ${broad.n})`);
+  check(/within 20 ΔE/.test(await page.textContent('#space-pic-share')), 'and says how wide it is');
+  await page.selectOption('#space-match', '0');
+  // tap the picture to find that pixel's color in the space
+  const readBefore = await page.textContent('#space-readout b');
+  const spaceBefore = await canvasSum('#space-big');
+  const pic = await page.$eval('#space-pic-canvas', (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  let found = false;
+  for (const [fx, fy] of [[0.1, 0.1], [0.9, 0.9], [0.5, 0.2], [0.2, 0.8], [0.8, 0.3]]) {
+    await page.mouse.click(pic.x + pic.w * fx, pic.y + pic.h * fy);
+    await settle(page);
+    if ((await page.textContent('#space-readout b')) !== readBefore) { found = true; break; }
+  }
+  check(found && (await canvasSum('#space-big')).s !== spaceBefore.s, 'tapping the picture finds that color in the space');
+  await page.click('#space-pic-clear');
+  check(!(await page.isVisible('#space-pic')) && !(await page.isVisible('#space-readout')), 'Clear puts the space back on its own');
+  await page.click('#space-reset');
+  await page.keyboard.press('Escape');
+  check(!(await page.isVisible('#space-modal')), 'Esc closes the large view');
+
+  // limited palette: what it can mix, what it can't, and a Palette study
+  await page.check('#pal-range');
+  await page.waitForFunction(() => document.querySelectorAll('#pal-stats .stat').length === 2);
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'pov' && (await page.$$('#pal-paints .pal-chip')).length === 5, 'the default palette is Prussian blue, yellow ochre, vermilion, black and white');
+  const reachOf = async () => parseInt(await page.$eval('#pal-stats .stat b', (e) => e.textContent), 10);
+  const povReach = await reachOf();
+  check(povReach > 0 && povReach <= 100, `it reports how much of the picture it can mix (${povReach}%)`);
+  // what stands in for each hue: the secondary triad's red is a weak orange-and-violet mix
+  const toneBefore = await page.evaluate(() => window.VST.app.settings.tone);
+  await page.selectOption('#pal-preset', 'secondary');
+  check(toneBefore !== 'palette' && await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color') && await page.isChecked('#pal-live'), `choosing a palette paints the study with it, and you stay in the Color tab (was ${toneBefore})`);
+  // a spot on the picture: tap it (Color tab) or press and hold (anywhere) to see how to mix it
+  const spotXY = await page.$eval('#panels', (p) => { const f = [...p.querySelectorAll('#panel-original .frame, #panel-study .frame')].find((x) => x.offsetParent); const r = f.getBoundingClientRect(); return [r.left + r.width * 0.5, r.top + r.height * 0.3]; });
+  await page.mouse.click(spotXY[0], spotXY[1]);
+  await page.waitForSelector('#spot-pop:not([hidden])', { timeout: 3000 });
+  check(/value \d/.test(await page.textContent('#spot-sub')) && /With your palette/i.test(await page.textContent('#spot-pal-label')) && /mix|Closest|close/.test(await page.textContent('#spot-mix')), `tapping the picture in the Color tab shows how to mix that spot (${await page.textContent('#spot-name')}: ${await page.textContent('#spot-mix')})`);
+  await page.keyboard.press('Escape');
+  check(await page.isHidden('#spot-pop'), 'Esc closes it');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.mouse.click(spotXY[0], spotXY[1]);
+  await page.waitForTimeout(150);
+  check(await page.isHidden('#spot-pop'), 'in other tabs a plain tap does not open it');
+  await page.mouse.move(spotXY[0], spotXY[1]);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  check(await page.isVisible('#spot-pop'), 'pressing and holding opens it anywhere');
+  await page.click('#spot-close');
+  check(await page.isHidden('#spot-pop'), 'the × closes it');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  check((await page.$$('#standin-grid .standin')).length === 10, 'the stand-ins chart shows the ten hue families');
+  check(/Weakest: .*reds/.test(await page.textContent('#standin-detail')), `it names the palette's strongest and weakest hues (${await page.textContent('#standin-detail')})`);
+  await page.click('#standin-grid .standin:nth-child(1)');
+  check(/Red: .*cadmium orange.*dioxazine purple|Red: .*dioxazine purple.*cadmium orange/.test(await page.textContent('#standin-detail')), `tapping red shows what stands in for it (${await page.textContent('#standin-detail')})`);
+  // contrast check: the same square on gray, inside the palette's complement, and in the picture
+  check(await page.isVisible('#standin-contrast'), 'tapping a stand-in shows the contrast check');
+  const grounds = await page.evaluate(() => ['#cc-gray', '#cc-comp'].map((sel) => getComputedStyle(document.querySelector(sel)).backgroundColor));
+  const chips = await page.$$eval('#standin-contrast .cc-chip', (els) => [...new Set(els.map((e) => getComputedStyle(e).backgroundColor))]);
+  const rgbOf = (t) => t.match(/\d+/g).map(Number);
+  const [gr, gg, gb] = rgbOf(grounds[0]);
+  const [cr, cg, cb] = rgbOf(grounds[1]);
+  check(chips.length === 1, 'the same color sits on every ground');
+  check(gr === gg && gg === gb, `the first ground is a true gray (${grounds[0]})`);
+  check(cg > cr && /phthalo green/.test(await page.getAttribute('#cc-comp', 'title')), `the second is the palette's own complement, a phthalo green mix (${grounds[1]})`);
+  check(await page.isVisible('#cc-pic canvas'), 'and the third is the picture as this palette paints it');
+  await page.click('#standin-grid .standin:nth-child(1)');
+  check(!(await page.isVisible('#standin-contrast')), 'tapping it again closes it');
+  await page.selectOption('#pal-preset', 'primaries');
+  check(/None: purples/.test(await page.textContent('#standin-detail')), 'warm primaries can’t mix purples, and it says so');
+  await page.selectOption('#pal-preset', 'pov');
+  // the gamut overlap wheel: the picture's colors over what the palette mixes, the gap striped
+  check(await page.isVisible('#overlap-wheel'), 'the gamut overlap wheel shows under the palette figures');
+  const wheelInk = () => page.$eval('#overlap-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  check((await wheelInk()) > 5000, 'it draws the palette and the picture');
+  const povGap = parseInt((await page.textContent('#overlap-note')).match(/(\d+)% of the picture/)?.[1] || '0', 10);
+  check(Math.abs(povGap - (100 - povReach)) <= 2, `its gap matches what the palette can't mix (${povGap}% vs ${100 - povReach}%)`);
+  await page.click('#overlap-band [data-band="lights"]');
+  check(/^The lights are \d+% of the picture/.test(await page.textContent('#overlap-note')) && (await page.evaluate(() => window.VST.app.settings.overlapBand)) === 'lights', `Lights shows just the light values (${await page.textContent('#overlap-note')})`);
+  await page.click('#overlap-band [data-band="all"]');
+  await page.selectOption('#pal-preset', 'zorn');
+  await page.waitForFunction((r) => parseInt(document.querySelector('#pal-stats .stat b').textContent, 10) !== r, povReach, { timeout: 3000 }).catch(() => {});
+  const zornGap = parseInt((await page.textContent('#overlap-note')).match(/(\d+)% of the picture/)?.[1] || '0', 10);
+  check(zornGap > povGap, `Zorn's gap on the wheel is bigger (${zornGap}% vs ${povGap}%)`);
+  const zornReach = await reachOf();
+  const outName = await page.$eval('#pal-stats .stat:nth-child(2) b', (e) => e.textContent);
+  check(zornReach < povReach && /green/i.test(outName) && /blue/i.test(outName), `without a blue, Zorn reaches less of this landscape, missing its ${outName.toLowerCase()} (${zornReach}%)`);
+  // which paint would help: Zorn has no blue, so a blue or green should top the list
+  await page.waitForSelector('#pal-suggest .pal-sg', { timeout: 15000 });
+  const topAdd = await page.$eval('#pal-suggest .pal-sg', (b) => ({ name: b.querySelector('.nm').textContent, gain: parseInt(b.querySelector('b').textContent.replace('+', ''), 10) }));
+  check(/blue|green|viridian/i.test(topAdd.name) && topAdd.gain > 0, `for this landscape, Zorn's best addition is a blue or green (${topAdd.name} +${topAdd.gain}%)`);
+  check(/Least needed here/.test(await page.textContent('#pal-suggest')), 'it also says which paint is least needed');
+  await page.click('#pal-suggest .pal-sg');
+  await page.waitForFunction((r) => parseInt(document.querySelector('#pal-stats .stat b').textContent, 10) > r, zornReach, { timeout: 3000 }).catch(() => {});
+  const withTop = await reachOf();
+  check(Math.abs(withTop - (zornReach + topAdd.gain)) <= 1 && (await page.$$('#pal-paints .pal-chip')).length === 5, `tapping it adds the paint, and the reach goes up by what it said (${zornReach}% + ${topAdd.gain}% -> ${withTop}%)`);
+  await page.selectOption('#pal-preset', 'zorn');
+  await page.selectOption('#pal-add', 'ultramarine');
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'custom' && (await reachOf()) > zornReach, 'adding ultramarine to Zorn makes it my palette and reaches more');
+  await page.click('#pal-paints .pal-chip:nth-child(1) .pal-remove');
+  check((await page.$$('#pal-paints .pal-chip')).length === 4, 'a paint can be removed');
+  await page.selectOption('#pal-preset', 'pov');
+  await page.uncheck('#pal-live');
+  check(await page.evaluate((t) => window.VST.app.settings.tone === t, toneBefore), `turning off "Paint the study with it" goes back to the tone you had (${toneBefore})`);
+  await page.check('#pal-live');
+  await settle(page);
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette' && window.VST.app.settings.panel === 'color'), 'turning it on paints the study with the palette, in the Color tab');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  check(/^Palette · Prussian blue[^·]*$/.test(await page.textContent('#study-caption')) && await page.isVisible('#palette-ctl') && await page.isVisible('#values-ctl') && (await page.$eval('#bands-seg [aria-checked="true"]', (b) => b.dataset.n)) === '0', `the caption names the palette, which starts with all values (${await page.textContent('#study-caption')})`);
+  // a value study in the palette's paints: its own number of values, apart from Gray's
+  const grayBands = await page.evaluate(() => window.VST.app.settings.bandsOther);
+  await page.click('#bands-seg [data-n="3"]');
+  await settle(page);
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette') && /Palette · .* · 3 values/.test(await page.textContent('#study-caption')) && await swatchCount(page, 3), `3 values in Palette paints a 3-value study in the palette (${await page.textContent('#study-caption')})`);
+  const pv = await studyColors(page);
+  check(pv.count <= 3 * 40, `and the study keeps to a few mixes per value (${pv.count} colors)`);
+  await page.click('#tone-seg [data-tone="gray"]');
+  check(await page.evaluate((g) => window.VST.app.settings.bands === g, grayBands), `Gray keeps its own number of values (${grayBands})`);
+  await page.click('#tone-seg [data-tone="palette"]');
+  check(await page.evaluate(() => window.VST.app.settings.bands === 3), 'and the palette remembers its 3');
+  await page.click('#bands-seg [data-n="0"]');
+  check((await page.$$('#swatches .swatch')).length >= 2, 'swatches show the mixes the study uses most');
+  await page.selectOption('#pal-preset', 'zorn').catch(() => {});
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.selectOption('#pal-preset', 'zorn');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await settle(page);
+  const striped = await studyColors(page);
+  await page.uncheck('#pal-mark');
+  await settle(page);
+  const plain = await studyColors(page);
+  check(striped.count > plain.count, `Zorn stripes the blue sky it can't mix (${striped.count} colors with stripes, ${plain.count} without)`);
+  await page.check('#pal-mark');
+  await page.screenshot({ path: path.join(OUT, '2e-palette-study.png') });
+  await page.keyboard.press('k');
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'gray'), 'K goes from Palette back to grayscale');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.selectOption('#pal-preset', 'pov');
+  // compare palettes: every preset painted on this picture, the one that reaches most first
+  await page.click('#pal-compare');
+  await page.waitForSelector('#palcmp-grid .pal-tile', { timeout: 15000 });
+  const palTiles = await page.$$eval('#palcmp-grid .pal-tile', (els) => els.map((e) => ({ name: e.querySelector('.pt-name').textContent, reach: parseInt(e.querySelector('.pt-reach b').textContent, 10), yours: e.classList.contains('current') })));
+  const presetCount = await page.evaluate(() => window.VST.palette.PRESETS.length);
+  check(palTiles.length === presetCount && palTiles.every((t, i) => i === 0 || t.reach <= palTiles[i - 1].reach), `Compare palettes shows every preset, the best reach first (${palTiles.map((t) => `${t.name} ${t.reach}%`).join(', ')})`);
+  const yours = palTiles.filter((t) => t.yours);
+  check(yours.length === 1 && /Prussian/.test(yours[0].name) && yours[0].reach === povReach, 'your palette is marked, with the reach the Color tab shows');
+  check((await page.$$eval('#palcmp-grid canvas', (cs) => cs.filter((c) => c.width > 0).length)) === palTiles.length, 'each palette paints the picture');
+  await page.screenshot({ path: path.join(OUT, '2f-compare-palettes.png') });
+  await page.click('#palcmp-grid .pal-tile:has-text("Zorn")');
+  check(!(await page.isVisible('#palcmp-modal')) && (await page.$eval('#pal-preset', (e) => e.value)) === 'zorn' && await page.evaluate(() => window.VST.app.settings.tone === 'palette'), 'tapping a palette paints the study with it');
+  await page.keyboard.press('k');
+  // your own named palettes: save, change and save back, rename, delete
+  await page.selectOption('#pal-preset', 'zorn');
+  page.once('dialog', (d) => d.accept('Portrait warm'));
+  await page.click('#pal-save');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].parentElement.label + ' / ' + s.selectedOptions[0].textContent)) === 'My palettes / Portrait warm', 'Save… names the palette and lists it under My palettes');
+  check(await page.isVisible('#pal-rename') && await page.isVisible('#pal-delete') && !(await page.isVisible('#pal-update')), 'your own palette can be renamed or deleted');
+  await page.selectOption('#pal-add', 'cobalt-blue');
+  check((await page.$eval('#pal-preset', (e) => e.value)) === 'custom' && /Save these paints to “Portrait warm”/.test(await page.textContent('#pal-update')), 'changing its paints offers to save them back');
+  await page.click('#pal-update');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].textContent)) === 'Portrait warm' && (await page.evaluate(() => window.VST.myPalettes.all()[0].paints.includes('cobalt-blue'))), 'saving back updates the palette');
+  page.once('dialog', (d) => d.accept('Portrait, warm and cool'));
+  await page.click('#pal-rename');
+  check((await page.$eval('#pal-preset', (s) => s.selectedOptions[0].textContent)) === 'Portrait, warm and cool', 'Rename… renames it');
+  await page.selectOption('#pal-preset', 'pov');
+  await page.selectOption('#pal-preset', { label: 'Portrait, warm and cool' });
+  check((await page.$$('#pal-paints .pal-chip')).length === 5, 'choosing it from the menu brings back its paints');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#pal-delete');
+  check((await page.evaluate(() => window.VST.myPalettes.all().length)) === 0 && !(await page.$('#pal-preset optgroup[label="My palettes"]')), 'Delete removes it (and the empty group)');
+  await page.selectOption('#pal-preset', 'pov');
+
+
+  // gamut mask: a shape on the wheel, and the study painted inside it
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.evaluate(() => document.querySelector('#sec-mask').scrollIntoView());
+  const maskInk = await page.$eval('#mask-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  check(maskInk > 5000 && /% of the picture is outside this mask|All of the picture/.test(await page.textContent('#mask-note')), `the gamut mask wheel shows how the picture fits (${await page.textContent('#mask-note')})`);
+  await page.click('#mask-shape [data-shape="complement"]');
+  check((await page.evaluate(() => window.VST.app.settings.mask.shape)) === 'complement', 'choosing a shape makes that mask');
+  const heading0 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  const heading1 = await page.evaluate(() => window.VST.mask.heading(window.VST.app.settings.mask));
+  check(Math.abs(((heading1 - heading0 + 540) % 360) - 180) > 5, `arrow keys turn it (${Math.round(heading0)}° -> ${Math.round(heading1)}°)`);
+  await page.click('#mask-shape [data-shape="triad"]');
+  // saved masks: save, change and save back, choose, rename, delete
+  check((await page.$eval('#mask-saved', (s) => s.disabled)) && /No saved masks yet/.test(await page.textContent('#mask-saved')), 'with nothing saved, the saved-masks menu says so');
+  page.once('dialog', (d) => d.accept('Warm triad'));
+  await page.click('#mask-save');
+  check((await page.$eval('#mask-saved', (s) => s.selectedOptions[0].textContent)) === 'Warm triad' && await page.isVisible('#mask-rename'), 'Save… names the mask and shows it as chosen');
+  const savedPoints = await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points));
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  check(/Save this shape to “Warm triad”/.test(await page.textContent('#mask-update')) && await page.isVisible('#mask-update'), 'turning it offers to save the new shape back');
+  const turned = await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points));
+  await page.selectOption('#mask-saved', { label: 'Warm triad' });
+  check((await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points))) === savedPoints, 'choosing it from the menu brings back the saved shape');
+  await page.focus('#mask-wheel');
+  await page.keyboard.press('ArrowLeft');
+  await page.click('#mask-update');
+  check((await page.evaluate(() => JSON.stringify(window.VST.myMasks.all()[0].points))) === turned, 'saving back updates it');
+  page.once('dialog', (d) => d.accept('Warm triad, turned'));
+  await page.click('#mask-rename');
+  check((await page.$eval('#mask-saved', (s) => s.selectedOptions[0].textContent)) === 'Warm triad, turned', 'Rename… renames it');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#mask-delete');
+  check((await page.evaluate(() => window.VST.myMasks.all().length)) === 0 && (await page.evaluate(() => JSON.stringify(window.VST.app.settings.mask.points))) === turned, 'Delete removes the saved mask and keeps the one on the wheel');
+  await page.click('#mask-shape [data-shape="triad"]');
+  // the palette's range on the mask wheel: a dashed gold outline
+  const goldPx = () => page.$eval('#mask-wheel', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 160 && d[i + 1] < 215 && d[i + 2] < 120) n++; return n; });
+  const goldOff = await goldPx();
+  await page.check('#mask-pal');
+  const goldOn = await goldPx();
+  check(goldOn > goldOff + 200 && /Dashed gold: what .* can mix/.test(await page.textContent('#mask-note')), `Show my palette outlines its range on the mask wheel (${goldOff} -> ${goldOn} gold px)`);
+  await page.uncheck('#mask-pal');
+  check((await goldPx()) <= goldOff + 20, 'and unchecking it takes the outline away');
+  const studyStats = () => page.$eval('#cv-study', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let y = 0, chroma = 0, n = 0; for (let i = 0; i < d.length; i += 16) { y += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; chroma += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); n++; } let h = 0; for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 7 + d[i + 1] * 3 + d[i + 2]) >>> 0; return { y: y / n, chroma: chroma / n, sum: h }; });
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.click('#tone-seg [data-tone="color"]');
+  await settle(page);
+  const unmasked = await studyStats();
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+  await page.check('#mask-on');
+  await settle(page);
+  check(/^On: the study is painted inside the mask/.test(await page.textContent('#mask-sum')), 'the mask heading says when it is painting the study');
+  const maskedStats = await studyStats();
+  check(/in a gamut mask/.test(await page.textContent('#study-caption')), `the caption says the study is in a gamut mask (${await page.textContent('#study-caption')})`);
+  check(maskedStats.sum !== unmasked.sum && maskedStats.chroma < unmasked.chroma, `painting inside the mask changes the colors, and the colors outside get quieter (chroma ${unmasked.chroma.toFixed(1)} -> ${maskedStats.chroma.toFixed(1)})`);
+  check(Math.abs(maskedStats.y - unmasked.y) < 3, `but not the values (brightness ${unmasked.y.toFixed(1)} vs ${maskedStats.y.toFixed(1)})`);
+  await page.fill('#mask-strength', '30');
+  await page.dispatchEvent('#mask-strength', 'input');
+  await settle(page);
+  const partway = await studyStats();
+  check(partway.chroma > maskedStats.chroma && partway.chroma < unmasked.chroma, 'a lower strength moves them only part of the way');
+  // paints for the mask: how much your palette covers, suggestions, and a palette built for it
+  await page.evaluate(() => document.querySelector('#mask-fit').scrollIntoView());
+  const fitBefore = parseInt((await page.textContent('#mask-fit-note')).match(/can mix (\d+)%/)[1], 10);
+  check(await page.isVisible('#mask-fit') && fitBefore >= 0, `it says how much of the picture in the mask your palette can mix (${await page.textContent('#mask-fit-note')})`);
+  await page.waitForSelector('#mask-suggest .pal-sg-row', { timeout: 20000 });
+  check(/Add for this mask/.test(await page.textContent('#mask-suggest')), 'and suggests paints to add or take out for the mask');
+  await page.selectOption('#mask-build-n', '3');
+  await page.click('#mask-build');
+  await page.waitForSelector('#mask-build-out button', { timeout: 30000 });
+  const built = await page.$$eval('#mask-build-out .mb-paints span', (els) => els.map((e) => e.textContent));
+  const builtReach = parseInt((await page.textContent('#mask-build-out .mb-steps')).match(/Mixes (\d+)%/)[1], 10);
+  check(built.includes('Titanium white') && built.length >= 2 && built.length <= 4 && builtReach >= fitBefore, `Build makes a palette of up to 3 colors and white for the mask (${built.join(', ')}: ${builtReach}%)`);
+  await page.click('#mask-build-out button');
+  await page.waitForFunction((r) => { const m = document.querySelector('#mask-fit-note').textContent.match(/can mix (\d+)%/); return m && parseInt(m[1], 10) === r; }, builtReach, { timeout: 5000 }).catch(() => {});
+  check(parseInt((await page.textContent('#mask-fit-note')).match(/can mix (\d+)%/)[1], 10) === builtReach && (await page.$$('#pal-paints .pal-chip')).length === built.length, 'Use this palette chooses it, and the coverage matches');
+  // the whole mask instead of the picture in it
+  await page.click('#mask-aim [data-aim="whole"]');
+  check(/of the colors in this mask/.test(await page.textContent('#mask-fit-note')) && (await page.evaluate(() => window.VST.app.settings.maskTarget)) === 'whole', `"The whole mask" aims at every color inside it (${await page.textContent('#mask-fit-note')})`);
+  await page.click('#mask-build');
+  await page.waitForFunction(() => /of the colors in this mask/.test((document.querySelector('#mask-build-out .mb-steps') || {}).textContent || ''), null, { timeout: 30000 });
+  check(true, 'and Build makes a palette for the whole mask');
+  await page.click('#mask-aim [data-aim="picture"]');
+  check(/of the picture in this mask/.test(await page.textContent('#mask-fit-note')), 'switching back aims at the picture again');
+  // with no image, it aims at the whole mask
+  const bare = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  await bare.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await bare.goto(BASE);
+  await bare.evaluate(() => { window.VST.app.setPanel('color'); document.querySelector('#sec-mask').open = true; });
+  await bare.waitForTimeout(300);
+  check(await bare.isVisible('#mask-fit') && (await bare.$eval('#mask-aim [data-aim="picture"]', (b) => b.disabled)) && /of the colors in this mask/.test(await bare.textContent('#mask-fit-note')), `with no image loaded, paints for the mask aim at the whole mask (${await bare.textContent('#mask-fit-note')})`);
+  await bare.close();
+  await page.selectOption('#pal-preset', 'pov');
+  check(await page.evaluate(() => window.VST.app.settings.tone === 'palette'), 'a palette chosen from the mask tools paints the study too');
+  await page.click('#tone-seg [data-tone="color"]'); // back to Color, as the unmasked study was
+  await page.uncheck('#mask-on');
+  await settle(page);
+  check((await studyStats()).sum === unmasked.sum, 'turning it off brings the colors back');
+  await page.evaluate(() => window.VST.app.setPanel('study'));
+  await page.click('#tone-seg [data-tone="gray"]');
+  await page.evaluate(() => window.VST.app.setPanel('color'));
+
+  // composition guides: rule of thirds, golden section, diagonals, crossings
+  const inkOn = (pg) => pg.$eval('#panels #panel-study .overlay', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+  const gridInk = await inkOn(page);
+  await page.keyboard.press('l');
+  const thirdsInk = await inkOn(page);
+  const cs = await page.evaluate(() => window.VST.app.settings.compose);
+  check(cs.on && cs.thirds && thirdsInk > gridInk, `L shows the rule of thirds over the study (${gridInk} -> ${thirdsInk} px)`);
+  await page.check('[data-compose="diag"]');
+  await page.check('[data-compose="cross"]');
+  const diagInk = await inkOn(page);
+  check(diagInk > thirdsInk, `diagonals and crossing lines add more guides (${diagInk} px)`);
+  await page.screenshot({ path: path.join(OUT, '2b-composition.png') });
+  await page.keyboard.press('l');
+  check((await inkOn(page)) === gridInk && (await page.evaluate(() => window.VST.app.settings.compose.diag)), 'L hides the guides and keeps the choices');
+
   const before = await page.$eval('#swatches .swatch .pct', (d) => d.textContent);
   await page.$eval('#thresholds input', (i) => { i.value = 80; i.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(100);
@@ -214,6 +606,16 @@ function check(cond, msg) {
   await page.screenshot({ path: path.join(OUT, '4b-crop-custom.png') });
 
   await page.selectOption('#crop-preset', '8x10');
+  // the chosen guides show in Crop, and can be changed there
+  check(await page.$eval('[data-guide="diag"]', (b) => b.getAttribute('aria-pressed') === 'true'), 'Crop shows the guides chosen in the Canvas tab');
+  const cropInk = () => page.$eval('#crop-canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) n++; return n; });
+  const withDiag = await cropInk();
+  await page.click('[data-guide="diag"]');
+  await page.click('[data-guide="cross"]');
+  const cset = await page.evaluate(() => window.VST.app.settings.compose);
+  check(!cset.diag && !cset.cross && !cset.on && (await cropInk()) < withDiag, 'turning guides off in Crop redraws it, without showing guides over the study');
+  await page.click('[data-guide="golden"]');
+  check(await page.evaluate(() => window.VST.app.settings.compose.golden) && await page.isChecked('[data-compose="golden"]'), 'a guide chosen in Crop is checked in the Canvas tab too');
   await page.screenshot({ path: path.join(OUT, '4-crop.png') });
   await page.click('#crop-apply');
   await page.keyboard.press('c');
@@ -241,6 +643,91 @@ function check(cond, msg) {
   await page.waitForTimeout(1300);
   const clock = await page.textContent('#timer-clock');
   check(clock === '0:29' || clock === '0:28', `timer counts down (${clock})`);
+  await page.click('#t-stop');
+
+  // memory mode: look, then draw with the image hidden, then it comes back
+  const covered = () => page.isVisible('#memory-cover');
+  const memRec = () => page.evaluate(() => window.VST.log.days()[window.VST.log.dayKey()].items[window.VST.app.img.item.id] || {});
+  const memBefore = (await memRec()).memRounds || 0;
+  await page.selectOption('#t-practice', 'm30');
+  check((await page.textContent('#timer-clock')) === '0:30' && (await page.textContent('#timer-status')).includes('look first'), 'memory mode arms a 30-second look');
+  await page.click('#t-play');
+  check(!(await covered()) && (await page.textContent('#timer-status')).includes('Look and remember'), 'the image shows while you look');
+  await page.click('#t-skip');
+  check(await covered() && (await page.textContent('#timer-status')).includes('Drawing from memory'), 'then it is hidden while you draw from memory');
+  check(await page.$eval('#panels #panel-study', (e) => getComputedStyle(e).visibility === 'hidden'), 'the study itself is hidden too');
+  await page.screenshot({ path: path.join(OUT, '4b-memory.png') });
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  check(!(await covered()) && (await page.textContent('#timer-status')).includes('Compare'), 'the reference comes back when the round ends');
+  const mr = await memRec();
+  check(mr.memRounds === memBefore + 1 && mr.rounds >= 1, `a memory round is logged separately (${mr.memRounds} from memory, ${mr.rounds} timed)`);
+  // peeking reveals the image, and the round then isn't counted as from memory
+  await page.click('#t-play');
+  await page.click('#t-skip');
+  check(await covered(), 'second memory round hides the image');
+  await page.click('#memory-peek');
+  check(!(await covered()), 'Peek shows the reference again');
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  check((await memRec()).memRounds === memBefore + 1, 'a round with a peek is not counted as from memory');
+  await page.keyboard.press('m');
+  check((await page.$eval('#t-practice', (e) => e.value)) === '' && (await page.textContent('#timer-clock')) === '0:30', 'M turns memory mode off (back to the 30-second draw)');
+  await page.keyboard.press('m');
+  check((await page.$eval('#t-practice', (e) => e.value)) === 'm30', 'M turns it back on at the last look time');
+  await page.keyboard.press('m');
+  await page.click('#t-stop');
+
+  // rounds that get shorter: 2 min, then 1, then 30 sec
+  await page.selectOption('#t-minutes', '2,1,0.5');
+  check(await page.$eval('#t-rounds', (e) => e.disabled && e.value === '3') && (await page.textContent('#timer-clock')) === '2:00', 'a shorter-each-round time sets 3 rounds and starts at 2:00');
+  await page.click('#t-play');
+  await page.click('#t-skip');
+  if (await page.evaluate(() => window.VST.app.flow.phase === 'break')) await page.click('#t-skip');
+  check((await page.textContent('#timer-status')).includes('Round 2 of 3'), 'skip goes to round 2');
+  check(await page.evaluate(() => window.VST.app.countdown.duration === 60), 'round 2 is 1 minute');
+  await page.click('#t-skip');
+  if (await page.evaluate(() => window.VST.app.flow.phase === 'break')) await page.click('#t-skip');
+  check(await page.evaluate(() => window.VST.app.countdown.duration === 30) && (await page.textContent('#timer-status')).includes('Round 3 of 3'), 'round 3 is 30 seconds');
+  await page.click('#t-stop');
+  check((await page.textContent('#timer-clock')) === '2:00', 'stopping goes back to the first length');
+  await page.selectOption('#t-minutes', '0.5');
+  check(await page.$eval('#t-rounds', (e) => !e.disabled), 'a single length gives the rounds back');
+
+  // staged reveal by hand: 2 values, 3 values, the original, then back to your own settings
+  const st = () => page.evaluate(() => ({ view: window.VST.app.settings.view, bands: window.VST.app.settings.bands, tone: window.VST.app.settings.tone }));
+  const own = await st();
+  const chip = () => page.isVisible('#reveal-chip');
+  await page.keyboard.press('r');
+  let rs = await st();
+  check(await chip() && rs.bands === 2 && rs.view === 'study' && (await page.textContent('#reveal-stage')).startsWith('2 values · 1 of 3'), `R starts the reveal at 2 values (${JSON.stringify(rs)})`);
+  await page.waitForTimeout(400);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('value-study:settings')));
+  check(saved.bands === own.bands && saved.view === own.view, 'the reveal never saves over your own settings');
+  await page.click('#panels', { position: { x: 300, y: 300 } });
+  check((await st()).bands === 3, 'tapping the image steps to 3 values');
+  await page.click('#btn-reveal');
+  rs = await st();
+  check(rs.view === 'original' && (await page.textContent('#reveal-hint')) === 'Tap to finish', 'then the full image');
+  await page.keyboard.press('r');
+  rs = await st();
+  check(!(await chip()) && rs.bands === own.bands && rs.view === own.view && rs.tone === own.tone, 'one more step gives back your own view and settings');
+  await page.keyboard.press('r');
+  await page.click('#reveal-end');
+  check(!(await chip()) && (await st()).bands === own.bands, 'End stops a reveal part way');
+
+  // staged reveal on the timer: stages follow the clock through a round
+  await page.selectOption('#t-practice', 'r2,3,full');
+  check((await page.textContent('#timer-status')).includes('reveals in stages'), 'Reveal in the timer arms a staged round');
+  await page.click('#t-play');
+  check(await chip() && (await st()).bands === 2, 'the round starts at 2 values');
+  await page.evaluate(() => { window.VST.app.countdown.endAt -= 12000; });
+  await page.waitForFunction(() => window.VST.app.settings.bands === 3, null, { timeout: 2000 });
+  check((await page.textContent('#timer-status')).includes('3 values'), 'a third of the way in, it shows 3 values');
+  await page.evaluate(() => window.VST.app.countdown.finish(true));
+  rs = await st();
+  check(!(await chip()) && rs.bands === own.bands && rs.view === own.view, 'when the round ends, your own view comes back to compare');
+  await page.selectOption('#t-practice', 'm30');
+  check(await page.evaluate(() => window.VST.app.settings.revealSeq === '' && window.VST.app.settings.memorySec === 30), 'memory mode and reveal are one or the other (one Practice menu)');
+  await page.selectOption('#t-practice', '');
   await page.click('#t-stop');
 
   // ---- Master Copy mode with stand-in museum ----
@@ -308,7 +795,24 @@ function check(cond, msg) {
   await page.click('#btn-present');
   await page.mouse.move(500, 400);
   await page.mouse.move(520, 410);
-  await page.waitForSelector('#btn-present-exit.show');
+  await page.waitForSelector('#present-bar.show');
+  // zoom and move around: both pictures in step, and kept for this image
+  const zoomShown = () => page.$$eval('.panel .frame', (fs) => fs.filter((f) => f.offsetParent).map((f) => f.querySelector('canvas').style.transform));
+  await page.click('#pz-in');
+  const z1 = await zoomShown();
+  check(z1.length === 2 && /scale\(1\.5\)/.test(z1[0]) && z1[0] === z1[1] && (await page.textContent('#pz-level')) === '150%', `zooming in Present moves both pictures in step (${z1[0]})`);
+  await page.mouse.move(400, 450);
+  await page.mouse.down();
+  await page.mouse.move(470, 420, { steps: 5 });
+  await page.mouse.up();
+  const z2 = await zoomShown();
+  check(z2[0] !== z1[0] && z2[0] === z2[1], 'dragging moves around the zoomed pictures, together');
+  check(await page.evaluate(() => { const id = window.VST.app.img.item && window.VST.app.img.item.id; const z = id && window.VST.app.settings.zooms[id]; return !id || (z && z.z === 1.5); }), 'the zoom is kept for this image');
+  await page.click('#present-view [data-view="study"]');
+  check((await page.evaluate(() => window.VST.app.settings.view)) === 'study' && (await zoomShown()).length === 1, 'the bar switches the view without leaving Present');
+  await page.click('#present-view [data-view="both"]');
+  await page.click('#pz-fit');
+  check((await zoomShown()).every((t) => t === '') && (await page.textContent('#pz-level')) === '100%', 'Fit shows the whole picture again');
   await page.click('#btn-present-exit');
   check(!(await page.evaluate(() => window.VST.app.isPresenting())), 'the Present button enters and the Exit button leaves');
 
@@ -330,7 +834,7 @@ function check(cond, msg) {
   aware(mp);
   mp.on('pageerror', (e) => errors.push(e.message));
   const relayed = [];
-  await mp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
+  await mp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:'https://relay.test/',searchTimeoutMs:3000};" }));
   await mp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await mp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await mp.route('https://collectionapi.metmuseum.org/**', (r) => {
@@ -455,7 +959,7 @@ function check(cond, msg) {
   const cp = await cctx.newPage();
   aware(cp);
   cp.on('pageerror', (e) => errors.push(e.message));
-  await cp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await cp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await cp.goto(BASE);
   await cp.click('#tab-reference');
   check(await cp.$eval('#view-compare', (b) => b.disabled), 'Compare is unavailable until a study photo is added');
@@ -513,6 +1017,12 @@ function check(cond, msg) {
   check(await cp.isVisible('#swatches-master-label') && await cp.isVisible('#swatches-mine-wrap'), 'two bar charts: reference and my study');
   const dims = await cp.evaluate(() => [document.getElementById('cv-mine').width, document.getElementById('cv-mine').height, window.VST.app.work.w, window.VST.app.work.h]);
   check(dims[0] === dims[2] && dims[1] === dims[3], 'my study is fitted to the reference\'s shape');
+  check(await cp.isVisible('#compare-read') && /^Your /.test(await cp.textContent('#compare-read')), `a plain sentence reads the two bar charts (${await cp.textContent('#compare-read')})`);
+  await cp.check('#mine-diff');
+  await settle(cp);
+  const vd = await cp.evaluate(() => window.VST.app.mine.diff);
+  check(await cp.isVisible('#cv-mine-diff') && vd && vd.lighter + vd.darker < 0.15, `Show where my values differ marks the spots a value off (${vd && Math.round((vd.lighter + vd.darker) * 100)}% for a copy of the study itself)`);
+  await cp.uncheck('#mine-diff');
   await cp.screenshot({ path: path.join(OUT, '17-compare.png') });
 
   // without paper correction the darker photo reads differently
@@ -528,6 +1038,14 @@ function check(cond, msg) {
   check(await cp.isVisible('#cv-mine-overlay') && !(await cp.isVisible('#panel-mine')), 'O lays my study over the reference');
   await cp.$eval('#mine-opacity', (i) => { i.value = 30; i.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await cp.$eval('#cv-mine-overlay', (c) => c.style.opacity) === '0.3', 'overlay strength slider works');
+  await cp.click('#mine-style [data-style="difference"]');
+  check(await cp.$eval('#cv-mine-overlay', (c) => c.classList.contains('difference') && c.style.opacity === '1') && await cp.isHidden('#mine-opacity-field'), 'Difference shows what doesn\'t line up (no strength needed)');
+  await cp.click('#mine-style [data-style="flicker"]');
+  check(/^My study \(tap for the reference\)/.test(await cp.textContent('#study-caption')), 'Flicker starts on my study');
+  const fc = await cp.$eval('#panel-study .frame', (f) => { const r = f.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  await cp.mouse.click(fc[0], fc[1]);
+  check(/^Reference \(tap for my study\)/.test(await cp.textContent('#study-caption')) && (await cp.$eval('#cv-mine-overlay', (c) => c.style.opacity)) === '0', 'a tap swaps to the reference, in place');
+  await cp.click('#mine-style [data-style="blend"]');
   await cp.screenshot({ path: path.join(OUT, '18-overlay.png') });
   await cp.keyboard.press('o');
 
@@ -559,7 +1077,7 @@ function check(cond, msg) {
   sp.on('pageerror', (e) => errors.push(e.message));
   const answers = [];
   sp.on('dialog', (d) => d.accept(answers.length ? answers.shift() : undefined));
-  await sp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await sp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await sp.route('https://api.artic.edu/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ data: items.slice(0, 2), pagination: { total: 2, total_pages: 1 } }) }));
   await sp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await sp.goto(BASE);
@@ -651,7 +1169,7 @@ function check(cond, msg) {
   pp.on('pageerror', (e) => errors.push(e.message));
   const pAnswers = [];
   pp.on('dialog', (d) => d.accept(pAnswers.length ? pAnswers.shift() : undefined));
-  await pp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await pp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await pp.goto(BASE);
   await pp.click('#tab-reference');
   await pp.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
@@ -670,14 +1188,38 @@ function check(cond, msg) {
 
   // save my own preset, and it survives a reload
   await pp.$eval('#blur', (i) => { i.value = 20; i.dispatchEvent(new Event('input', { bubbles: true })); });
-  pAnswers.push('Soft 3');
   await pp.click('#preset-save');
+  check(await pp.isVisible('#preset-form') && await pp.isHidden('#preset-keep-paints'), 'Save… opens a small form (no paints to keep outside Palette)');
+  await pp.fill('#preset-name', 'Soft 3');
+  await pp.click('#preset-form [type="submit"]');
   await settle(pp);
   check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'saving names the preset and selects it');
   check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 1, 'saved presets are listed under My presets');
   await pp.reload();
   await pp.waitForTimeout(300);
   check((await pp.$eval('#preset-select', (s) => s.selectedOptions[0].textContent)) === 'Soft 3', 'my preset (and the settings) survive a reload');
+
+  // a Palette preset that keeps the grid: the paints, the values and the grid come back with it
+  await pp.evaluate(() => window.VST.app.setPanel('color'));
+  await pp.selectOption('#pal-preset', 'zorn');
+  await pp.click('#bands-seg [data-n="3"]');
+  await pp.check('#grid-on');
+  await pp.click('#preset-save');
+  check(await pp.isVisible('#preset-keep-paints') && await pp.isChecked('#preset-keep-grid') && !(await pp.isChecked('#preset-keep-view')), 'in Palette the form keeps the paints, and offers the grid (ticked, since it is on)');
+  await pp.fill('#preset-name', 'Zorn thumbnail');
+  await pp.click('#preset-form [type="submit"]');
+  check(/^Palette of 4 paints · 3 values .*grid 3 × 3/.test(await pp.textContent('#preset-desc')), `a Palette preset describes its paints and grid (${await pp.textContent('#preset-desc')})`);
+  await pp.selectOption('#preset-select', 'b-3');
+  check(await pp.evaluate(() => window.VST.app.settings.tone === 'gray' && window.VST.app.settings.grid.on), 'a preset that keeps no grid leaves the grid as it is');
+  await pp.uncheck('#grid-on');
+  await pp.evaluate(() => window.VST.app.setPanel('color'));
+  await pp.selectOption('#pal-preset', 'pov');
+  await pp.selectOption('#preset-select', { label: 'Zorn thumbnail' });
+  await settle(pp);
+  check(await pp.evaluate(() => { const s = window.VST.app.settings; return s.tone === 'palette' && s.bands === 3 && s.grid.on && s.palette.length === 4 && s.palette.includes('vermilion') && !s.palette.includes('prussian-blue'); }) && (await pp.$eval('#preset-select', (x) => x.selectedOptions[0].textContent)) === 'Zorn thumbnail', 'applying it brings back the Palette tone, its paints, 3 values and the grid');
+  await pp.click('#preset-delete');
+  await pp.uncheck('#grid-on');
+  await pp.selectOption('#preset-select', { label: 'Soft 3' });
 
   // "fit to each image" splits follow a new image
   await pp.selectOption('#preset-select', 'b-3');
@@ -692,7 +1234,7 @@ function check(cond, msg) {
   await pp.selectOption('#preset-select', { label: 'Soft 3' });
   await pp.click('#preset-delete');
   check((await pp.$$eval('#preset-select optgroup[label="My presets"] option', (o) => o.length)) === 0, 'delete removes my preset');
-  check(await pp.$eval('#preset-delete', (b) => b.disabled) === true || await presetValue() === '', 'built-in presets can’t be deleted');
+  check(await pp.$eval('#preset-delete', (b) => b.hidden) === true || await presetValue() === '', 'built-in presets can’t be deleted (no Delete button)');
 
   // try presets on a set of two photos
   pAnswers.push('Try-on set');
@@ -724,7 +1266,7 @@ function check(cond, msg) {
   const tctx = await browser.newContext({ viewport: { width: 1180, height: 820 } });
   const tp = await tctx.newPage();
   tp.on('pageerror', (e) => errors.push(e.message));
-  await tp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await tp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await tp.goto(BASE);
   const panelOn = (name) => tp.$eval(`#ptab-${name}`, (t) => t.getAttribute('aria-selected') === 'true');
   check(await panelOn('images') && await tp.$eval('#panel-study', (x) => x.hidden), 'the sidebar opens on Images, with Study and Canvas in their own tabs');
@@ -735,7 +1277,7 @@ function check(cond, msg) {
   check(studyTop < 200, `study settings are at the top of the sidebar, no scrolling (${Math.round(studyTop)}px)`);
   await tp.click('#ptab-canvas');
   check(await tp.isVisible('#grid-on') && !(await tp.isVisible('#bands-seg')), 'Canvas holds the grid and downloads');
-  await tp.focus('#ptab-canvas');
+  await tp.focus('#ptab-color');
   await tp.keyboard.press('ArrowLeft');
   check(await panelOn('study') && await tp.evaluate(() => document.activeElement.id === 'ptab-study'), 'arrow keys move between sidebar tabs');
   await tp.reload();
@@ -778,10 +1320,12 @@ function check(cond, msg) {
   lp.on('pageerror', (e) => errors.push(e.message));
   const lAnswers = [];
   lp.on('dialog', (d) => d.accept(lAnswers.length ? lAnswers.shift() : undefined));
-  await lp.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await lp.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await lp.route('https://www.artic.edu/iiif/**', (r) => r.fulfill({ headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: png }));
   await lp.goto(BASE);
-  await lp.click('#ptab-log');
+  check(!(await lp.$('#ptab-log')), 'the practice log is no longer a tab');
+  await lp.click('#open-log');
+  check(await lp.isVisible('#panel-log') && await lp.isVisible('#log-done'), 'Practice log (at the foot of Images) opens it, with Done to go back');
   const stats = await lp.$$eval('#log-stats .stat', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
   check(stats[1].startsWith('2 days') && /best 2/.test(stats[1]), `streak counts the last two days (${stats[1]})`);
   check(/all time · 3 days/.test(stats[3]), `all-time total counts practiced days only (${stats[3]})`);
@@ -803,7 +1347,7 @@ function check(cond, msg) {
   const csvPath = path.join(OUT, csvDl.suggestedFilename());
   await csvDl.saveAs(csvPath);
   const csvText = fs.readFileSync(csvPath, 'utf8').trim().split('\n');
-  check(csvText[0] === 'date,title,artist,museum,source,study_minutes,timed_rounds,timed_minutes' && csvText.some((l) => /Landscape 1,George Inness,Art Institute,aic,25\.0,2,20\.0/.test(l)), `the log downloads as a spreadsheet (${csvText.length - 1} rows)`);
+  check(csvText[0] === 'date,title,artist,museum,source,study_minutes,timed_rounds,timed_minutes,memory_rounds,memory_minutes' && csvText.some((l) => /Landscape 1,George Inness,Art Institute,aic,25\.0,2,20\.0,0,0\.0/.test(l)), `the log downloads as a spreadsheet (${csvText.length - 1} rows)`);
   const atCurrentMonth = await lp.evaluate(() => !!document.querySelector('#cal .today'));
   check(atCurrentMonth === (await lp.$eval('#cal-next', (b) => b.disabled)), 'next month is disabled only at the current month');
   await lp.click('#cal-prev');
@@ -818,7 +1362,7 @@ function check(cond, msg) {
   const ip = await ipad.newPage();
   aware(ip);
   ip.on('pageerror', (e) => errors.push(e.message));
-  await ip.route('**/js/config.js', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
+  await ip.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: "window.VST=window.VST||{};window.VST.config={imageRelay:''};" }));
   await ip.goto(BASE);
   await ip.setInputFiles('#file-input', { name: 'river.png', mimeType: 'image/png', buffer: png });
   await ip.waitForFunction(() => window.VST.app.work.w > 0 && window.VST.app.img.item);
@@ -834,6 +1378,134 @@ function check(cond, msg) {
   const fieldSizes = await ip.evaluate(() => [...document.querySelectorAll('input[type=url], input[type=search], input[type=number], select')].map((e) => parseFloat(getComputedStyle(e).fontSize)));
   check(fieldSizes.every((f) => f >= 16), `on iPad, text fields and menus are 16px (no zoom on focus): ${[...new Set(fieldSizes)].join(', ')}px`);
   await ipad.close();
+
+  // ---- Sync: two devices with the same code, against a local sync service ----
+  const { spawn } = require('child_process');
+  const syncPort = 8799;
+  const syncServer = spawn(process.execPath, [path.join(__dirname, 'sync-dev.mjs'), String(syncPort)], { stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 600));
+    const syncConfig = `window.VST=window.VST||{};window.VST.config={imageRelay:'',syncService:'http://localhost:${syncPort}'};`;
+    const device = async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const pg = await ctx.newPage();
+      aware(pg);
+      pg.on('pageerror', (e) => errors.push(e.message));
+      pg.on('dialog', (d) => d.accept());
+      await pg.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: syncConfig }));
+      await pg.goto(BASE);
+      await pg.evaluate(() => window.VST.app.setPanel('images'));
+      return { ctx, pg };
+    };
+    const mac = await device();
+    const ipad = await device();
+    const synced = (pg) => pg.waitForFunction(() => { const s = window.VST.sync.status(); return s.on && !s.busy && s.lastSync > 0; }, null, { timeout: 8000 });
+    check(await mac.pg.isVisible('#sec-sync') && await mac.pg.isVisible('#sync-turn-on'), 'the Sync section offers to turn sync on');
+    // the Mac has a set; turning sync on shows its code
+    await mac.pg.evaluate(() => { const L = window.VST.library; const s = L.createSet('Inness'); L.addToSet(s.id, { id: 'aic-100', source: 'aic', title: 'Landscape 1', artist: 'George Inness' }); });
+    await mac.pg.click('#sync-turn-on');
+    await synced(mac.pg);
+    const code = (await mac.pg.textContent('#sync-code')).trim();
+    check(/^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(code) && await mac.pg.isVisible('#sync-code-box'), `turning sync on shows a code to use on other devices (${code.slice(0, 5)}-…)`);
+    check(/Synced just now/.test(await mac.pg.textContent('#sync-status')), 'the status says it’s synced');
+    const qr = await mac.pg.$eval('#sync-qr', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 50) dark++; return { w: c.width, dark: dark / (c.width * c.height) }; });
+    check(qr.w > 100 && qr.dark > 0.3 && qr.dark < 0.7, `Show my code includes a QR code (${qr.w}px, ${Math.round(qr.dark * 100)}% dark)`);
+    // the iPad joins with the code and gets the set
+    await ipad.pg.click('#sync-join-open');
+    await ipad.pg.fill('#sync-code-input', 'not a code');
+    await ipad.pg.click('#sync-join button[type=submit]');
+    check(/doesn’t look like a sync code/.test(await ipad.pg.textContent('#sync-msg')), 'a mistyped code is caught before anything is sent');
+    await ipad.pg.fill('#sync-code-input', code.toLowerCase());
+    await ipad.pg.click('#sync-join button[type=submit]');
+    await synced(ipad.pg);
+    check(await ipad.pg.$eval('#set-select', (s) => [...s.options].some((o) => o.textContent.includes('Inness'))), 'joining with the code brings the Mac’s set to the iPad');
+    check(/2 devices/.test(await ipad.pg.textContent('#sync-status')), `the status counts both devices (${(await ipad.pg.textContent('#sync-status')).trim()})`);
+    // a change on the iPad reaches the Mac
+    await ipad.pg.evaluate(() => { const L = window.VST.library; const s = L.sets()[0]; L.renameSet(s.id, 'Inness, late'); });
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await mac.pg.waitForFunction(() => [...document.querySelectorAll('#set-select option')].some((o) => o.textContent.includes('Inness, late')), null, { timeout: 4000 });
+    check(true, 'a rename on the iPad shows up on the Mac after syncing');
+    // a palette saved on the iPad shows up on the Mac
+    await ipad.pg.evaluate(() => window.VST.myPalettes.save('Summer plein air', ['cadmium-lemon', 'cobalt-blue', 'permanent-red', 'titanium-white']));
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await mac.pg.evaluate(() => window.VST.app.setPanel('color'));
+    await mac.pg.waitForFunction(() => [...document.querySelectorAll('#pal-preset optgroup[label="My palettes"] option')].some((o) => o.textContent === 'Summer plein air'), null, { timeout: 4000 });
+    check(true, 'a palette saved on the iPad shows up in the Mac’s palette menu after syncing');
+    await ipad.pg.evaluate(() => window.VST.myMasks.save('Cool complement', { shape: 'complement', points: [[-40, -20], [5, 10], [40, 20], [-5, -10]] }));
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    check(await mac.pg.evaluate(() => window.VST.myMasks.all().some((m) => m.name === 'Cool complement')), 'a mask saved on the iPad shows up on the Mac after syncing');
+    await mac.pg.evaluate(() => window.VST.app.setPanel('images'));
+    await mac.pg.screenshot({ path: path.join(OUT, '9-sync.png') });
+    // a third device joins by opening the QR code's link
+    const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phonePg = await phoneCtx.newPage();
+    aware(phonePg);
+    phonePg.on('pageerror', (e) => errors.push(e.message));
+    let asked = '';
+    phonePg.on('dialog', (d) => { asked = d.message(); d.accept(); });
+    await phonePg.route('**/js/config.js*', (r) => r.fulfill({ contentType: 'application/javascript', body: syncConfig }));
+    await phonePg.goto(`${BASE}#sync=${code}`);
+    await synced(phonePg);
+    check(/Join sync with the code from this link/.test(asked), 'opening the QR code’s link asks before joining');
+    check(!(await phonePg.evaluate(() => location.hash)), 'and takes the code out of the address bar');
+    check(await phonePg.evaluate(() => window.VST.library.sets().some((s) => s.name.startsWith('Inness'))), 'the phone gets the sets too');
+    await phoneCtx.close();
+    // a photo uploaded on the Mac opens on the iPad
+    await mac.pg.setInputFiles('#file-input', { name: 'my-sketch.png', mimeType: 'image/png', buffer: png });
+    await mac.pg.waitForFunction(() => window.VST.app.img.item && window.VST.app.img.item.source === 'upload');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload'));
+    await mac.pg.click('#sync-now');
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.photo), null, { timeout: 8000 });
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const opened = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      if (!it) return 'no item';
+      const ok = await window.VST.app.openItem(it);
+      return ok && window.VST.app.work.w > 0 ? `${window.VST.app.work.w}x${window.VST.app.work.h}` : 'not opened';
+    });
+    check(/^\d+x\d+$/.test(opened), `a photo uploaded on the Mac opens on the iPad (${opened})`);
+    // a crop made on the Mac is applied on the iPad
+    await mac.pg.click('#btn-crop');
+    await mac.pg.selectOption('#crop-preset', '8x10');
+    await mac.pg.click('#crop-apply');
+    const macAspect = await mac.pg.evaluate(() => window.VST.app.work.w / window.VST.app.work.h);
+    await mac.pg.waitForFunction(() => window.VST.library.history().some((i) => i.source === 'upload' && i.crop));
+    await mac.pg.click('#sync-now');
+    await synced(mac.pg);
+    await ipad.pg.click('#sync-now');
+    await synced(ipad.pg);
+    const ipadAspect = await ipad.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(macAspect - 1.25) < 0.02 && Math.abs(ipadAspect - macAspect) < 0.02, `a crop made on the Mac is applied on the iPad (${macAspect.toFixed(2)} → ${ipadAspect.toFixed(2)})`);
+    // and on the Mac, reopening the image keeps its crop
+    const reopened = await mac.pg.evaluate(async () => {
+      const it = window.VST.library.history().find((i) => i.source === 'upload');
+      await window.VST.app.openItem(it);
+      return window.VST.app.work.w / window.VST.app.work.h;
+    });
+    check(Math.abs(reopened - macAspect) < 0.02, 'reopening an image keeps its crop');
+    // stop syncing: the data stays on the device
+    await ipad.pg.click('#sync-stop');
+    check(await ipad.pg.isVisible('#sync-turn-on') && await ipad.pg.evaluate(() => window.VST.library.sets().length === 1 && window.VST.library.history().length >= 1), 'stopping sync keeps this device’s data');
+    await mac.ctx.close();
+    await ipad.ctx.close();
+  } finally {
+    syncServer.kill();
+  }
 
   // phone layout
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });

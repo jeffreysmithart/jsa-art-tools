@@ -457,6 +457,40 @@
     return Array.from(counts, (c) => c / (L.length || 1));
   }
 
+  /**
+   * Values grouped, colors kept: each pixel's value becomes its group's
+   * level (as in a color poster study), its hue and chroma stay. Returns the
+   * flattened picture as { L, A, B } (A and B shared with the input), each
+   * pixel's group, each group's share of the picture, and each group's
+   * average a and b. A
+   * limited palette then paints it, for a value study in a few paints.
+   */
+  function flattenValues(lab, thresholds, levels) {
+    const { L, A, B } = lab;
+    const n = levels.length;
+    const lut = bandLut(thresholds);
+    const flat = new Float32Array(L.length);
+    const band = new Uint8Array(L.length);
+    const counts = new Float64Array(n);
+    const sumA = new Float64Array(n);
+    const sumB = new Float64Array(n);
+    for (let i = 0; i < L.length; i++) {
+      const b = lut[lIndex(L[i])];
+      flat[i] = levels[b];
+      band[i] = b;
+      counts[b]++;
+      sumA[b] += A[i];
+      sumB[b] += B[i];
+    }
+    const total = L.length || 1;
+    return {
+      lab: { L: flat, A, B },
+      band,
+      shares: Array.from(counts, (c) => c / total),
+      means: Array.from(counts, (c, b) => (c ? [sumA[b] / c, sumB[b] / c] : [0, 0])),
+    };
+  }
+
   VST.process = {
     computeLab,
     gaussianBlur,
@@ -469,6 +503,7 @@
     renderGray,
     renderColor,
     renderValues,
+    flattenValues,
     kmeans,
     renderPoster,
   };

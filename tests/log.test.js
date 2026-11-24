@@ -49,12 +49,31 @@ test('streaks, week and month totals', () => {
 
 test('totals for a day', () => {
   const t = LOG.totals(day([{ secs: 600, rounds: 1, drawSecs: 300 }, { secs: 5 }, { secs: 120 }]));
-  assert.deepEqual(t, { secs: 725, drawSecs: 300, rounds: 1, images: 2 });
+  assert.deepEqual(t, { secs: 725, drawSecs: 300, rounds: 1, memRounds: 0, memSecs: 0, images: 2 });
 });
 
 test('CSV has one row per studied image, with quoting', () => {
-  const out = LOG.csv({ '2026-11-06': day([{ title: 'Evening, "Medfield"', artist: 'George Inness', museum: 'The Met', source: 'met', secs: 900, rounds: 2, drawSecs: 600 }, { title: 'glance', secs: 3 }]) });
+  const out = LOG.csv({ '2026-11-06': day([{ title: 'Evening, "Medfield"', artist: 'George Inness', museum: 'The Met', source: 'met', secs: 900, rounds: 2, drawSecs: 600, memRounds: 1, memSecs: 300 }, { title: 'glance', secs: 3 }]) });
   const lines = out.trim().split('\n');
   assert.equal(lines.length, 2, 'header + one row (the 3-second glance is skipped)');
-  assert.equal(lines[1], '2026-11-06,"Evening, ""Medfield""",George Inness,The Met,met,15.0,2,10.0');
+  assert.equal(lines[1], '2026-11-06,"Evening, ""Medfield""",George Inness,The Met,met,15.0,2,10.0,1,5.0');
+});
+
+test('memory rounds are logged as timed rounds and counted separately', () => {
+  const mem = {};
+  globalThis.localStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => (mem[k] = v) };
+  const now = new Date(2026, 10, 7, 12).getTime();
+  LOG.start({ id: 'x', title: 'Study' }, now);
+  LOG.round(120, {}, now);
+  LOG.round(60, { memory: true }, now);
+  const day = LOG.days()['2026-11-07'];
+  const e = day.items.x;
+  assert.equal(e.rounds, 2);
+  assert.equal(e.drawSecs, 180);
+  assert.equal(e.memRounds, 1);
+  assert.equal(e.memSecs, 60);
+  assert.equal(LOG.totals(day).memRounds, 1);
+  assert.match(LOG.csv(LOG.days()), /,2,3\.0,1,1\.0\n$/);
+  LOG.start(null, now);
+  delete globalThis.localStorage;
 });

@@ -1,0 +1,9 @@
+# For deploying with Wrangler (npx wrangler deploy, in this folder).
+# The dashboard steps in README.md do the same thing.
+name = "value-study-sync"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "SYNC"
+bucket_name = "value-study-sync"
